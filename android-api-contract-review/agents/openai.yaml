@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android 接口契约审查"
+  short_description: "Android 接口字段契约与后端不确定性审查"
+  default_prompt: "使用 $android-api-contract-review 审查这个 Android 接口契约。"

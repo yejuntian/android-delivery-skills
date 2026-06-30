@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android 稳定性审查"
+  short_description: "Android 崩溃内存泄漏ANR与协程风险审查"
+  default_prompt: "使用 $android-stability-review 扫描这次 Android 改动的稳定性风险。"

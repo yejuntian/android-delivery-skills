@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android 代码质量审查"
+  short_description: "Android AI代码质量与架构一致性审查"
+  default_prompt: "使用 $android-code-quality-review 审查这次 Android 代码质量。"

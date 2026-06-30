@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 交付总入口"
-  short_description: "Android 新需求从分析到验证的完整交付流程"
-  default_prompt: "使用 $android-delivery-workflow 按完整流程分析并交付这个 Android 需求。"
+  short_description: "需求确认后直接编码，编码后审查验证"
+  default_prompt: "使用 $android-delivery-workflow 先理解需求，确认后直接编码，并在编码后完成审查和验证。"

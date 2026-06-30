@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 变更审查"
-  short_description: "Android 需求变更分析与交付风险总入口"
-  default_prompt: "使用 $android-change-review 在修改代码前分析这个 Android 需求变更。"
+  short_description: "编码后实际 diff 与影响范围审查"
+  default_prompt: "使用 $android-change-review 审查这次 Android 实际改动的范围、影响和回归风险。"

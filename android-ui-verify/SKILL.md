@@ -1,6 +1,6 @@
 ---
 name: android-ui-verify
-description: Android UI 需求、设计稿还原、截图对比、像素一致性检查、Compose 或 XML 页面实现前后的视觉验证流程。适用于用户提供 Figma、蓝湖、即时设计、截图、PDF、图片资源或要求 UI 与设计稿一致时，分析设计状态、项目设计体系、可先做 UI 骨架、实现约束、截图测试和差异报告。
+description: Android 编码后的 UI 还原验证流程。适用于 AI 或人工完成涉及 XML、ViewBinding、DataBinding、Compose、Adapter、资源、主题或页面状态的 Android 改动后，基于设计稿、截图、资源文件和实际实现审查 UI 状态、资源规范、截图对比和视觉差异；仅在关键设计资料缺失、继续编码会误实现时才用于编码前阻塞确认。
 ---
 
 # Android UI 还原验证
@@ -11,7 +11,7 @@ description: Android UI 需求、设计稿还原、截图对比、像素一致�
 
 ## 定位
 
-用于处理 UI 链接、截图、设计稿和页面视觉还原。目标是尽量按设计稿实现，而不是让 AI 自由发挥。
+默认用于编码后处理 UI 链接、截图、设计稿和页面视觉还原，目标是审查实际实现是否符合设计稿和项目设计体系，而不是让 AI 自由发挥。只有关键设计资料缺失、继续编码会误实现时，才在编码前暂停确认。
 
 ## 输入解析
 
@@ -26,7 +26,7 @@ description: Android UI 需求、设计稿还原、截图对比、像素一致�
 
 ## 项目 UI 事实识别
 
-实现或评估前必须确认：
+验证或实现时必须确认：
 
 - 当前项目使用 XML、ViewBinding、DataBinding、Compose 或混合。
 - 是否已有 Design System、Theme、Color、Typography、Dimens、公共组件。
@@ -45,8 +45,8 @@ description: Android UI 需求、设计稿还原、截图对比、像素一致�
 
 ## 资料缺失时
 
-- 没有设计稿：只做简易 UI 骨架或按项目现有组件风格给方案。
-- 没有接口：使用 mock / preview / debug fake 展示状态，不写死正式字段。
+- 没有设计稿：如果需求允许低风险实现，可以按项目现有组件风格处理；如果要求像素级还原，必须暂停确认。
+- 没有接口：只能使用 mock / preview / debug fake 展示状态，不写死正式字段。
 - 没有图片资源：使用占位资源或说明等待设计资源，不擅自从网络下载替代。
 
 ## 验证方式

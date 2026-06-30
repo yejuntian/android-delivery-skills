@@ -1,6 +1,6 @@
 ---
 name: android-test-delivery
-description: Android 需求测试用例生成、测试矩阵评估、Android CLI、Gradle 构建、单元测试、lint、仪器测试、截图测试、adb 验证和交付报告流程。适用于 AI 完成或准备完成 Android 需求后，自动评估测试覆盖、选择可执行验证命令、运行可运行测试并报告无法验证项。
+description: Android 编码后的测试交付流程。适用于 AI 或人工完成 Android 需求、Bug 修复或功能迭代后，基于实际改动生成测试用例矩阵，选择当前项目可执行的 Android CLI、Gradle 构建、单元测试、lint、仪器测试、截图测试和 adb 验证命令，并报告失败项、未验证项和剩余风险。
 ---
 
 # Android 测试交付
@@ -11,7 +11,7 @@ description: Android 需求测试用例生成、测试矩阵评估、Android CLI
 
 ## 定位
 
-用于把需求转成测试用例矩阵，并尽量使用当前项目已有 Android CLI、Gradle、adb 和测试框架执行验证。
+默认用于编码后把需求和实际改动转成测试用例矩阵，并尽量使用当前项目已有 Android CLI、Gradle、adb 和测试框架执行验证。
 
 ## Android CLI / Gradle / adb 使用策略
 
@@ -24,7 +24,7 @@ description: Android 需求测试用例生成、测试矩阵评估、Android CLI
 
 ## 测试用例生成
 
-实现前或实现后必须按需求生成测试用例，至少考虑：
+编码后必须按需求和实际改动生成测试用例，至少考虑：
 
 - 正常路径。
 - 空数据、空列表、空对象。

@@ -1,4 +1,4 @@
 interface:
   display_name: "Android UI 还原验证"
-  short_description: "Android UI 设计稿还原与截图验证流程"
-  default_prompt: "使用 $android-ui-verify 检查这个 Android UI 是否符合设计稿。"
+  short_description: "编码后 UI 还原与截图验证"
+  default_prompt: "使用 $android-ui-verify 验证这次 Android UI 改动是否符合设计稿和项目规范。"

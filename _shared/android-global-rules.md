@@ -70,7 +70,7 @@
 资料读取优先级：
 
 1. 用户本次对话中的明确文字、截图、文件路径和补充说明。
-2. 本地资料：`requirement_file`、`requirement_dir`、`ui.directory`、`ui.screenshots`、`ui.assets`、`api.files`。
+2. 本地资料：`ui/offline_design/`（由 Figma 导出的本地离线标注与 JSON 树）、`requirement_file`、`requirement_dir`、`ui.directory`、`ui.screenshots`、`ui.assets`、`api.files`。
 3. 结构化工具：Figma MCP、Figma REST API、YApi/Apifox/OpenAPI/Postman 导出、平台 MCP/CLI/API。
 4. 浏览器可见页面：只读取用户已授权后页面上可见的内容，不读取 Cookie、Token、密码或会话存储。
 5. 外部网页直读：公开页面、公开 API 或无需登录的导出接口。
@@ -82,7 +82,7 @@
 - 如果本地资料、用户文字或其他可用资料足以理解需求，继续进入需求理解；在待确认问题和最终报告中标记未读取链接及剩余风险。
 - 只有在“该链接是唯一关键资料，且没有任何替代资料，继续编码必然脑补 UI / 接口 / 业务规则”时，才暂停请求用户补充资料或授权。
 - 用户说“哪个行得通就走哪个”“先按现有资料做”“跳过链接”“用 mock / fake / sampledata”时，必须降级继续，不得卡在授权流程。
-- Figma 链接不可读时，优先尝试 Figma MCP；不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；仍不可用则使用本地截图/资源包或标记未验证。
+- Figma 资料默认优先通过 Figma MCP 读取结构化设计数据，例如 design context、metadata、variables/styles、component variants 和 screenshot；MCP 不可用、权限不足或返回不完整时，再使用本地 Figma 离线标注数据（`ui/offline_design/figma_spec.json`）；仍不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；最后才退回本地截图/资源包或标记未验证。
 - YApi / Apifox / Swagger 链接不可读时，优先尝试导出 JSON、OpenAPI、Postman collection 或本地接口文件；仍不可用且需求要求接正式接口时，才暂停确认。
 
 外部资料读取失败记录模板：
@@ -176,6 +176,8 @@
 - `android-api-contract-review` 默认用于编码后审查接口实现；只有关键接口资料缺失导致无法安全编码时才前置。
 - `android-ui-verify` 默认用于编码后 UI 验证；只有关键设计资料缺失导致无法实现时才前置。
 - `android-test-delivery`、`android-stability-review`、`android-code-quality-review` 默认用于编码后验证和审查。
+- 涉及 Figma UI 还原时，编码前先输出一份精简 Design Spec Gate，至少包含 target screen、resource tokens、layout structure、component mapping、assets 和 risks/assumptions；这属于实现闸门，不等同于额外展开一轮完整分析报告。
+- Figma UI 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding；不要先堆完整 XML 再回头补资源。
 - Android CLI、Gradle、adb 只在需要真实构建、安装运行、自动测试、截图、抓日志、设备兼容验证时调用。
 - 需求理解阶段默认不调用 Android CLI；需求未确认前不得用构建或设备结果反推需求结论。
 - Firebase MCP 只在涉及 Firebase、Crashlytics、Remote Config、Analytics、AB 实验、线上崩溃或线上配置时调用。

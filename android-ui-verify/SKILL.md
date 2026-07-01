@@ -15,15 +15,16 @@ description: Android 编码后的 UI 还原验证流程。适用于 AI 或人工
 
 ## 输入解析
 
-优先读取用户提供的：
+优先读取并解析以下设计资料（按优先级排序）：
 
-- 设计链接：Figma、蓝湖、即时设计、摹客、MasterGo。
-- UI 截图目录：`ui.directory`，目录内可包含整页截图、局部截图、状态截图或标注图。
-- 截图或设计文件：PNG、JPG、PDF、SVG、ZIP。
-- 资源文件：图标、图片、字体、动效。
-- 页面约束：目标设备、分辨率、深色模式、字体缩放、横竖屏。
+1. **Figma MCP 结构化数据**：优先读取 design context、metadata、variables/styles、component variants、selected frame screenshot 和 asset export information。
+2. **本地 Figma 离线标注**：如果项目下存在由 `scripts/figma/export_figma.py` 导出的离线标注数据（如 `ui/offline_design/figma_spec.json` 或 `ui/offline_design/index.html`），读取它作为 MCP 的兜底快照或对照来源。
+3. **设计链接**：Figma、蓝湖、即时设计、摹客、MasterGo。
+4. **UI 截图目录**：`ui.directory`，目录内可包含整页截图、局部截图、状态截图或标注图。
+5. **截图或设计文件**：PNG、JPG、PDF、SVG、ZIP。
+6. **资源文件**：图标、图片、字体、动效。
 
-如果链接无法访问或截图缺失，必须说明缺失项；可以建议先做 UI 骨架，但不得声称已做到和设计稿一致。
+如果 MCP 不可用、链接无法访问且未提供本地离线标注，必须说明缺失项并提示用户可以通过运行 `python3 scripts/figma/export_figma.py` 生成本地离线标注重构网页，以解决授权登录限制问题。可以建议先做 UI 骨架，但不得声称已做到和设计稿一致。
 
 ## UI 截图目录规则
 
@@ -55,16 +56,37 @@ description: Android 编码后的 UI 还原验证流程。适用于 AI 或人工
 - 是否已有截图测试框架，例如 Paparazzi、Roborazzi、Shot。
 - 是否有现成页面、组件、Adapter、Composable 可复用。
 
+## Design Spec Gate
+
+在开始写 XML 前，如果设计资料可读，先输出一份精简 Design Spec Gate。优先参考 `references/figma-spec-report.md`，至少覆盖：
+
+1. Target screen：frame 名称、frame 尺寸、Android baseline width、是否包含状态栏/导航栏、是否滚动。
+2. Resource tokens：colors、dimensions、typography、radius/stroke/shadow。
+3. Layout structure：root 选择、主要区块、列表项、overlay。
+4. Component mapping：Figma 组件映射到 Android View / 资源 / 状态。
+5. Assets：图片导出格式、VectorDrawable 转换项、`scaleType`。
+6. Risks / assumptions：字体缺失、状态缺失、阴影近似、system bars 不确定项。
+
 ## UI 还原规则
 
 - 优先复用项目已有主题、组件、颜色、尺寸、文字样式和资源管理方式。
 - 编码阶段如存在可访问设计稿、截图或标注，必须尽量按设计资料实现布局、间距、颜色、字号、资源和状态。
 - 当存在可访问设计稿、截图、UI 目录或标注时，编码阶段必须以“尽量一比一还原”为目标实现 UI，包括布局层级、间距、颜色、字号、圆角、图片、文案和可见状态；不得自由发挥或改成项目通用样式。只有当设计资料缺失、项目资源体系冲突或平台限制导致无法还原时，才允许说明原因后做近似实现。
+- 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding，不要直接堆完整页面 XML。
 - 文案放入字符串资源或项目既有多语言体系。
 - 颜色、字号、间距、圆角、阴影优先使用项目 design token 或资源文件。
 - 不得为了单个页面硬编码大量颜色、尺寸和文案。
 - 如果设计稿与项目设计体系冲突，必须先报告冲突并等待确认。
 - 必须覆盖正常、加载、空数据、错误、禁用、选中、未登录、无权限等状态中与需求相关的状态。
+
+## 重点陷阱
+
+- Figma 导出的图片即使扩展名是 `.png`，也可能实际是 SVG 内容；导入 Android 前必须检查格式，必要时转成 VectorDrawable。
+- `ConstraintLayout` 中需要拉伸的子 View 优先用 `0dp` + constraints，不要无意识使用 `match_parent`。
+- `LinearLayout` 中带 `layout_weight` 的子 View 使用 `0dp`，不要和 `match_parent` 混用。
+- `targetSdk >= 35` 时必须额外检查 edge-to-edge / WindowInsets，避免内容被状态栏遮挡。
+- 不要依赖 `duplicateParentState` 处理复杂 tab/button 选中态；状态复杂时优先显式更新图标、文字色和背景。
+- 阴影、mask、复杂 blur、alpha mask 这类 Figma 效果在 View XML 中可能只能近似实现；如果需要像素级一致，必须明确记录偏差。
 
 ## 资料缺失时
 
@@ -80,6 +102,7 @@ description: Android 编码后的 UI 还原验证流程。适用于 AI 或人工
 - 无截图测试：可用 emulator / adb 截图辅助人工对比。
 - 可用命令示例需以项目实际模块为准，例如构建、安装、启动、`adb exec-out screencap -p`。
 - 对比时必须说明设备、分辨率、字体缩放、系统主题、状态栏和导航栏影响。
+- 如需静态复核，优先按 `references/xml-review-checklist.md` 逐项过一遍，再决定是否继续大改布局。
 - 编码完成后，如存在设计稿、截图或 UI 目录，必须对照设计资料说明 UI 是否已按参考还原；没有实际运行或截图对比时，不得声称“完全一致”，只能说明“按设计资料实现，未做截图级验证”。
 
 ## 输出格式

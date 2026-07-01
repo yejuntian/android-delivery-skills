@@ -84,7 +84,7 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 - 外部链接不可读时，记录链接、来源、失败类型和已尝试方式，但继续使用其他可用资料进入需求理解。
 - 只有当链接是唯一关键资料，且没有任何本地文档、截图、资源、接口文件或用户文字可替代时，才暂停请求用户补充资料或授权。
 - 用户明确表示“哪个行得通就走哪个”“先用现有资料”“跳过这个链接”“先 mock”时，不得继续卡在授权流程。
-- Figma 优先级：本地截图/资源包 → Figma MCP → `FIGMA_TOKEN` 环境变量驱动的 REST API → 浏览器可见页面 → 标记未验证。
+- Figma 优先级：Figma MCP 结构化读取 → 本地离线标注（`ui/offline_design/figma_spec.json`）→ `FIGMA_TOKEN` 环境变量驱动的 REST API → 本地截图/资源包 → 浏览器可见页面 → 标记未验证。
 - 接口优先级：本地 OpenAPI/Postman/YApi 导出 → 平台 MCP/API → 浏览器可见页面 → mock/fake/sampledata → 标记未验证。
 - 不得读取、保存或要求用户提供 Cookie、账号、密码；Token 只能来自环境变量或本机安全存储，且不得写入仓库或日志。
 
@@ -220,6 +220,8 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 - 先识别当前项目事实：语言、UI 技术、架构、依赖、模块结构、资源规范、测试方式。
 - 复用现有业务链路、组件、网络封装、错误处理、状态管理和测试工具。
 - 严格最小修改，不混入无关格式化、重命名或重构。
+- 如果涉及 Figma 还原且设计资料可读，编码前先输出一份精简 Design Spec Gate，只包含 target screen、resource tokens、layout structure、component mapping、assets、risks/assumptions，不展开为额外的长篇分析。
+- Figma UI 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding；不要直接从完整页面 XML 起手。
 - UI 文案、颜色、尺寸、图片优先使用项目资源体系。
 - 接口、字段、枚举、错误码不明确时，不写死生产逻辑。
 - 列表、分页、异步回调、生命周期、权限、缓存等场景必须在实现时处理边界。

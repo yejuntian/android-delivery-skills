@@ -58,6 +58,29 @@ Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默
 3. 读不到就记录“外部资料未读取”和剩余风险。
 4. 只有该链接是唯一关键资料且没有任何替代资料时，才暂停让你补充资料或授权。
 
+## Figma UI 最短路径
+
+如果会话已接入 Figma MCP，UI 相关需求默认优先走：
+
+1. Figma MCP 读取 design context / metadata / variables / screenshot。
+2. 先输出一份精简 Design Spec Gate。
+3. 再按 resources → styles → drawables → XML → minimal Kotlin 实现。
+4. 编码后进入 `android-ui-verify` 做截图或视觉验证。
+
+如果 MCP 当前不可用，但你有 Figma Token，也可以先导出本地离线标注：
+
+```bash
+python3 /Users/shareit/work/MyPython/ai-skills/android-delivery-skills/scripts/figma/export_figma.py \
+  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131" \
+  --output-dir /Users/shareit/work/MyPython/ai-skills/current-requirement/ui/offline_design
+```
+
+脚本会生成：
+
+- `figma_spec.json`
+- `frame.png`
+- `index.html`
+
 ## 单独调用专项 Skill
 
 ```text

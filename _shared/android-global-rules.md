@@ -83,6 +83,20 @@
 
 不得假设项目一定使用 Compose、Hilt、Retrofit、Room、Coroutines、Flow 或某个固定架构。
 
+## 单一职责边界
+
+每个 Skill 阶段必须只处理自己的职责，不得把其他阶段的判断、实现或审查混入当前 Skill。
+
+- `android-delivery-workflow`：只负责需求理解、影响面识别、阻塞确认、路由编排和最终汇总。
+- `android-change-review`：只负责实际 diff、业务逻辑、变更范围、架构边界、回归和上线风险审查。
+- `android-api-contract-review`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段和契约兼容审查。
+- `android-ui-verify`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态和可见轻交互的 UI 表现验证；不得判断或实现接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
+- `android-test-delivery`：只负责测试用例、验证命令、执行结果、失败项、未验证项和剩余风险。
+- `android-stability-review`：只负责崩溃、生命周期、协程、内存泄漏、ANR、资源释放和 Android 版本兼容风险。
+- `android-code-quality-review`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
+
+如果当前 Skill 发现问题属于其他职责范围，只能记录为“需要路由到对应 Skill / 需要用户确认”，不得在当前 Skill 中扩展处理或替代其他 Skill。
+
 ## 修改与验证边界
 
 - 默认先做需求理解；需求确认后直接编码。未经用户确认需求，不修改代码。

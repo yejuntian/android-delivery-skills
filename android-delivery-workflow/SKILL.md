@@ -75,7 +75,8 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 
 编码后必须基于实际 diff 快速复核影响面，不做全量矩阵分析，只判断是否触发专项审查：
 
-- 修改 `res/layout`、`res/drawable`、`res/values`、Activity、Fragment、Adapter、Composable：触发 `android-ui-verify`。
+- 修改 `res/layout`、`res/drawable`、`res/values`、Activity、Fragment、Adapter、Composable，且存在设计稿、截图或可对比基准：触发 `android-ui-verify`。
+- 修改 UI 相关文件但没有设计稿、截图或可对比基准：跳过设计稿一致性验证，只在变更审查、稳定性审查或代码质量审查中做必要的 UI 基础检查。
 - 修改 Api、Service、Request、Response、DTO、mapper、网络 Repository、缓存字段：触发 `android-api-contract-review`。
 - 修改 Entity、Dao、Database、DataStore、SharedPreferences、缓存结构：触发数据兼容检查。
 - 修改 AndroidManifest、权限、通知、后台任务、WebView、DeepLink、文件访问：触发系统能力和版本兼容检查。
@@ -91,7 +92,8 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
   - 除非业务逻辑改变了 UI 状态展示，否则不做 UI 还原验证。
   - 除非业务逻辑改变了接口字段、请求参数、DTO、mapper、Repository 网络行为或缓存结构，否则不做接口契约审查。
 - UI 变更：
-  - 必须包含 `android-ui-verify`。
+  - 有设计稿、截图或可对比基准时包含 `android-ui-verify`。
+  - 没有设计稿、截图或可对比基准时跳过设计稿一致性验证，并说明“设计资料缺失，未验证与设计稿一致”。
   - 如果只是 UI 展示，不涉及接口字段或请求逻辑，跳过 `android-api-contract-review`。
 - 接口 / 数据契约变更：
   - 必须包含 `android-api-contract-review`。

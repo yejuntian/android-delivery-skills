@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 交付总入口"
-  short_description: "需求确认后编码，按影响面审查验证"
-  default_prompt: "使用 $android-delivery-workflow 先理解需求，确认后直接编码，并在编码后按影响面完成审查和验证。"
+  short_description: "先过资料门禁，确认后编码并审查验证"
+  default_prompt: "使用 $android-delivery-workflow 先检查外部链接资料门禁并理解需求，确认后直接编码，再按影响面完成审查和验证。"

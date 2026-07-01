@@ -70,7 +70,7 @@
 资料读取优先级：
 
 1. 用户本次对话中的明确文字、截图、文件路径和补充说明。
-2. 本地资料：`ui/offline_design/`（由 Figma 导出的本地离线标注与 JSON 树）、`requirement_file`、`requirement_dir`、`ui.directory`、`ui.screenshots`、`ui.assets`、`api.files`。
+2. 本地资料：`ai-skills/tempfile/`（由 Figma 导出的本地离线标注与 JSON 树）、`requirement_file`、`requirement_dir`、`ui.directory`、`ui.screenshots`、`ui.assets`、`api.files`。
 3. 结构化工具：Figma MCP、Figma REST API、YApi/Apifox/OpenAPI/Postman 导出、平台 MCP/CLI/API。
 4. 浏览器可见页面：只读取用户已授权后页面上可见的内容，不读取 Cookie、Token、密码或会话存储。
 5. 外部网页直读：公开页面、公开 API 或无需登录的导出接口。
@@ -82,7 +82,7 @@
 - 如果本地资料、用户文字或其他可用资料足以理解需求，继续进入需求理解；在待确认问题和最终报告中标记未读取链接及剩余风险。
 - 只有在“该链接是唯一关键资料，且没有任何替代资料，继续编码必然脑补 UI / 接口 / 业务规则”时，才暂停请求用户补充资料或授权。
 - 用户说“哪个行得通就走哪个”“先按现有资料做”“跳过链接”“用 mock / fake / sampledata”时，必须降级继续，不得卡在授权流程。
-- Figma 资料默认优先通过 Figma MCP 读取结构化设计数据，例如 design context、metadata、variables/styles、component variants 和 screenshot；MCP 不可用、权限不足或返回不完整时，再使用本地 Figma 离线标注数据（`ui/offline_design/figma_spec.json`）；仍不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；最后才退回本地截图/资源包或标记未验证。
+- Figma 资料默认优先通过 Figma MCP 读取结构化设计数据，例如 design context、metadata、variables/styles、component variants 和 screenshot；MCP 不可用、权限不足或返回不完整时，再使用本地 Figma 离线标注数据（`ai-skills/tempfile/figma_spec.json`）；仍不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；最后才退回本地截图/资源包或标记未验证。
 - YApi / Apifox / Swagger 链接不可读时，优先尝试导出 JSON、OpenAPI、Postman collection 或本地接口文件；仍不可用且需求要求接正式接口时，才暂停确认。
 
 外部资料读取失败记录模板：

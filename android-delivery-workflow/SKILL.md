@@ -1,6 +1,6 @@
 ---
 name: android-delivery-workflow
-description: Android 新需求、需求变更、Bug 修复和功能迭代的完整交付总入口流程。适用于用户提供需求描述、需求文档、UI 链接、截图、接口文档、动态配置或测试要求时，先做需求理解并等待确认；需求确认后直接编码；编码完成后再编排实际 diff 变更审查、接口实现契约审查、UI 验证、测试交付、稳定性审查和代码质量审查。资料缺失、高风险或继续编码会脑补生产逻辑时才在编码前暂停提问。
+description: Android 新需求、需求变更、Bug 修复和功能迭代的完整交付总入口流程。适用于用户提供需求描述、需求文档、UI 链接、截图、接口文档、动态配置或测试要求时，先做需求理解并等待确认；需求确认后直接编码；编码完成后按 UI、接口契约、业务逻辑、数据存储、系统能力识别影响面，再编排实际 diff 变更审查、接口实现契约审查、UI 验证、测试交付、稳定性审查和代码质量审查；未涉及的专项审查应跳过并说明原因。资料缺失、高风险或继续编码会脑补生产逻辑时才在编码前暂停提问。
 ---
 
 # Android 需求交付总入口
@@ -59,6 +59,48 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 
 不得把任何公司内部链接、账号、Token、密钥或业务规则写死进 Skill。
 
+## 影响面识别与路由
+
+需求理解阶段必须先判断本次需求影响面，并在“当前需求理解”中输出：
+
+- UI：是否涉及页面布局、资源、文案、状态展示、交互、Adapter、Compose/XML。
+- 接口契约：是否涉及 endpoint、请求参数、响应字段、DTO、mapper、Repository 网络层、缓存字段。
+- 业务逻辑：是否涉及规则判断、状态流转、排序筛选、权限判断、计费、实验开关、数据计算、入口条件。
+- 数据存储：是否涉及数据库、缓存、DataStore、SharedPreferences、文件、迁移或旧数据兼容。
+- 系统能力：是否涉及权限、通知、后台任务、文件、WebView、DeepLink、系统版本兼容。
+
+如果某一类影响面明确未涉及，编码后不得强行调用对应专项审查，只需在最终报告中说明“未涉及，已跳过”。
+
+### 轻量 diff 触发规则
+
+编码后必须基于实际 diff 快速复核影响面，不做全量矩阵分析，只判断是否触发专项审查：
+
+- 修改 `res/layout`、`res/drawable`、`res/values`、Activity、Fragment、Adapter、Composable：触发 `android-ui-verify`。
+- 修改 Api、Service、Request、Response、DTO、mapper、网络 Repository、缓存字段：触发 `android-api-contract-review`。
+- 修改 Entity、Dao、Database、DataStore、SharedPreferences、缓存结构：触发数据兼容检查。
+- 修改 AndroidManifest、权限、通知、后台任务、WebView、DeepLink、文件访问：触发系统能力和版本兼容检查。
+- 仅修改 if/when 判断、状态计算、排序筛选、权限条件、开关逻辑：按业务逻辑路径处理。
+
+如果需求判断为未涉及 UI / 接口，但实际 diff 修改了相关文件，必须重新标记影响面并说明原因；否则按未涉及跳过，不展开额外报告。
+
+### 路由规则
+
+- 仅业务逻辑变更：
+  - 必须关注：`android-change-review`、`android-test-delivery`、`android-stability-review`、`android-code-quality-review`。
+  - 默认跳过：`android-ui-verify`、`android-api-contract-review`。
+  - 除非业务逻辑改变了 UI 状态展示，否则不做 UI 还原验证。
+  - 除非业务逻辑改变了接口字段、请求参数、DTO、mapper、Repository 网络行为或缓存结构，否则不做接口契约审查。
+- UI 变更：
+  - 必须包含 `android-ui-verify`。
+  - 如果只是 UI 展示，不涉及接口字段或请求逻辑，跳过 `android-api-contract-review`。
+- 接口 / 数据契约变更：
+  - 必须包含 `android-api-contract-review`。
+  - 如果接口变更影响 UI 状态展示，再包含 `android-ui-verify`。
+- 数据存储 / 缓存变更：
+  - 必须额外关注旧数据兼容、迁移、默认值、清缓存、降级路径和回滚风险。
+- 系统能力变更：
+  - 必须额外关注 Android 版本兼容、权限降级、生命周期和设备验证。
+
 ## 完整工作流
 
 ### 1. 读取项目规则和动态配置
@@ -116,6 +158,7 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 - 一句话总结。
 - 业务目标。
 - 涉及页面、入口或业务流程。
+- 影响面判断：UI / 接口契约 / 业务逻辑 / 数据存储 / 系统能力。
 - 明确要做的内容。
 - 明确不做或暂未提到的内容。
 - 从资料中识别到的 UI、接口、数据、测试线索。
@@ -154,11 +197,11 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 
 ### 5. 编码后审查和验证
 
-代码实现完成后，按实际改动选择后置 Skill：
+代码实现完成后，先根据影响面判断选择后置 Skill；未涉及的专项审查必须跳过并说明原因：
 
 - `android-change-review`：审查实际 diff、影响范围、复用链路、无关改动、回归风险和回滚思路。
-- `android-api-contract-review`：如果涉及接口、DTO、Repository、缓存或 mock，审查接口实现和契约兼容。
-- `android-ui-verify`：如果涉及 UI，审查页面状态、资源使用、截图或视觉还原。
+- `android-api-contract-review`：如果涉及接口、DTO、Repository、缓存或 mock，审查接口实现和契约兼容；未涉及接口契约时跳过。
+- `android-ui-verify`：如果涉及 UI，审查页面状态、资源使用、截图或视觉还原；未涉及 UI 时跳过。
 - `android-test-delivery`：生成并执行当前项目可运行的最小测试、构建、lint 或人工验证路径。
 - `android-stability-review`：检查崩溃、生命周期、协程、列表复用、主线程耗时、资源释放和系统版本兼容。
 - `android-code-quality-review`：检查架构一致性、最小修改、可维护性、重复逻辑、硬编码和测试覆盖。
@@ -180,9 +223,10 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 默认只输出：
 
 1. 当前需求理解
-2. 已确认内容
-3. 待确认问题
-4. 是否可以进入编码
+2. 影响面判断：UI / 接口契约 / 业务逻辑 / 数据存储 / 系统能力
+3. 已确认内容
+4. 待确认问题
+5. 是否可以进入编码
 
 ### 编码阶段
 
@@ -194,13 +238,16 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 
 - 修改了哪些文件。
 - 为什么这样改。
+- 本次影响面：UI / 接口契约 / 业务逻辑 / 数据存储 / 系统能力。
 - 复用了哪些现有链路。
 - 执行了哪些命令和结果。
 - 生成或执行了哪些测试用例。
 - 变更审查发现点。
+- 业务逻辑审查发现点（如涉及业务规则）。
 - 接口契约审查发现点（如涉及接口）。
 - UI 验证发现点（如涉及 UI）。
 - 稳定性审查发现点。
 - 代码质量审查发现点。
+- 已跳过的专项审查及原因。
 - 未验证项和剩余风险。
 - 是否建议继续修复或提交。

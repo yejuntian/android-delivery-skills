@@ -49,15 +49,23 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 支持动态输入：
 
 - 定位参数：`project_path`（项目路径）和 `branch`（目标分支）。这是后续所有编码、测试和验证的执行上下文。
+- 公共路径：`workspace_root`（本机工作区根路径）和 `requirement_dir`（当前需求资料目录）。
 - 固定需求文档：`requirement_file`，只表示需求正文、评审记录和验收标准来源，不强制包含 UI 或接口资料。
 - 需求资料：需求描述、Jira、TAPD、飞书、语雀、Confluence、GitHub Issue。
-- UI 资料：Figma、蓝湖、即时设计、摹客、MasterGo、截图、PDF、图片、字体、动效、资源 zip。
+- UI 资料：Figma、蓝湖、即时设计、摹客、MasterGo、截图、UI 截图目录 `ui.directory`、PDF、图片、字体、动效、资源 zip。
 - 接口资料：Swagger、OpenAPI、Apifox、YApi、Postman、Markdown 接口文档、后端字段说明。
 - 项目环境：模块名、build variant、server env、packageName、目标设备、测试环境。
 - 验证要求：是否跑构建、单测、lint、UI 测试、截图对比、logcat 扫描。
 - 交付策略：直接实现、仅分析、只做 UI 骨架、只做 mock、完整实现、只报告风险、允许修复。
 
 不得把任何公司内部链接、账号、Token、密钥或业务规则写死进 Skill。
+
+路径解析规则：
+
+- `workspace_root` 是公共路径根目录。
+- `requirement_dir` 如果是相对路径，基于 `workspace_root` 解析。
+- `requirement_file`、`ui.directory`、`ui.screenshots`、`ui.assets` 如果是相对路径，优先基于 `requirement_dir` 解析。
+- 用户本次对话中提供的绝对路径优先，不受上述规则影响。
 
 ## 影响面识别与路由
 

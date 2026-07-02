@@ -57,7 +57,7 @@ def cmd_init(args):
         print("\n⚠️ 需求文档不存在或未指定。")
         
     print("\n---")
-    print("👉 AI 指令：请根据以上内容输出“当前需求理解”。输出完毕后必须停止输出，等待用户确认！不要执行编码！")
+    print("👉 AI 指令：请根据以上内容强制使用 BDD (Given/When/Then) 格式输出【测试驱动验收标准】(Acceptance Criteria)。输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
 
 
 def cmd_check_env(args):
@@ -98,7 +98,11 @@ def cmd_check_env(args):
         pass
         
     print("\n---")
-    print("👉 AI 指令：环境检查完成。请开始读取必要的项目文件（如AGENTS.md、README等），然后立即开始编写代码！代码编写完成后必须输出简短的总结并结束当前回合。")
+    print("👉 AI 指令：环境检查完成。你已获准开始编码。")
+    print("【强制规约】:")
+    print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目“祖传”架构。")
+    print("  2. 编码后：必须自行运行 `./gradlew assembleDebug` (或对应构建命令)。如果报错，自己分析日志并修改代码，直到编译成功！")
+    print("  3. 结束：编译通过后，输出简短总结，并必须结束当前回合！")
 
 
 def cmd_route(args):

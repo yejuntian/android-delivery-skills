@@ -161,7 +161,7 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 python3 ai-skills/android-delivery-skills/scripts/delivery.py init --config profiles/local.yaml
 ```
 
-**AI 动作**：将脚本输出的内容整合后输出“当前需求理解”。输出完毕后，**必须立即结束当前回合，等待用户确认**。不要急着进入下一步。
+**AI 动作**：脚本会输出需求上下文。请强制提炼出 **BDD (Given/When/Then)** 格式的验收标准（Acceptance Criteria）。输出完毕后，**必须立即结束当前回合，等待用户确认**。绝不能直接开写代码。
 
 #### 阶段 2：环境检查与编码
 
@@ -171,8 +171,10 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init --config prof
 python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env --config profiles/local.yaml
 ```
 
-**AI 动作**：如果检查通过，请按需读取 `AGENTS.md`、`README.md` 等项目背景资料，然后开始编写代码。
-**强制约束**：代码编写完成后，输出简短的“已修改文件总结”，**必须立即结束当前回合**，绝对不要在同一个回合里做任何其他的审查动作！
+**AI 动作**：环境检查通过后，你已获准编码，但必须遵守以下强制规约：
+1. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件或 Base 类参考。
+2. **自我纠错**：代码写完后，必须在终端跑 `./gradlew assembleDebug` (或对应构建命令)！遇到报错必须自行分析修复，直到绿灯通过！
+3. **结束回合**：编译通过后，输出简短总结，并**必须立即结束当前回合**，绝对不要在此回合做后续审查！
 
 #### 阶段 3：审查路由分析
 

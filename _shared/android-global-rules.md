@@ -209,7 +209,7 @@
 - **嗅探规则**：在修改或添加库依赖前，必须先探测 `gradle/libs.versions.toml` 文件是否存在。
 - **强制约束**：
   - **如果存在**：一票否决任何在 `build.gradle` 中直接写死版本号的行为（如 `implementation 'xx:1.0'`）。必须将库注册到 TOML 的 `[versions]` 和 `[libraries]` 中，并通过 `libs.xxx` 引用。
-  - **如果不存在**：允许使用传统 `build.gradle` 写法，但对于同类库（如 Retrofit, OkHttp）优先提取统一的版本号变量。
+  - **如果不存在 TOML**：严禁随意发明新的版本变量名！必须先嗅探项目是否使用了其他集中管理方式（如 `buildSrc/` 目录下的 `Dependencies.kt`、根目录的 `dependencies.gradle`，或根级 `build.gradle` 中的 `ext {}` 块）。如果有，必须严格遵循其原有的自定义归类（如 `deps.retrofit`, `Versions.okhttp`）进行追加；只有在项目完全没有集中管理时，才允许在原处直接写死或提取局部变量。
 
 ### 3. A11y 与 I18n 一票否决（强制底线）
 - **适用范围**：无视项目架构，所有项目强制适用。

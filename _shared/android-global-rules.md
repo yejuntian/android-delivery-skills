@@ -195,3 +195,24 @@
 - Firebase MCP 只在涉及 Firebase、Crashlytics、Remote Config、Analytics、AB 实验、线上崩溃或线上配置时调用。
 - 外部工具不可用、未登录、无权限、无设备或无网络时，必须如实报告，并给出替代验证方式。
 - 所有风险、异常、内存泄漏、ANR、兼容性和线上问题发现点默认先报告，不自动修复。
+
+## 大厂级工程规范与自适应约束
+
+除了解决 Bug 和实现功能，必须强制遵守以下顶级开源项目的工程纪律。AI 必须具备“环境嗅探”能力，根据项目实际架构采取适配动作：
+
+### 1. 多模块架构防腐（防跨层乱引依赖）
+- **嗅探规则**：添加任何跨模块依赖或新依赖前，必须先检索根目录 `settings.gradle` / `settings.gradle.kts`。
+- **强制约束**：如果发现项目采用多模块架构（包含 `:core`, `:feature` 等），**严禁底层模块（如 `:core`）反向依赖上层模块（如 `:feature`）**，严禁引入循环依赖。
+- **处置方案**：必须优先查阅 `AGENTS.md` 或 `README.md` 中的架构分层图。如果不确定依赖方向，必须拒绝修改依赖并向用户抛出阻塞警告。
+
+### 2. Version Catalog 统一版本管理
+- **嗅探规则**：在修改或添加库依赖前，必须先探测 `gradle/libs.versions.toml` 文件是否存在。
+- **强制约束**：
+  - **如果存在**：一票否决任何在 `build.gradle` 中直接写死版本号的行为（如 `implementation 'xx:1.0'`）。必须将库注册到 TOML 的 `[versions]` 和 `[libraries]` 中，并通过 `libs.xxx` 引用。
+  - **如果不存在**：允许使用传统 `build.gradle` 写法，但对于同类库（如 Retrofit, OkHttp）优先提取统一的版本号变量。
+
+### 3. A11y 与 I18n 一票否决（强制底线）
+- **适用范围**：无视项目架构，所有项目强制适用。
+- **强制约束**：
+  - **I18n（国际化）**：绝对禁止在 XML 布局或 Kotlin 代码中出现硬编码的中/英文字符串（如 `android:text="登录"`）。所有面向用户的文本，必须抽取到 `res/values/strings.xml` 中。
+  - **A11y（无障碍）**：所有非纯装饰性质的 `ImageView`、`ImageButton` 或带有点击事件的图标，必须强制补齐具有实际意义的 `android:contentDescription` 属性（或通过 `@string` 引用），否则代码审查按不合格处理。

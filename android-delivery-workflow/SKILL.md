@@ -84,7 +84,7 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 - 外部链接不可读时，记录链接、来源、失败类型和已尝试方式，但继续使用其他可用资料进入需求理解。
 - 只有当链接是唯一关键资料，且没有任何本地文档、截图、资源、接口文件或用户文字可替代时，才暂停请求用户补充资料或授权。
 - 用户明确表示“哪个行得通就走哪个”“先用现有资料”“跳过这个链接”“先 mock”时，不得继续卡在授权流程。
-- Figma 优先级：Figma MCP 结构化读取 → 本地离线标注（`ai-skills/tempfile/figma_spec.json`）→ `FIGMA_TOKEN` 环境变量驱动的 REST API → 本地截图/资源包 → 浏览器可见页面 → 标记未验证。
+- Figma 优先级：Figma MCP 结构化读取 → 本地离线标注（`ai-skills/tempfile/[file_key]_[node_id]_spec.json`，读取前先检查 `source.exported_at` 新鲜度）→ `FIGMA_TOKEN` 环境变量驱动的 REST API → 本地截图/资源包 → 浏览器可见页面 → 标记未验证。
 - 接口优先级：本地 OpenAPI/Postman/YApi 导出 → 平台 MCP/API → 浏览器可见页面 → mock/fake/sampledata → 标记未验证。
 - 不得读取、保存或要求用户提供 Cookie、账号、密码；Token 只能来自环境变量或本机安全存储，且不得写入仓库或日志。
 

@@ -70,16 +70,21 @@ Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默
 如果 MCP 当前不可用，但你有 Figma Token，也可以先导出本地离线标注：
 
 ```bash
-python3 /Users/shareit/work/MyPython/ai-skills/android-delivery-skills/scripts/figma/export_figma.py \
-  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131" \
-  --output-dir /Users/shareit/work/MyPython/ai-skills/current-requirement/ui/offline_design
+# 正常运行（自动检查新鲜度，数据未变则跳过下载）
+python3 ai-skills/figma-android-xml/scripts/export_figma.py \
+  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131"
+
+# 强制重新拉取（设计师刚改完稿时使用）
+python3 ai-skills/figma-android-xml/scripts/export_figma.py \
+  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131" --force
 ```
 
-脚本会生成：
+脚本会生成（按 `[file_key]_[node_id]` 动态命名，多节点不相互覆盖）：
 
-- `figma_spec.json`
-- `frame.png`
-- `index.html`
+- `ai-skills/tempfile/[file_key]_[node_id]_spec.json`
+- `ai-skills/tempfile/[file_key]_[node_id].png`
+- `ai-skills/tempfile/[file_key]_[node_id]_preview.html`
+- `ai-skills/tempfile/index.html`（汇总画廊）
 
 ## 单独调用专项 Skill
 

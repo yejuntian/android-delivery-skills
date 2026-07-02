@@ -18,13 +18,23 @@ description: Android 编码后的 UI 还原验证流程。适用于 AI 或人工
 优先读取并解析以下设计资料（按优先级排序）：
 
 1. **Figma MCP 结构化数据**：优先读取 design context、metadata、variables/styles、component variants、selected frame screenshot 和 asset export information。
-2. **本地 Figma 离线标注**：如果项目下存在由 `scripts/figma/export_figma.py` 导出的离线标注数据（如 `ui/offline_design/figma_spec.json` 或 `ui/offline_design/index.html`），读取它作为 MCP 的兜底快照或对照来源。
+2. **本地 Figma 离线标注**：如果项目下存在由 `ai-skills/figma-android-xml/scripts/export_figma.py` 导出的离线标注数据（如 `ai-skills/tempfile/[file_key]_[node_id]_spec.json` 或 `ai-skills/tempfile/index.html`），读取它作为 MCP 的兜底快照或对照来源。读取前必须先检查 `source.exported_at` 字段：超过 4 小时须对比 Figma `lastModified` 确认是否过期；超过 24 小时须在 Design Spec Gate 标注 `⚠️ 数据可能过期` 并等用户确认。
 3. **设计链接**：Figma、蓝湖、即时设计、摹客、MasterGo。
 4. **UI 截图目录**：`ui.directory`，目录内可包含整页截图、局部截图、状态截图或标注图。
 5. **截图或设计文件**：PNG、JPG、PDF、SVG、ZIP。
 6. **资源文件**：图标、图片、字体、动效。
 
-如果 MCP 不可用、链接无法访问且未提供本地离线标注，必须说明缺失项并提示用户可以通过运行 `python3 scripts/figma/export_figma.py` 生成本地离线标注重构网页，以解决授权登录限制问题。可以建议先做 UI 骨架，但不得声称已做到和设计稿一致。
+如果 MCP 不可用、链接无法访问且未提供本地离线标注，必须说明缺失项并提示用户运行以下命令生成本地离线标注：
+
+```bash
+# 正常运行（自动检查新鲜度，数据未变则跳过下载）
+python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL"
+
+# 强制重新拉取（设计师刚改完稿时使用）
+python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
+```
+
+可以建议先做 UI 骨架，但不得声称已做到和设计稿一致。
 
 ## UI 截图目录规则
 

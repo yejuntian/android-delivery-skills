@@ -82,7 +82,7 @@
 - 如果本地资料、用户文字或其他可用资料足以理解需求，继续进入需求理解；在待确认问题和最终报告中标记未读取链接及剩余风险。
 - 只有在“该链接是唯一关键资料，且没有任何替代资料，继续编码必然脑补 UI / 接口 / 业务规则”时，才暂停请求用户补充资料或授权。
 - 用户说“哪个行得通就走哪个”“先按现有资料做”“跳过链接”“用 mock / fake / sampledata”时，必须降级继续，不得卡在授权流程。
-- Figma 资料默认优先通过 Figma MCP 读取结构化设计数据，例如 design context、metadata、variables/styles、component variants 和 screenshot；MCP 不可用、权限不足或返回不完整时，再使用本地 Figma 离线标注数据（`ai-skills/tempfile/figma_spec.json`）；仍不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；最后才退回本地截图/资源包或标记未验证。
+- Figma 资料默认优先通过 Figma MCP 读取结构化设计数据，例如 design context、metadata、variables/styles、component variants 和 screenshot；MCP 不可用、权限不足或返回不完整时，再使用本地 Figma 离线标注数据（`ai-skills/tempfile/[file_key]_[node_id]_spec.json`，读取前须先检查 `source.exported_at` 新鲜度，超过 4 小时对比 Figma `lastModified`，超过 24 小时须在 Design Spec Gate 标注 `⚠️ 数据可能过期`）；仍不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；最后才退回本地截图/资源包或标记未验证。
 - YApi / Apifox / Swagger 链接不可读时，优先尝试导出 JSON、OpenAPI、Postman collection 或本地接口文件；仍不可用且需求要求接正式接口时，才暂停确认。
 
 外部资料读取失败记录模板：

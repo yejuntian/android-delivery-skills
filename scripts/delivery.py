@@ -139,8 +139,7 @@ def cmd_route(args):
     print("  - android-code-quality-review (默认)")
     
     if ui_files:
-        skills_to_run.append("android-ui-verify")
-        print("  - android-ui-verify (检测到 UI 文件变更)")
+        print("  - [已跳过] android-ui-verify (按配置，UI 校验已延后处理)")
         
     if api_files:
         skills_to_run.append("android-api-contract-review")

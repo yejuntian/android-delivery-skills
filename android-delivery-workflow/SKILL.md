@@ -147,18 +147,16 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 
 ## 完整工作流
 
-### 1. 读取项目规则和动态配置
+### 1. 读取动态配置（必须立即输出）
 
-先读取或识别：
+**第一步只做两件事，然后立即输出，不得此前默默读取更多文件：**
 
-- 默认配置 `profiles/local.yaml`，除非用户本次明确提供了其他配置。
-- 用户提供的 `project_path` 和 `branch`。
-- 用户输入的需求、UI、接口、测试配置中的外部链接，并按“外部资料读取策略（非终止）”尝试读取。
-- 指定项目路径下的 `AGENTS.md`。
-- `README.md`、`CONTRIBUTING.md`、CI 配置。
-- Gradle 模块、构建脚本、版本管理方式。
-- 用户输入的 `requirement_file` 需求文档。
-- 用户输入的本地截图、离线接口文档或其他本地资料。
+1. 读取 `profiles/local.yaml`（或用户本次提供的配置），提取 `project_path`、`branch`、`requirement_file`、`ui`、`api`。
+2. 读取 `requirement_file` 需求文档。
+
+→ **读完这两个文件后，立即输出“当前需求理解”，不得继续默默读取 AGENTS.md、README、Gradle 等项目文件。**
+
+项目文件（AGENTS.md、README.md、CONTRIBUTING.md、CI 配置、Gradle 模块、构建脚本）应延迟读取：只在用户确认需求后进入编码阶段时，据实际需要按需读取，不要在需求理解阶段批量预加载。
 
 执行任何代码修改、测试、构建或 Git 操作前，必须先进行项目路径和分支校验：
 
@@ -174,6 +172,8 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 当用户提供 `requirement_file`、需求目录、需求链接、截图、接口资料或需求文字时，先读取所有可用资料；外部链接不可读时记录风险，但只要仍有足够资料就进入需求理解循环。
 
 如果提供了 `requirement_file`，先把它当作需求正文来源读取；UI 和接口资料不要求在该文件中，除非文档本身明确包含相关线索。
+
+**强制检查点：读完 `profiles/local.yaml` 和 `requirement_file` 后必须立即输出“当前需求理解”，不得继续默默读取更多项目文件。项目文件（AGENTS.md、README、Gradle 等）用户确认需求后编码时再按需读取。**
 
 需求理解循环流程：
 

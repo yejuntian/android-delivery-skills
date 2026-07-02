@@ -43,6 +43,8 @@ description: Android AI 生成代码质量、架构一致性、最小修改、�
 - 权限、生命周期、线程、协程、Flow 是否符合项目规范。
 - Compose 是否避免错误 remember key、重复副作用、状态下沉不当。
 - XML / Adapter 是否避免复用错位、position 过期、监听器泄漏。
+- **内存泄漏底线**：严禁在 Fragment 中留下未清理的 View 级别强引用（如 `private lateinit var recyclerView`）。只要声明了，必须强制在 `onDestroyView` 中置空，或使用安全的 `ViewBinding` 委托。
+- **列表性能红线**：开发无限滑动列表（如信息流）时，**默认必须基于 `DiffUtil`（如继承 `ListAdapter`）进行局部更新**。如果因为极其复杂的有效载荷计算、特定的动画冲突或大批量内存清理导致 `DiffUtil` 不适用，**允许降级使用 `notifyDataSetChanged()`，但必须在代码上方加上注释（或向用户说明）降级的原因和性能折衷**，严禁不假思索地滥用全量刷新。
 - **资源命名底线**：新建资源文件必须严格遵循前缀分类（`activity_`, `fragment_`, `item_`, `ic_`），严禁随意起名。
 
 ### 依赖和版本

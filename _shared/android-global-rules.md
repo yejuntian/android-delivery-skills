@@ -71,6 +71,9 @@
 1. **复杂 UI 调试（防盲猜布局）**：如果调整 UI 时元素不可见、尺寸异常或被遮挡，严禁凭空修改 XML 参数试错。必须强制调用 `android layout` (或同等 Dump 脚本) 拉取当前设备的真实 View Tree (JSON)，根据实际测绘尺寸和渲染状态定位问题。
 2. **性能与卡顿分析（防背诵八股文）**：遇到卡顿、ANR 或内存泄漏优化任务时，禁止直接修改业务代码或背诵通用优化理论。必须要求用户提供 Trace 或 Heap Dump 文件，并优先调用 `perfetto-trace-analysis` 等专项技能通过 SQL 数据分析找到确切瓶颈。
 3. **深层 Gradle 冲突（防盲猜版本号）**：遇到 `Duplicate class` 或深层依赖库版本冲突导致构建失败时，严禁盲目修改 `build.gradle` 的版本号撞运气。必须强制运行 `./gradlew app:dependencies` (或相关模块的 dependencies task) 打印完整依赖树，分析确切冲突链路后使用 `exclude` 精准解决。
+4. **Release 包混淆闪退（防乱关混淆）**：遇到 Release 包特有的 `ClassNotFoundException` 等混淆问题时，严禁大面积使用通配符 `-keep class **` 关闭混淆！必须强制要求使用 `r8-analyzer` 技能（或查阅 `usage.txt` / `mapping.txt`），精准定位被缩减的类，仅针对引发崩溃的最小闭环添加 Keep 规则。
+5. **协程与异步生命周期（防内存泄漏）**：处理协程生命周期异常或并发时序问题时，绝对禁止使用 `GlobalScope` 逃避生命周期，绝对禁止使用 `delay()` 掩盖时序报错。必须强制追溯宿主生命周期状态，严格使用 `viewModelScope` 或 `repeatOnLifecycle` 进行重构。
+6. **大版本适配与权限（防盲猜废弃 API）**：涉及 Android 权限申请（存储、相册、通知等）和隐式 Intent 跳转修改时，严禁依赖模型自身的“记忆”！必须强制调用 `android docs search` 等命令查阅目标 API Level 的官方变更指南，以最新规范为准修改 Manifest 和代码。
 
 ## 外部资料读取策略（非终止）
 

@@ -161,7 +161,9 @@ description: Android 新需求、需求变更、Bug 修复和功能迭代的完�
 python3 ai-skills/android-delivery-skills/scripts/delivery.py init --config profiles/local.yaml
 ```
 
-**AI 动作**：脚本会输出需求上下文。请强制提炼出 **BDD (Given/When/Then)** 格式的验收标准（Acceptance Criteria）。输出完毕后，**必须立即结束当前回合，等待用户确认**。绝不能直接开写代码。
+**AI 动作**：脚本会输出需求上下文。请强制提炼出 **BDD (Given/When/Then)** 格式的验收标准（Acceptance Criteria）。
+**DoR (准备就绪) 门禁**：如果用户给的需求太短、没头没尾（不足以推导出至少 3 条真实的 BDD），**严禁你自己瞎编 BDD（脑补验收标准）！**你必须暂停并反问用户：“缺少具体边界条件/报错信息，无法开工，请补充细节。”
+输出完毕后，**必须立即结束当前回合，等待用户确认**。绝不能直接开写代码。
 
 #### 阶段 2：环境检查与编码
 

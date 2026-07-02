@@ -85,7 +85,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 - 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding，不要直接堆完整页面 XML。
 - 文案放入字符串资源或项目既有多语言体系。
 - 颜色、字号、间距、圆角、阴影优先使用项目 design token 或资源文件。
-- 不得为了单个页面硬编码大量颜色、尺寸和文案。
+- **严禁 UI 魔法值底线**：除了全局禁止的硬编码字符串，进一步严禁在 XML/Compose 中写死 Hex 颜色值（如 `#FF0000`）和非标准的硬编码尺寸。必须强制抽取并引用 `colors.xml` / `dimens.xml` 或现有的 Theme Token，代码审查时对魔法值零容忍。
 - 如果设计稿与项目设计体系冲突，必须先报告冲突并等待确认。
 - 必须覆盖正常、加载、空数据、错误、禁用、选中、未登录、无权限等状态中与需求相关的状态。
 

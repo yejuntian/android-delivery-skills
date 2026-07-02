@@ -43,12 +43,14 @@ description: Android AI 生成代码质量、架构一致性、最小修改、�
 - 权限、生命周期、线程、协程、Flow 是否符合项目规范。
 - Compose 是否避免错误 remember key、重复副作用、状态下沉不当。
 - XML / Adapter 是否避免复用错位、position 过期、监听器泄漏。
+- **资源命名底线**：新建资源文件必须严格遵循前缀分类（`activity_`, `fragment_`, `item_`, `ic_`），严禁随意起名。
 
 ### 依赖和版本
 
 - 是否新增依赖；新增依赖是否必要、已有替代、License、体积、维护状态。
 - 是否擅自升级 Gradle、AGP、Kotlin、AndroidX、Compose。
 - 是否破坏模块依赖方向。
+- **技术栈防腐底线**：在引入第三方库前，必须优先检查是否有对应的 AndroidX Jetpack 现代库（如 Coroutines/DataStore）。严禁在有官方替代品的情况下盲目引入旧版第三方库。
 
 ### 测试和验证
 

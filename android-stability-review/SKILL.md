@@ -48,6 +48,14 @@ description: Android 稳定性风险审查流程，默认只报告不修复。�
 
 检查主线程网络、数据库、文件 IO、大 JSON 解析、Bitmap 解码、大循环、锁等待、`Thread.sleep`、阻塞式 Future、启动阶段重任务、BroadcastReceiver 耗时任务。
 
+### Android 版本兼容
+
+检查废弃 API、隐式 Intent 未加 export、前台服务权限不足、PendingIntent 未加 flag、大图导致 Binder 崩溃、Target 34+ BroadcastReceiver flag。
+
+### 安全合规与隐私底线
+
+- **隐私日志脱敏底线**：严禁使用原生的 `android.util.Log` 随意打印。所有日志和异常上报必须对密码、手机号、Token 等个人敏感信息（PII）进行脱敏。严防包含用户敏感数据的明文打印，否则直接按高危 P0 漏洞处理。
+
 ### 列表和 Adapter
 
 检查 adapter position 是否可能为 `NO_POSITION`，数据刷新后旧 position 是否过期，快速滑动和分页时是否越界，DiffUtil / stableId / item key 是否正确，异步回调回来后列表是否已变化。

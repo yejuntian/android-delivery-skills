@@ -64,8 +64,9 @@ Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默
 
 1. Figma MCP 读取 design context / metadata / variables / screenshot。
 2. 先输出一份精简 Design Spec Gate。
-3. 再按 resources → styles → drawables → XML → minimal Kotlin 实现。
-4. 编码后进入 `android-ui-verify` 做截图或视觉验证。
+3. 调用 `figma-android-xml` 专注生成纯净的 resources → styles → drawables → XML 与 tools 预览（**此阶段绝对禁止编写 Kotlin**）。
+4. UI 骨架生成完毕后，再由主流程接管，单独补充必要的 Kotlin ViewBinding 和业务连线代码。
+5. 编码后进入 `android-ui-verify` 做截图或视觉验证。
 
 如果 MCP 当前不可用，但你有 Figma Token，也可以先导出本地离线标注：
 

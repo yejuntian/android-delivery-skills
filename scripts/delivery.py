@@ -56,6 +56,44 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
+def print_bdd_instruction():
+    """打印 BDD 输出指令，要求 AI 用 Given/When/Then 结构写验收标准。"""
+    print("👉 AI 指令：请根据以上内容强制使用 BDD (Given/When/Then) 格式输出【测试驱动验收标准】(Acceptance Criteria)。")
+    print("  - Given：给定 / 前置条件")
+    print("  - When：当 / 操作发生")
+    print("  - Then：那么 / 期望结果")
+    print("输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
+
+
+def print_environment_rules():
+    """打印环境检查后的编码约束，提示 AI 开始编码前后的必须行为。"""
+    print("\n---")
+    print("👉 AI 指令：环境检查完成。你已获准开始编码。")
+    print("【强制规约}:")
+    print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目“祖传”架构。")
+    print("  2. 编码后：必须自行运行 `./gradlew assembleDebug` (或对应构建命令)。如果出现报错或问题，必须强制调用 `android` CLI 相关命令（如查阅文档或诊断环境）进行错误排查和处理。处理完之后继续修改代码，直到编译成功！")
+    print("  3. 结束：编译通过后，输出简短总结，并必须结束当前回合！")
+
+
+def get_diff_files():
+    """获取当前 Git 工作区相对于 HEAD 的变更文件列表，用于动态审查路由判断。"""
+    try:
+        diff_files = subprocess.check_output(["git", "diff", "HEAD", "--name-only"]).decode().strip().split('\n')
+        return [f for f in diff_files if f.strip()]
+    except subprocess.CalledProcessError:
+        print("❌ 无法获取 git diff")
+        exit(1)
+
+
+def print_route_instructions(skills_to_run):
+    """打印路由审查指令，提示 AI 根据实际改动逐个触发对应 Skill。"""
+    print("\n---")
+    print("👉 AI 指令：代码已编写完毕，请在后续回合中，逐个调用以下 Skill 进行审查：")
+    for s in skills_to_run:
+        print(f"  - {s}")
+    print("注意：一次只调用一个，不要一次性全部执行！未列出的审查项请跳过。 ")
+
+
 def cmd_init(args):
     """
     执行 `init` 命令：读取需求文档并向 AI 抛出提取验收标准的强制约束。
@@ -77,7 +115,7 @@ def cmd_init(args):
         print("\n⚠️ 需求文档不存在或未指定。")
         
     print("\n---")
-    print("👉 AI 指令：请根据以上内容强制使用 BDD (Given/When/Then) 格式输出【测试驱动验收标准】(Acceptance Criteria)。输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
+    print_bdd_instruction()
 
 
 def cmd_check_env(args):
@@ -121,12 +159,7 @@ def cmd_check_env(args):
     except subprocess.CalledProcessError:
         pass
         
-    print("\n---")
-    print("👉 AI 指令：环境检查完成。你已获准开始编码。")
-    print("【强制规约】:")
-    print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目“祖传”架构。")
-    print("  2. 编码后：必须自行运行 `./gradlew assembleDebug` (或对应构建命令)。如果出现报错或问题，必须强制调用 `android` CLI 相关命令（如查阅文档或诊断环境）进行错误排查和处理。处理完之后继续修改代码，直到编译成功！")
-    print("  3. 结束：编译通过后，输出简短总结，并必须结束当前回合！")
+    print_environment_rules()
 
 
 def cmd_route(args):
@@ -143,14 +176,7 @@ def cmd_route(args):
         
     os.chdir(project_path)
     
-    try:
-        # 获取改动文件列表 (含暂存和未暂存)
-        diff_files = subprocess.check_output(["git", "diff", "HEAD", "--name-only"]).decode().strip().split('\n')
-        diff_files = [f for f in diff_files if f.strip()]
-    except subprocess.CalledProcessError:
-        print("❌ 无法获取 git diff")
-        exit(1)
-        
+    diff_files = get_diff_files()
     print("=== 审查路由分析 ===")
     
     if not diff_files:
@@ -180,11 +206,7 @@ def cmd_route(args):
         skills_to_run.append("android-api-contract-review")
         print("  - android-api-contract-review (检测到接口契约变更)")
         
-    print("\n---")
-    print(f"👉 AI 指令：代码已编写完毕，请在后续回合中，逐个调用以下 Skill 进行审查：")
-    for s in skills_to_run:
-        print(f"  - {s}")
-    print("注意：一次只调用一个，不要一次性全部执行！未列出的审查项请跳过。")
+    print_route_instructions(skills_to_run)
 
 
 if __name__ == "__main__":

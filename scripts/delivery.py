@@ -199,10 +199,9 @@ def cmd_route(args):
     print("  - android-change-review (默认)")
     print("  - android-code-quality-review (默认)")
     
-    # 动态路由：UI 层变更
+    # 动态路由：UI 层变更（当前策略：跳过自动 UI 审查，由用户人工核查）
     if ui_files:
-        skills_to_run.append("android-ui-verify")
-        print("  - android-ui-verify (检测到 UI 层变更，如存在设计稿/截图则进行还原验证，否则只做基础 UI 检查)")
+        print("  - [跳过] android-ui-verify (当前配置：UI 还原由用户人工核查，AI 不介入)")
         
     # 动态路由：网络接口层变更
     if api_files:

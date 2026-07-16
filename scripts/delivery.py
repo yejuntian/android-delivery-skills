@@ -69,10 +69,12 @@ def print_environment_rules():
     """打印环境检查后的编码约束，提示 AI 开始编码前后的必须行为。"""
     print("\n---")
     print("👉 AI 指令：环境检查完成。你已获准开始编码。")
-    print("【强制规约}:")
-    print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目“祖传”架构。")
-    print("  2. 编码后：必须自行运行 `./gradlew assembleDebug` (或对应构建命令)。如果出现报错或问题，必须强制调用 `android` CLI 相关命令（如查阅文档或诊断环境）进行错误排查和处理。处理完之后继续修改代码，直到编译成功！")
-    print("  3. 结束：编译通过后，输出简短总结，并必须结束当前回合！")
+    print("【强制规约】:")
+    print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
+    print("  2. 编码后（第一步）：必须自行运行 `./gradlew assembleDebug`。编译报错必须自行修复，直到编译通过。")
+    print("  3. 编码后（第二步）：编译通过后，必须立即运行 `./gradlew lintDebug`。遇到 Error 级别 Lint 警告必须自行修复，直到 Lint 0 Error 通过。")
+    print("  4. 双绿灯后：必须立即提交一个 Git 快照，Commit Message 使用中文语义化格式（如：特性(模块名): 功能描述）。")
+    print("  5. 结束：输出简短总结，并必须结束当前回合！")
 
 
 def get_diff_files():
@@ -199,7 +201,8 @@ def cmd_route(args):
     
     # 动态路由：UI 层变更
     if ui_files:
-        print("  - [已跳过] android-ui-verify (按配置，UI 校验已延后处理)")
+        skills_to_run.append("android-ui-verify")
+        print("  - android-ui-verify (检测到 UI 层变更，如存在设计稿/截图则进行还原验证，否则只做基础 UI 检查)")
         
     # 动态路由：网络接口层变更
     if api_files:

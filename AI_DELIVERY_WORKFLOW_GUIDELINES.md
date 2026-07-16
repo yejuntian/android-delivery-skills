@@ -161,3 +161,223 @@
 4. **I18n 一票否决**：绝不允许在代码或 XML 中出现硬编码中/英文用户可见文本，所有字符串必须抽取到 `strings.xml`。
 5. **A11y 强制**：所有非纯装饰的图标/按钮，必须写有实际意义的 `contentDescription`，缺一项直接视为不合格。
 6. **资源命名规范**：新建资源文件必须严格遵循前缀分类（`activity_`, `fragment_`, `item_`, `ic_`），严禁随意起名。
+
+---
+
+## 9. 需求变更中途处理 (Mid-Flight Requirement Change)
+
+> **触发时机**：当用户在阶段 2 编码过程中提出需求变更时（改交互、改字段、改业务规则）。
+
+### 变更影响评级
+
+收到变更后，AI 必须先输出差量评级，再决定下一步行动：
+
+| 等级 | 定义 | 处置方式 |
+|---|---|---|
+| **微调 (Patch)** | 不影响已有 BDD 条目，只改局部文案/样式/字段名 | 直接在当前阶段内修改，无需退回 |
+| **增量 (Incremental)** | 新增 1-2 条 BDD，不推翻已有验收标准 | 补充 BDD 条目，更新修改预览后继续编码 |
+| **重构 (Breaking)** | 推翻 ≥1 条已有 BDD，或影响核心架构/数据结构 | **强制退回阶段 1**，重新走完整 BDD 确认流程 |
+
+### 强制动作
+1. **禁止在未评级前直接改代码**：收到变更描述后，先输出上述评级表，等待用户确认等级后再行动。
+2. **Breaking 变更必须先 `git stash` 或提交当前快照**：防止重构过程中丢失已完成代码。
+3. **更新 `local.yaml` 中的 `requirement_file`**：若产品输出了新版需求文档，必须提示用户更新配置，避免下次 init 时仍读旧文档。
+
+---
+
+## 10. 交付完成标准 (Definition of Done)
+
+> AI 只有在以下所有条件全部满足后，才被允许声明"本次需求交付完成"。
+
+### DoD 清单（必须逐条核对并输出结论）
+
+```
+[ ] 1. BDD 全部验证
+      - 阶段 1 输出的每一条 Given/When/Then 是否均已在代码或测试中得到实现或覆盖？
+      - 未覆盖的条目必须标注原因（如依赖后端、待下一期实现）。
+
+[ ] 2. P0/P1 问题全部关闭
+      - android-stability-review 和 android-change-review 输出的所有 P0/P1 问题是否已修复或有明确的豁免说明？
+
+[ ] 3. Mock/Fake 代码核查
+      - 确认 FakeRepository、sampledata、hardcoded mock 等测试数据没有泄漏进 release 包。
+      - 可通过 `grep -r "FakeRepository\|TODO.*API\|sampledata" app/src/main/` 快速验证。
+
+[ ] 4. 构建与 Lint 双绿灯
+      - ./gradlew assembleDebug 编译通过。
+      - ./gradlew lintDebug 无新增 Error 级别警告。
+
+[ ] 5. 核心路径冒烟通过
+      - 至少一条主要验收路径（Happy Path）已在模拟器或真机上实际运行并通过。
+
+[ ] 6. QA 交接文档输出
+      - 输出一份面向人工 QA 的简明交接说明，包含：
+        - 测试入口（如何进入目标页面）
+        - 关键操作路径（正常流程 + 主要异常流程）
+        - 已知风险与暂未验证项
+        - 需要特别关注的 Android 版本或机型
+```
+
+输出格式示例：
+```
+## 交付完成声明
+- BDD 验收：✅ 全部覆盖 / ⚠️ 3/5 条覆盖，其余依赖后端
+- P0/P1：✅ 全部关闭 / 🔴 1 条 P0 待修复
+- Mock 泄漏：✅ 已核查无泄漏
+- 构建/Lint：✅ 双绿灯
+- 冒烟测试：✅ 主路径通过 / ⚠️ 未验证（无设备）
+- QA 交接：✅ 已输出
+```
+
+---
+
+## 11. Git 提交策略 (Git Commit Strategy)
+
+### 提交粒度规则
+
+| 时机 | 是否提交 | 理由 |
+|---|---|---|
+| 阶段 2 开始编码前，工作区干净 | 无需提交 | 作为基线，`check-env` 已校验 |
+| 编译首次通过（`assembleDebug` 绿灯）| **必须立即提交快照** | 防止后续 Lint 自我修复损坏代码 |
+| Lint 双绿灯通过 | **必须提交** | 作为阶段 2 的最终完成点 |
+| 每个独立功能模块完成 | 建议提交 | 便于 Code Review 和问题回溯 |
+
+### 提交 Message 格式（强制）
+
+与 `android-lint-rules` 仓库保持一致，**所有 Commit Message 必须使用中文**，遵循语义化提交规范：
+
+```
+格式：<type>(<scope>): <subject>
+
+type 可选值：
+  特性 (feat)  — 新功能
+  修复 (fix)   — Bug 修复
+  重构 (refactor) — 不改功能的代码重构
+  格式 (style) — 仅格式/空白/注释变化
+  性能 (perf)  — 性能优化
+  测试 (test)  — 新增或修改测试
+  构建 (build) — 构建/依赖变更
+  文档 (docs)  — 文档变更
+
+示例：
+  特性(用户中心): 新增头像裁剪上传功能
+  修复(首页Feed): 修复列表快速滑动时图片闪烁问题
+  重构(网络层): 统一错误码处理逻辑，迁移至 ErrorHandler
+```
+
+### 禁止事项
+- **严禁 `git commit -m "fix"` / `"update"` / "测试" 此类无意义提交**。
+- **严禁在 Lint 未通过时提交**（保护快照只提交编译通过节点）。
+- **严禁 force push 到 `main`/`master`**，除非用户明确授权。
+
+---
+
+## 12. 大需求拆分策略 (Large Feature Decomposition)
+
+> **触发条件**：需求涉及 ≥3 个页面、≥2 个模块、或预估编码时间超过单次 Session 能完成的范围。
+
+### 拆分原则：最小可验证单元 (MVU)
+
+每个 MVU 必须满足：
+1. **独立可编译**：单独完成后能编译通过，不依赖其他 MVU 的未完成部分。
+2. **独立可测试**：至少有 1 条可执行的验收路径（可以是 Mock 数据驱动）。
+3. **独立可回滚**：单个 MVU 出问题时，不影响其他已完成的 MVU。
+
+### 拆分输出格式
+
+在阶段 1 输出 BDD 时，若判定为大需求，**必须同时输出拆分计划**：
+
+```markdown
+## 需求拆分计划
+
+| MVU # | 范围 | BDD 覆盖 | 依赖项 | 预估状态 |
+|---|---|---|---|---|
+| MVU-1 | 页面骨架 + Mock 数据展示 | Given-1, When-1 | 无 | 待开始 |
+| MVU-2 | 接口对接 + 真实数据渲染 | Then-1, Given-2 | 后端 API Ready | 待开始 |
+| MVU-3 | 错误态 + 空态 + 边界处理 | When-2, Then-2 | MVU-2 完成 | 待开始 |
+```
+
+### Session 断点续传规则
+
+每次 Session 结束时，AI **必须将当前进度写入 `local.yaml`**（通过提示用户手动更新）：
+
+```yaml
+delivery:
+  phase: "coding"           # 当前所处阶段
+  current_mvu: "MVU-2"     # 当前正在进行的 MVU
+  completed_mvus: ["MVU-1"] # 已完成的 MVU 列表
+  last_commit: "abc1234"    # 最后一次 Git 快照的 commit hash
+```
+
+下次 AI 接手时，读取此配置，**从 `current_mvu` 续接**，不重复已完成工作。
+
+---
+
+## 13. Compose 专项规范 (Jetpack Compose Rules)
+
+> **触发条件**：项目中存在 `@Composable` 函数、或 diff 涉及 Compose 相关文件时生效。
+
+### 强制底线
+
+1. **`LaunchedEffect` key 规则**：
+   - 必须传入能唯一标识"副作用执行时机"的 key（如 `userId`、`orderId`）。
+   - **严禁使用 `LaunchedEffect(Unit)` 来代替 `init` 逻辑**（这会在 Recomposition 时重复触发）。
+   - 需要只执行一次的副作用，必须使用 `LaunchedEffect(key1 = true)` 或移到 ViewModel 的 `init {}` 块中。
+
+2. **`remember` vs `rememberSaveable`**：
+   - 普通的 UI 临时状态（如展开/折叠）用 `remember`。
+   - **需要在屏幕旋转或进程恢复后存活的状态**（如表单输入、滚动位置），必须用 `rememberSaveable`。
+   - 严禁把 ViewModel 内的状态用 `remember` 在 Composable 内复制一份。
+
+3. **State Hoisting 边界**：
+   - 遵循"状态下移，事件上提"原则。
+   - **严禁在叶子 Composable 中直接调用 ViewModel**。叶子组件只接收数据参数和事件回调。
+   - 页面级 Composable（Screen）才能持有 ViewModel 引用。
+
+4. **`derivedStateOf` 使用时机**：
+   - 只有当某个计算结果依赖的 State 变化频率**高于**该结果实际需要更新的频率时，才使用 `derivedStateOf`（防止 Recomposition 爆炸）。
+   - 对简单的属性访问直接用，不要过度使用 `derivedStateOf`。
+
+5. **Preview 状态覆盖要求**：
+   - 每个有多种展示状态的 Composable，必须提供对应的 `@Preview`：
+     - `LoadingPreview`
+     - `EmptyPreview`
+     - `ErrorPreview`
+     - `SuccessPreview`（含数据）
+   - **严禁只写一个 Happy Path Preview 就认为覆盖完整**。
+
+6. **性能红线**：
+   - 严禁在 `@Composable` 函数体内直接创建 `remember {}` 内的 Lambda 对象（导致每次 Recomposition 都创建新对象）。
+   - 列表场景必须为 `LazyColumn`/`LazyRow` 的每个 `item` 提供稳定的 `key`，防止列表动画错乱。
+
+---
+
+## 14. 埋点与 Analytics 验证 (Tracking & Analytics Validation)
+
+> **触发条件**：需求文档、PRD 或用户描述中出现"埋点"、"上报"、"统计"、"Analytics"、"事件"等关键字时生效。
+
+### 埋点三要素核查
+
+编码完成后，必须逐一核查：
+
+1. **触发时机是否正确**：
+   - 曝光埋点：在元素进入可视区域时触发，不是在页面 `onCreate` 时。
+   - 点击埋点：在用户点击的那一刻触发，而不是在请求成功后。
+   - 结果埋点（成功/失败）：必须在回调返回后触发，并携带结果状态参数。
+
+2. **参数字段是否完整**：
+   - 对照埋点文档（tracking plan），逐字段核查参数名（注意大小写、下划线vs驼峰）。
+   - 所有参数必须有空值/默认值兜底，防止因字段缺失导致埋点平台解析错误。
+   - **严禁把用户个人信息（手机号、UID 明文等 PII）直接作为埋点参数上报**。
+
+3. **Debug 与生产环境隔离**：
+   - Debug 包的埋点必须打印到日志（便于验证），同时**不得上报到生产数据看板**。
+   - 严禁在 release 包中保留 `Log.d("Analytics", ...)` 这类调试日志。
+   - 推荐使用项目已有的埋点封装（如 `AnalyticsHelper`、`TrackingManager`），严禁绕过封装直接调用底层 SDK。
+
+### 无埋点文档时的处理
+
+如果需求涉及埋点但没有提供埋点文档（tracking plan）：
+- **不得凭空编造埋点事件名和参数**。
+- 必须用 `TODO("需要埋点文档确认事件名和参数")` 占位。
+- 在 DoD 清单里标注"埋点验证：⚠️ 待埋点文档确认，当前为占位"。

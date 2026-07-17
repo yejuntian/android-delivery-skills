@@ -1,0 +1,6 @@
+# Journey Harness 构建产物与本地缓存 —— 不提交
+.gradle/
+build/
+local.properties
+*.apk
+captures/

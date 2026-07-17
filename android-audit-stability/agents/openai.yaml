@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android 运行时稳定性审计"
+  short_description: "系统检查崩溃、内存泄漏、ANR、协程并发和 Android 版本兼容风险"
+  default_prompt: "使用 $android-audit-stability 审计这次 Android 改动的运行时稳定性和兼容性风险。"

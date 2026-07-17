@@ -1,4 +1,0 @@
-interface:
-  display_name: "Android 测试交付"
-  short_description: "编码后测试用例与自动验证报告"
-  default_prompt: "使用 $android-test-delivery 为这次 Android 改动生成并执行测试交付检查。"

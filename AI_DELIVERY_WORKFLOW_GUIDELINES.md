@@ -64,11 +64,11 @@
 
 | Diff 涉及 | 触发 Skill |
 |---|---|
-| DTO、Api 接口、Repository、mapper | `android-api-contract-review` |
-| XML 布局、资源、Activity/Fragment/Compose，且有设计稿/截图 | `android-ui-verify` |
-| 任意业务逻辑变更 | `android-stability-review` + `android-code-quality-review` |
-| 任意变更 | `android-change-review` + `android-test-delivery` |
-| 修改了 XML 但无设计稿或截图 | 跳过 `android-ui-verify` 的设计稿一致性部分，说明"设计资料缺失，未验证" |
+| DTO、Api 接口、Repository、mapper | `android-verify-api-contract` |
+| XML 布局、资源、Activity/Fragment/Compose，且有设计稿/截图 | `android-verify-ui` |
+| 任意业务逻辑变更 | `android-audit-stability` + `android-review-code-quality` |
+| 任意变更 | `android-review-diff` + `android-test-and-fix` |
+| 修改了 XML 但无设计稿或截图 | 跳过 `android-verify-ui` 的设计稿一致性部分，说明"设计资料缺失，未验证" |
 
 > ⚠️ 绝对禁止编造虚假的审查通过报告。没有实际运行的测试只能标记"未验证"。
 
@@ -115,23 +115,23 @@
 
 ## 6. 专项 Skill 执行细节 (Per-Skill Critical Rules)
 
-### android-ui-verify 强制审查门限
+### android-verify-ui 强制审查门限
 在做 UI 验证时，**打勾"完成"之前**必须先输出 Markdown 表格，列出所有 `<TextView>`，逐一检查是用的 `android:text` 还是 `tools:text`，符合量化规则后才能逐项打勾完成。此外：
 - `targetSdk >= 35` 时**必须额外检查 edge-to-edge / WindowInsets**，确认内容未被状态栏或导航栏遮挡。
 - Figma 导出的 `.png` 文件可能实际是 SVG 内容，导入前必须验证格式，必要时转成 VectorDrawable。
 
-### android-code-quality-review AI 生成代码专项检查
+### android-review-code-quality AI 生成代码专项检查
 审查 AI 自己写的代码时，必须额外确认以下反模式是否存在：
 - 假设了项目中不存在的字段、接口或工具类。
 - 生成了看似完整、但实际无法运行的代码骨架。
 - **为了让编译通过而牺牲了业务正确性**（如把类型改成 `Any`、删除关键业务判断）。
 - Fragment 中的 `private lateinit var binding` 没有在 `onDestroyView` 中置空。
 
-### android-change-review 爆炸半径底线
+### android-review-diff 爆炸半径底线
 - 局部 Feature 的 Bug 修复，**严禁为了图省事去修改 Base 类、公共网络库或底层 Core 组件**，必须在局部作用域内消化。
 - 审查是否混入了与本次需求无关的格式化、重命名或重构。
 
-### android-test-delivery 黑盒状态驱动原则
+### android-test-and-fix 黑盒状态驱动原则
 - **严禁编写只验证内部方法调用次数的白盒单测**（如 `verify(repo).fetchData()`），这类测试阻碍重构且不反映业务。
 - 必须强制编写**基于状态驱动的黑盒测试**：给定特定 Action，断言最终吐出的 UI State 或返回数据是否正确。
 
@@ -197,7 +197,7 @@
       - 未覆盖的条目必须标注原因（如依赖后端、待下一期实现）。
 
 [ ] 2. P0/P1 问题全部关闭
-      - android-stability-review 和 android-change-review 输出的所有 P0/P1 问题是否已修复或有明确的豁免说明？
+      - android-audit-stability 和 android-review-diff 输出的所有 P0/P1 问题是否已修复或有明确的豁免说明？
 
 [ ] 3. Mock/Fake 代码核查
       - 确认 FakeRepository、sampledata、hardcoded mock 等测试数据没有泄漏进 release 包。

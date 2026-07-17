@@ -1,4 +1,0 @@
-interface:
-  display_name: "Android 接口契约审查"
-  short_description: "编码后接口实现与字段契约审查"
-  default_prompt: "使用 $android-api-contract-review 审查这次 Android 接口实现是否符合契约。"

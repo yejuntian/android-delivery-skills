@@ -1,4 +1,0 @@
-interface:
-  display_name: "Android 交付总入口"
-  short_description: "可用资料优先，确认后编码并审查验证"
-  default_prompt: "使用 $android-delivery-workflow 读取所有可用资料，外部链接不可读时记录风险但不默认终止；需求确认后直接编码，再按影响面完成审查和验证。"

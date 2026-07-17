@@ -9,7 +9,7 @@
 本脚本将整个 Android 交付工作流拆分为离散的、由 CLI 驱动的步骤：
 1. `init`: 负责需求提炼与验收标准制定 (BDD)。
 2. `check-env`: 负责编码前的环境安全校验与编码后的自动纠错约束。
-3. `route`: 负责编码后的动态审查分发 (SRP，基于 Git Diff 决定走哪些 Review)。
+3. `route`: 负责编码后的动态审查、测试与自修复闭环分发。
 
 通过输出带 "👉 AI 指令" 的终端文本，强制 AI 采取“走一步看一步”的精准执行策略，
 实现媲美高级 Android 开发工程师的稳定性与工程纪律。
@@ -73,8 +73,9 @@ def print_environment_rules():
     print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
     print("  2. 编码后（第一步）：必须自行运行 `./gradlew assembleDebug`。编译报错必须自行修复，直到编译通过。")
     print("  3. 编码后（第二步）：编译通过后，必须立即运行 `./gradlew lintDebug`。遇到 Error 级别 Lint 警告必须自行修复，直到 Lint 0 Error 通过。")
-    print("  4. 双绿灯后：必须立即提交一个 Git 快照，Commit Message 使用中文语义化格式（如：特性(模块名): 功能描述）。")
-    print("  5. 结束：输出简短总结，并必须结束当前回合！")
+    print("  4. 测试左移：按已确认 BDD 生成可执行测试，不得只保留 Given/When/Then 文本。")
+    print("  5. 闭环：任一测试、构建或 Lint 失败，定位根因并修改后重跑；同一根因连续 3 轮失败才暂停。")
+    print("  6. 不得自动提交 Git；只有用户明确要求时才提交。")
 
 
 def get_diff_files():
@@ -90,10 +91,12 @@ def get_diff_files():
 def print_route_instructions(skills_to_run):
     """打印路由审查指令，提示 AI 根据实际改动逐个触发对应 Skill。"""
     print("\n---")
-    print("👉 AI 指令：代码已编写完毕，请在后续回合中，逐个调用以下 Skill 进行审查：")
+    print("👉 AI 指令：逐个调用以下 Skill。发现 P0/P1 或测试失败必须修复并重跑，不得止于报告：")
     for s in skills_to_run:
         print(f"  - {s}")
-    print("注意：一次只调用一个，不要一次性全部执行！未列出的审查项请跳过。 ")
+    print("注意：一次只调用一个。修复导致 diff 变化时重新执行 route，直到路由稳定。")
+    print("最终必须执行 android-test-and-fix 全绿门禁；未执行项不得计为通过。")
+    print("UI 校验(android-verify-ui)在存在 UI 变更且具备验证条件时作为最后一项执行。")
 
 
 def cmd_init(args):
@@ -194,20 +197,32 @@ def cmd_route(args):
     ui_files = [f for f in diff_files if "res/layout" in f or "res/drawable" in f or "res/values" in f or "Activity.kt" in f or "Fragment.kt" in f or "Activity.java" in f or "Fragment.java" in f]
     api_files = [f for f in diff_files if "api" in f.lower() or "dto" in f.lower() or "request" in f.lower() or "response" in f.lower() or "repository" in f.lower()]
     
-    print("\n🚀 触发的专项审查：")
-    skills_to_run = ["android-change-review", "android-code-quality-review"]
-    print("  - android-change-review (默认)")
-    print("  - android-code-quality-review (默认)")
-    
-    # 动态路由：UI 层变更（当前策略：跳过自动 UI 审查，由用户人工核查）
-    if ui_files:
-        print("  - [跳过] android-ui-verify (当前配置：UI 还原由用户人工核查，AI 不介入)")
-        
-    # 动态路由：网络接口层变更
+    print("\n🚀 触发的专项审查(按执行顺序):")
+    print("\n【核心·业务逻辑层(必须先过,逐个执行)】")
+    skills_to_run = ["android-review-diff"]
+    print("  1. android-review-diff (默认:审查实际 diff 和影响范围)")
+
+    # 动态路由：网络接口层变更 —— 业务逻辑核心
     if api_files:
-        skills_to_run.append("android-api-contract-review")
-        print("  - android-api-contract-review (检测到接口契约变更)")
-        
+        skills_to_run.append("android-verify-api-contract")
+        print("  2. android-verify-api-contract (检测到接口契约变更)")
+    else:
+        print("  2. android-verify-api-contract (跳过:无接口契约变更)")
+
+    skills_to_run.extend(["android-review-code-quality", "android-audit-stability", "android-test-and-fix"])
+    print("  3. android-review-code-quality (默认:代码质量和架构一致性)")
+    print("  4. android-audit-stability (默认:稳定性和兼容性风险)")
+    print("  5. android-test-and-fix (必跑:测试、自修复和全绿门禁)")
+
+    # 动态路由：UI 层变更 —— 作为最后一步，Skill 内部按环境降级。
+    print("\n【最后·UI 验收(检测到 UI 变更时条件触发)】")
+    if ui_files:
+        skills_to_run.append("android-verify-ui")
+        print("  6. [条件必跑] android-verify-ui (检测到 UI 层变更)")
+        print("     └─ Skill 内部按设备情况降级(L1/L2/静态)。")
+    else:
+        print("  6. android-verify-ui (跳过:无 UI 层变更)")
+
     print_route_instructions(skills_to_run)
 
 

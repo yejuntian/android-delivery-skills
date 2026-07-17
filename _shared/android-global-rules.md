@@ -162,13 +162,13 @@
 
 每个 Skill 阶段必须只处理自己的职责，不得把其他阶段的判断、实现或审查混入当前 Skill。
 
-- `android-delivery-workflow`：只负责需求理解、影响面识别、阻塞确认、路由编排和最终汇总。
-- `android-change-review`：只负责实际 diff、业务逻辑、变更范围、架构边界、回归和上线风险审查。
-- `android-api-contract-review`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段和契约兼容审查。
-- `android-ui-verify`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态和可见轻交互的 UI 表现验证；不得判断或实现接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
-- `android-test-delivery`：只负责测试用例、验证命令、执行结果、失败项、未验证项和剩余风险。
-- `android-stability-review`：只负责崩溃、生命周期、协程、内存泄漏、ANR、资源释放和 Android 版本兼容风险。
-- `android-code-quality-review`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
+- `android-implement-and-verify`：负责完整需求交付，包括需求确认、BDD、测试物化、编码、路由编排、自修复、重验和最终门禁；不替代专项 Skill 的专业检查清单。
+- `android-review-diff`：只负责实际 diff、业务逻辑、变更范围、架构边界、回归和上线风险审查。
+- `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段和契约兼容审查。
+- `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态和可见轻交互的 UI 表现验证；不得判断或实现接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
+- `android-test-and-fix`：负责 BDD 测试物化、验证命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
+- `android-audit-stability`：只负责崩溃、生命周期、协程、内存泄漏、ANR、资源释放和 Android 版本兼容风险。
+- `android-review-code-quality`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
 
 如果当前 Skill 发现问题属于其他职责范围，只能记录为“需要路由到对应 Skill / 需要用户确认”，不得在当前 Skill 中扩展处理或替代其他 Skill。
 
@@ -178,23 +178,25 @@
 - 高风险变更必须二次确认，例如 Gradle、依赖、数据库迁移、登录、支付、权限、WebView、CI、签名、混淆、公共组件。
 - 不得伪造构建、测试、lint、截图、logcat 或设备验证结果。
 - 无法验证时必须说明原因、剩余风险和建议验证方式。
-- 编码后发现风险默认先报告，不自动扩大修复范围；用户明确说“修复”或“继续处理”后才修改。
+- 单独调用审查 Skill 时，发现风险默认先报告，不自动扩大修复范围；用户明确要求修复后才修改。
+- 由 `android-implement-and-verify` 编排完整交付时，视为用户已授权修复本次需求范围内的问题：P0/P1、验收测试失败、构建失败和 lint Error 必须立即修复并重跑；P2/P3 仅在低风险且不扩大需求范围时修复，否则列为剩余风险。
+- 自修复不得越过分支、生产数据、破坏性操作、关键资料缺失或需求边界。连续 3 轮仍因同一根因失败时暂停，提交证据和阻塞项。
 
 ## 外部智能体与工具规则
 
-- `android-delivery-workflow` 作为总入口；专项 Skill 默认放在编码后按实际改动调用，不要一开始无差别展开所有流程。
+- `android-implement-and-verify` 作为总入口；专项 Skill 默认放在编码后按实际改动调用，不要一开始无差别展开所有流程。
 - 编码后必须按实际 diff 轻量复核影响面：未修改 UI 相关文件时跳过 UI 还原验证；修改 UI 相关文件但没有设计稿、截图或可对比基准时跳过设计稿一致性验证，只做必要的 UI 基础检查；未修改接口、DTO、mapper、Repository 网络行为或缓存结构时跳过接口契约审查；如果 diff 与需求影响面不一致，必须重新标记并说明原因。
-- `android-change-review` 默认用于编码后审查实际 diff；只有用户要求先分析或变更范围阻塞时才前置。
-- `android-api-contract-review` 默认用于编码后审查接口实现；只有关键接口资料缺失导致无法安全编码时才前置。
-- `android-ui-verify` 默认用于编码后 UI 验证；只有关键设计资料缺失导致无法实现时才前置。
-- `android-test-delivery`、`android-stability-review`、`android-code-quality-review` 默认用于编码后验证和审查。
+- `android-review-diff` 默认用于编码后审查实际 diff；只有用户要求先分析或变更范围阻塞时才前置。
+- `android-verify-api-contract` 默认用于编码后审查接口实现；只有关键接口资料缺失导致无法安全编码时才前置。
+- `android-verify-ui` 默认用于编码后 UI 验证；只有关键设计资料缺失导致无法实现时才前置。
+- `android-test-and-fix`、`android-audit-stability`、`android-review-code-quality` 默认用于编码后验证和审查。
 - 涉及 Figma UI 还原时，编码前先输出一份精简 Design Spec Gate，至少包含 target screen、resource tokens、layout structure、component mapping、assets 和 risks/assumptions；这属于实现闸门，不等同于额外展开一轮完整分析报告。
 - Figma UI 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding；不要先堆完整 XML 再回头补资源。
 - Android CLI、Gradle、adb 只在需要真实构建、安装运行、自动测试、截图、抓日志、设备兼容验证时调用。
 - 需求理解阶段默认不调用 Android CLI；需求未确认前不得用构建或设备结果反推需求结论。
 - Firebase MCP 只在涉及 Firebase、Crashlytics、Remote Config、Analytics、AB 实验、线上崩溃或线上配置时调用。
 - 外部工具不可用、未登录、无权限、无设备或无网络时，必须如实报告，并给出替代验证方式。
-- 所有风险、异常、内存泄漏、ANR、兼容性和线上问题发现点默认先报告，不自动修复。
+- 单独审查时，风险、异常、内存泄漏、ANR、兼容性和线上问题默认先报告。完整交付模式按上述闭环规则处理。
 
 ## 大厂级工程规范与自适应约束
 

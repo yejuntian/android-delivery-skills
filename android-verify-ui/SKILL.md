@@ -1,6 +1,6 @@
 ---
 name: android-verify-ui
-description: Android UI 实现、实机表现与设计还原验证。用于涉及 XML、ViewBinding、DataBinding、Compose、Adapter、资源、主题或页面状态的改动，依据设计稿、截图或其他 UI 基准，通过 Journey、截图测试、adb 或静态检查验证布局、排版、间距、资源、状态和可见交互。检测到 UI 变更且存在验证基准时使用；无设计基准时只做可证实的基础检查，不声称设计一致。
+description: 手动独立执行的 Android UI 实机与设计验收闭环。用于涉及 XML、ViewBinding、DataBinding、Compose、Adapter、资源、主题或页面状态的改动，通过已有截图证据、Android CLI + adb/layout/screenshot、静态检查或人工截图对比，验证布局、排版、间距、资源和设计还原。用户明确要求验收 UI、对照设计稿、检查视觉实现或修复视觉偏差时使用；不得由交付 route 自动调用。Journey、截图测试等测试用例归 android-test-and-fix。
 ---
 
 # Android UI 实机与设计验收
@@ -17,8 +17,14 @@ description: Android UI 实现、实机表现与设计还原验证。用于涉�
 
 - **负责**：验证用户实际可见的布局、排版、间距、资源、页面状态、轻交互和设计还原。
 - **调用**：存在 UI diff 且有设计稿、截图、设备或截图测试基准时。
+- **执行方式**：用户手动单独调用；总交付流程只能提示，不得自动触发。
 - **不负责**：接口、Repository、数据存储、权限、支付、提交等不可由画面证明的业务正确性。
 - **验证底线**：没有真实截图或设备结果时，只能报告静态检查，不能声称完成截图级或实机验收。
+- **相对独立**：不调用 `android-test-and-fix` 的执行脚本；只读取其报告或截图证据。以后新增的截图采集、布局检查或视觉对比脚本必须放在本 Skill 的 `scripts/` 下。
+
+## 内置资源
+
+- `references/`：设计检查表和最终报告模板。
 
 ## 输入解析
 
@@ -70,7 +76,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 - 当前项目使用 XML、ViewBinding、DataBinding、Compose 或混合。
 - 是否已有 Design System、Theme、Color、Typography、Dimens、公共组件。
 - 文案、颜色、尺寸、图片资源应该放在哪里。
-- 是否已有截图测试框架，例如 Paparazzi、Roborazzi、Shot。
+- 是否已有 Paparazzi、Roborazzi、Shot 等测试产出的截图证据；只读取结果，不在本 Skill 中定义或执行测试用例。
 - 是否有现成页面、组件、Adapter、Composable 可复用。
 
 ## Design Spec Gate
@@ -113,64 +119,35 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 
 ## 验证方式
 
-按项目能力选择(从强到弱,缺哪层降哪层,严禁跳级伪造):
+用户单独调用本 Skill 后按以下顺序执行。Journey、Espresso、Compose UI Test 和 UIAutomator 等功能测试由 `android-test-and-fix` 负责；本 Skill 可引用其截图和测试结果作为视觉验收证据，但不得重新定义测试用例。
+
+### Step 0:UI 适用性门禁
+
+先读取需求与实际 diff。满足以下任一条件才进入 L1-L4：修改 XML/Compose、Activity/Fragment 可见状态、Adapter/列表展示、drawable/color/dimen/string/theme、WindowInsets、动画或用户可见交互。
+
+没有 UI 影响时：
+
+1. 不运行 adb、截图或设计稿比对。
+2. 输出 `SKIPPED_NO_UI`，列出判断依据和已检查的 diff。
+3. 将构建、业务逻辑、接口和稳定性验证交给对应 Skill。
 
 ### 能力分层(自动嗅探,缺哪层降哪层)
 
 | 层 | 能力 | 依赖 | 老项目可用 |
 |---|---|---|---|
-| L1 | **Journey 原生(壳项目隔离)** | `android` CLI + adb + 在线设备 + AGP9 壳项目 | ✅ 老项目 AGP 不动 |
-| L2 | **自建视觉断言** | adb 截图 + AI 视觉模型 + BDD Then | ✅ |
-| L3 | 项目已有截图测试 | Paparazzi/Roborazzi/Shot | 视项目 |
-| L4 | 人工截图对比 | adb 截图 + 人眼 | ✅ 兜底 |
+| L1 | 已有截图证据对比 | 测试报告、基准图和本次截图 | 视证据 |
+| L2 | **Android CLI 设备验收** | `android layout/screen` + adb + 视觉模型 | ✅ |
+| L3 | 静态 XML/Compose 检查 | 源码、设计基准 | ✅ 无设备兜底 |
+| L4 | 人工截图对比 | 设备截图 + 人工确认 | ✅ 最终兜底 |
 
-**嗅探顺序**:先确认 L2(底盘,永远可用) → 再尝试 L1(锦上添花) → L3 → L4。L1 跑不了不报错,静默降级到 L2。
+**固定顺序**：L1 → L2 → L3 → L4。环境失败时记录原因并降级，不得把工具或设备错误当成目标应用视觉缺陷。
 
-### L1:Journey 自动验证(壳项目隔离方案)
+### L1-L4:视觉验证
 
-让老项目也能用 AGP 9 的 Journey,核心是**解耦**:老项目 AGP 一点不动,Journey 跑在独立壳项目里,通过环境变量重定向到老项目包名。
-
-一键运行(自动完成:嗅探包名 → 构建老项目 APK → adb 安装 → 注入包名 → 跑 Journey → 解析结果):
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/run_journey.py --config profiles/local.yaml
-# 已装好 APK 时跳过构建: --skip-build
-```
-
-`run_journey.py` 内部流程:
-1. 调 `detect_package.py` 嗅探老项目 `applicationId`(失败则要求 local.yaml 手填 `app_package_name`)。
-2. 用老项目**自己的 AGP** 跑 `./gradlew :app:assembleDebug` 出 APK。
-3. `adb install -r` 装到设备。
-4. 壳项目设 `JOURNEYS_CUSTOM_APP_ID=<老项目包名>`。
-5. 壳项目跑 Journey 测试任务(AGP9 驱动;任务名以本机 AGP 实际为准,先 `./gradlew :harness-app:tasks --all | grep -i journey` 确认)。
-6. 退出码:0=全绿,1=环境错(不进自修),2=有失败(进自修循环)。
-
-**BDD → Journey 的物化规则**(测试左移,在 `init` 用户确认 BDD 后立即生成,不是编码后补):
-- 一条 BDD 的 `When` = 一个 Journey step 的操作。
-- 一条 BDD 的 `Then` = 同一 step 的断言(写进成功条件)。
-- Journey XML 放 `journey-harness/harness-app/src/main/journeys/[场景名].xml`。
-- 编写原则照搬官方:假设应用已在前台、语言明确、成功条件写进步骤、复杂步骤拆细。
-
-**Journey 是 AI 评估,有 flaky 风险**:同一 journey 多跑可能结果不一。`run_journey.py` 必须内建重试,**连续 2 次失败才算真挂**,避免自修复循环陷在假阴性里空转。
-
-**自修复闭环(Journey 失败时)**:
-1. 读 Gradle/Journey 输出的失败 step、Action Taken、Reasoning。
-2. 读失败截图(壳项目 `build/` 或 `adb pull`)。
-3. 对照 BDD 的 Then 定位是布局/资源/状态/逻辑哪层挂。
-4. 改老项目代码,重跑 `run_journey.py`。
-5. **连续失败超 3 次必须暂停**,向用户报告失败详情和截图,不无限循环。
-
-**L1 前置嗅探(任一缺失即降级到 L2)**:
-- `android` CLI 可用(`which android`;建议 `android update` 保持最新)。
-- adb + 在线设备(`adb devices` 有 device 项)。
-- 壳项目已初始化(`journey-harness/` 含 AGP9 + testSuites;首次需在 Android Studio 开一次同步拉依赖)。
-- 老项目能 `./gradlew assembleDebug` 通过。
-
-> ⚠️ Journey 是 AGP 9.0+ 的 **Studio Labs 预览功能**,XML schema/任务名可能随版本变。别把今天的 task 名写死成铁律。
-
-### L2:自建视觉断言(L1 不可用时的承重墙,永远可用)
-
-Journey 跑不了时,自己拼等价能力——**adb 截图 → AI 视觉模型对照 BDD Then 断言 → pass/fail + 失败原因**。全链路不依赖 AGP 版本,任何老项目都能用,且不绑死 Gemini(用你自己的模型)。
+- L1：优先复用 `android-test-and-fix` 或项目已有流程产出的截图和基准图；不在本 Skill 中运行 Paparazzi、Roborazzi、Shot 或重新设计测试用例。
+- L2：使用 `android layout --device` 获取结构，使用 `android screen capture` 或 adb 截图，再对照设计稿、截图基准和可见的 BDD Then 判断视觉结果。
+- L3：无设备时执行 XML/Compose、资源、TextView、Insets 和状态覆盖静态检查，只能标记“静态通过”。
+- L4：自动能力不覆盖的复杂视觉或交互状态，输出人工步骤、设备条件和预期视觉结果。
 
 ```
 adb exec-out screencap -p > 当前页.png
@@ -182,12 +159,7 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 失败 → 改布局 → 重新截图 → 再验(同样 ≤3 次重试)
 ```
 
-**为什么 L2 是护城河**:不依赖 Google 预览功能、不绑特定模型、老项目通吃。L1 是"恰好达标时跑得更省心",L2 才是"永远能跑的底盘"。L1 和 L2 **共用同一套 BDD Then 断言语义**,两边复用。
-
-### L3/L4:项目截图测试 / 人工对比
-
-- L3:优先运行项目现有截图测试命令(Paparazzi/Roborazzi/Shot),命令以项目实际为准。
-- L4:`adb exec-out screencap -p` 截图 + 人眼对比;对比时必须说明设备、分辨率、字体缩放、系统主题、状态栏和导航栏影响。
+- L2/L4 对比时必须记录设备、API、分辨率、density、字体缩放、语言、主题、方向、状态栏和导航栏。
 - 如需静态复核,优先按 `references/xml-review-checklist.md` 逐项过一遍,再决定是否继续大改布局。
   - **【强制审查门限】**:在打勾之前,您必须先在报告中输出一个 Markdown 表格,列出所有的 `<TextView>`,检查它们用的是 `android:text` 还是 `tools:text`,并判断其是否符合量化启发式规则(如测试长文本必须是 tools)。只有表格审查通过后,才能逐项打勾。
 - 编码完成后,如存在设计稿、截图或 UI 目录,必须对照设计资料说明 UI 是否已按参考还原。如果没有实际运行截图,只能说明未做截图级验证。
@@ -195,9 +167,8 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 
 ## 输出格式
 
-验证迭代结束后，请严格使用 `references/implementation-summary.md` 模板输出最终总结报告。必须包含：
-1. 验证修改的文件清单
-2. 新增或复用的资源
-3. 确认的布局与组件结构
-4. 视觉偏差或不得不做的妥协
-5. 最终的验证结果与截图比对结论
+每次调用都必须使用 `references/implementation-summary.md` 输出报告：
+
+- 有 UI：包含基准、环境、引擎降级链、命令、截图、偏差、自修复、未验证项和结论；可引用 `android-test-and-fix` 的 Journey 报告作为辅助证据。
+- 无 UI：输出最小 `SKIPPED_NO_UI` 报告，不启动验证工具。
+- 结论只能是 `PASS`、`STATIC_ONLY`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有实机/截图证据不得写 `PASS`。

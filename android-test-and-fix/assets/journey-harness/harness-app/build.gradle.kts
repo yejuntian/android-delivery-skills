@@ -3,7 +3,6 @@
 // AGP >= 9.0.0 才支持 testSuites { create("journeysTest") }。
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -23,19 +22,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    // 关键:Journeys 测试套件。AGP 9.0+ 专有 DSL。
-    testSuites {
-        create("journeysTest") {
-            // 指向壳项目自己的 debug variant(必须有,仅用于套件编译)
-            targetVariants += listOf("debug")
-        }
-    }
 }
 
-dependencies {
-    // Journeys 运行时依赖由 AGP testSuites 自动注入,这里保持空。
-}
+// 不要手写 Journey testSuites。使用当前 Android Studio 的
+// New > Journey Test 生成与 Studio Labs 版本匹配的 DSL、依赖和运行配置。

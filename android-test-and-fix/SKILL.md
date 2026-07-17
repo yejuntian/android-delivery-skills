@@ -1,6 +1,6 @@
 ---
 name: android-test-and-fix
-description: Android 测试驱动交付与自修复闭环。适用于 Android 需求、Bug 修复或功能迭代中，将已确认 BDD 物化为自动测试，按实际 diff 生成并执行单元测试、参数化测试、构建、lint、仪器或截图测试；测试失败时定位根因、修改代码并重跑，直到必需门禁全绿或连续三轮同根因受阻。完整交付时必须使用；单独调用时也可生成测试矩阵和验证报告。
+description: Android 测试驱动交付与自修复闭环。适用于 Android 需求、Bug 修复或功能迭代中，将已确认 BDD 物化为自动测试，按实际 diff 生成并执行单元测试、参数化测试、构建、lint、仪器、截图或 Journey UI 测试；低 AGP 老项目可通过独立 AGP 9 journey-harness 测试已安装 APK。测试失败时定位根因、修改代码并重跑，直到必需门禁全绿或连续三轮同根因受阻。完整交付时必须使用；单独调用时也可生成测试矩阵和验证报告。
 ---
 
 # Android 测试与失败自修复
@@ -19,13 +19,22 @@ description: Android 测试驱动交付与自修复闭环。适用于 Android �
 - **调用**：完整交付必跑；也可单独要求“补测试并修到通过”。
 - **不负责**：替代需求确认、接口契约来源、设计稿判断或发布上线。
 - **只报告模式**：用户明确要求“仅测试/仅报告”时不得修改生产代码；否则名称中的 `fix` 表示失败后必须修复并重跑。
+- **与 UI 验收协作**：不调用 `android-verify-ui`，只输出测试结果和截图证据供其独立做设计还原验收。
+
+## 内置资源
+
+- `scripts/run_journey.py`：Journey 预检、目标 APK 构建安装、重试、错误分类和测试报告生成。
+- `scripts/detect_package.py`：仅作源码阶段 applicationId 诊断；正式执行从 APK 读取真实包名。
+- `scripts/tests/`：Journey 执行器回归测试。
+- `assets/journey-harness/`：独立 AGP 9/Gradle 9.1 测试壳；不升级或修改低 AGP 目标项目。
+- `assets/journey-harness/JOURNEY_USAGE.md`：Journey 适用性、禁用场景、工具选择、壳初始化、配置、状态码和故障降级的完整指南；判断是否调用 Journey 或排查壳问题时必须读取。
 
 ## 闭环执行顺序
 
 1. 建立 `BDD -> 测试方法 -> 断言 -> 执行命令` 映射，确保每条 Then 有落点。
 2. 检索现有测试目录、依赖、基类、fixture、命名和 Gradle task；沿用项目范式。
 3. 为本次行为新增或补强测试。优先黑盒状态/输出断言，不测试实现细节。
-4. 先运行新增/受影响测试，再运行相关模块测试、构建和 lint；设备可用且影响 UI/系统能力时运行对应仪器或 Journey 测试。
+4. 先运行新增/受影响测试，再运行相关模块测试、构建和 lint；按业务需求、BDD 和实际 diff 选择测试类型。只有 Journey 适用性门禁通过时才调用 `run_journey.py`。
 5. 失败时保留原始命令、退出码和首个根因，修改最小范围代码后重跑。生产缺陷修生产代码；测试本身错误才修测试。
 6. 每轮修复后重跑失败项和受影响回归集。连续 3 轮同一根因仍失败才暂停。
 7. 全部必需门禁通过后才输出交付结论。
@@ -83,6 +92,77 @@ description: Android 测试驱动交付与自修复闭环。适用于 Android �
 - CLI：Gradle 构建、lint、adb 安装、截图、logcat。
 - Manual：需要人工确认的设计稿、复杂交互、第三方环境、真实后端数据。
 
+## Journey UI 测试
+
+Journey 属于 UI 功能测试用例，由本 Skill 根据已确认 BDD 生成和执行；`android-verify-ui` 只消费截图或结果做设计还原验收，不管理 Journey 用例。
+
+不得要求用户编写或提供 Journey XML、action/step、文件名或 Gradle task。必须先从已确认需求、BDD、实际 diff、现有测试和页面入口自动生成当前需求的测试用例；只有无法确定业务前置条件或预期结果时，才询问缺失的业务含义。`NO_JOURNEY_FOUND` 是本 Skill 需要补齐测试物化的内部门禁，不是把技术工作转交给用户的提示。
+
+### 适用性门禁
+
+生成 Journey 前先同时检查需求和实际 diff，不得因为项目有界面就默认运行：
+
+| UI 影响 | Journey 处理 | 状态 |
+| --- | --- | --- |
+| 无 UI 文件、可见状态或用户交互变化 | 不生成用例，不启动 SDK、设备或壳 | `SKIPPED_NO_UI` |
+| 只有布局、颜色、字号、间距、图片等视觉变化 | 不运行 Journey；按需运行截图测试，并提示单独视觉验收 | `SKIPPED_VISUAL_ONLY` |
+| 用户操作、导航、输入、可见状态流转或系统交互变化 | 自动从 BDD 生成 Journey 并执行 | `PASS` / `NO_JOURNEY_FOUND` / 失败状态 |
+
+`NO_JOURNEY_FOUND` 只允许出现在已经判定为“UI 行为/状态流转需要 Journey”之后。无 UI 或纯视觉需求使用对应 `SKIPPED_*`，不算测试失败，也不得要求用户补 Journey 场景。
+
+Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、实际 diff、前置条件和预期结果自动判断，不得要求用户选择 `none`、`visual` 或 `behavior`。调用前在测试矩阵中记录“Journey：适用/不适用 + 原因”。只有同时满足以下条件才调用 Journey：
+
+1. 本次需求改变用户操作、导航、输入或可见状态流转。
+2. Given 前置条件可以稳定准备，不依赖验证码、真实支付或不可控第三方环境。
+3. Then 可以通过页面上可见的文本、控件或状态判断。
+4. 不要求像素级精度、复杂手势、精确时序或内部数据证明。
+
+任一条件不满足时，自动选择 Unit、Espresso、Compose UI Test、UIAutomator、截图测试或人工路径，不得启动 Journey 壳。
+
+采用“两次判断、一次执行”：
+
+1. **需求确认后初判**：根据已确认 BDD 标记 `候选适用 / 初判不适用`，用于提前设计测试。候选适用时可以生成 Journey 用例草稿，但不得启动设备或壳。
+2. **编码完成后终判**：读取实际 diff、最终页面入口和可执行前置条件，重新判断并记录最终原因。
+3. **只执行一次**：只有终判为适用时才物化最终 XML，并以 `--ui-impact behavior` 调用脚本；终判不适用时选择其他测试，不调用 Journey。
+
+需求初判与实际 diff 不一致时，以编码后的终判为准，并在测试报告中说明变化原因。
+
+### BDD 物化规则
+
+- 把 `Given` 转成可复现前置条件：启动入口、DeepLink、登录/数据、权限、语言、主题、字体和方向。壳只负责启动应用，不能隐式满足前置条件。
+- 把每个 `When` 拆成独立 action，避免一个 action 包含多个操作。
+- 把每个 `Then` 写成独立 verify/check action，不得只隐含在操作描述中。
+- 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/[场景名].xml`；也可用 `testing.journey_harness.cases_dir` 或 `--journeys-dir` 指定。至少包含一个有效 action/step，拒绝零测试假绿。
+- 不把需求用例长期保存在共享壳源码中。执行器每次只把当前用例集同步到壳的暂存目录，并清除上一次运行残留的 XML，防止跨项目串用测试。
+- 多指、长按、双击、旋转/折叠、精确计数或复杂条件不稳定时，改用项目已有 Compose/Espresso/UIAutomator，或明确列为人工测试。
+
+### 壳项目执行
+
+目标项目路径默认读取 `../profiles/local.yaml` 的全局 `project_path`，也允许通过 `--config` 指定项目自己的配置文件：
+
+```bash
+python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
+  --config ai-skills/android-delivery-skills/profiles/local.yaml \
+  --ui-impact behavior
+# 已安装目标 APK 时可使用 --skip-build；此时必须配置 app_package_name。
+# 临时指定其他用例目录时可使用 --journeys-dir /path/to/journeys。
+```
+
+`--ui-impact` 是 Skill 内部必填的安全参数，由模型的适用性判断产生，不要求用户提供。未判断时脚本拒绝启动。通常无 UI 或纯视觉需求不调用本脚本；需要结构化记录跳过原因时，模型才执行 `--ui-impact none` 或 `--ui-impact visual`，脚本会直接写报告并以 0 退出，不读取配置、不检查 SDK、不连接设备。
+
+执行器必须：
+
+1. 拒绝零 Journey、空 action/step 和成功日志中的 `NO-SOURCE`/`0 tests`。
+2. 使用目标项目自己的 Gradle wrapper 构建指定 module/variant，不改变其 AGP。
+3. 从最终 APK 读取 applicationId，安装后通过 `pm path` 校验实际包名。
+4. 通过独立 AGP 9 壳注入 `JOURNEYS_CUSTOM_APP_ID`，并隔离 `GRADLE_USER_HOME`。
+5. 仅把连续两次带明确断言信号的 UI 失败归类为 `APP_ASSERTION_FAILED`；它只允许进入根因分析，不证明生产代码必然有错。壳、认证、设备、XML、构建和安装错误不得触发目标代码修复。
+6. 始终输出 `assets/journey-harness/build/reports/journey-harness/result.json` 和同目录 `result.md`，记录状态、命令、设备、包名、APK、task、用例数、轮次和截图。
+
+退出码：`0` 表示 Journey 真实执行通过；`1` 表示环境或壳不可用，只能换用其他测试方式；`2` 表示连续两次真实 UI 断言失败，可进入根因分析。确认是生产缺陷才修目标代码；用例、数据或前置条件错误只修测试侧。
+
+首次启用壳项目时，使用当前 Android Studio 的 `New > Journey Test` 生成与 Studio Labs 版本匹配的 XML schema、testSuites、依赖和任务。该操作只初始化共享壳一次，不要求用户为每个目标项目重复执行。
+
 ## 命令选择规则
 
 不得写死命令。先识别项目模块和已有命令，再选择最小验证：
@@ -100,7 +180,7 @@ description: Android 测试驱动交付与自修复闭环。适用于 Android �
 ## 全绿门禁
 
 - 必需：新增/受影响测试、相关模块测试、assemble、lint 0 Error。
-- 条件必需：UI/系统能力变更且设备可用时的仪器/Journey/截图测试。
+- 条件必需：按业务影响选择仪器或截图测试；Journey 仅在适用性门禁通过且设备可用时执行。
 - 所有 BDD Then 均已覆盖；无法自动化的项有可复现人工步骤和原因。
 - 失败数为 0，P0/P1 测试缺口为 0。未执行项不得计为通过。
 

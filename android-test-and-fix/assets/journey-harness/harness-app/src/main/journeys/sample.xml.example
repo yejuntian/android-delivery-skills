@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<journey name="Sample UI verification">
+    <description>Copy this file to a .xml file and replace every action.</description>
+    <actions>
+        <action>Tap the "Home" icon.</action>
+        <action>Verify that the Home screen is visible.</action>
+    </actions>
+</journey>

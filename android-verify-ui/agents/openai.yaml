@@ -1,4 +1,4 @@
 interface:
   display_name: "Android UI 实机与设计验收"
-  short_description: "通过实机、Journey、截图或静态检查验证页面状态和设计还原"
-  default_prompt: "使用 $android-verify-ui 验证这次 Android UI 的实机表现、页面状态和设计还原。"
+  short_description: "手动独立验收 Android UI 布局、截图、资源和设计还原"
+  default_prompt: "使用 $android-verify-ui 单独验收这次 UI，对照设计稿或截图检查布局、资源和视觉偏差。"

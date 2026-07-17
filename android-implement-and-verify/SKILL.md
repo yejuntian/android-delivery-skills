@@ -26,8 +26,8 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 - `android-review-diff`：编码后审查实际 diff、影响范围、无关改动和回归风险；只有变更范围不清或用户要求先分析时才前置。
 - `android-verify-api-contract`：编码后审查接口实现是否符合契约；只有关键接口资料缺失、继续写会脑补字段或 endpoint 时才前置。
-- `android-verify-ui`：编码后做 UI 还原、截图或视觉验证；只有缺少必要设计资料且无法低风险实现时才前置提问。
-- `android-test-and-fix`：BDD 确认后物化自动测试，编码后执行测试矩阵、构建、单测、lint、仪器测试；失败时驱动自修复。
+- `android-verify-ui`：独立手动收尾能力；总入口检测到 UI 变更时只提示用户单独调用，不自动执行。
+- `android-test-and-fix`：BDD 确认后物化自动测试，编码后执行测试矩阵、构建、单测、lint、Journey、截图或仪器测试；失败时驱动自修复。
 - `android-audit-stability`：编码后检查崩溃、内存泄漏、ANR、协程、生命周期和 Android 版本兼容。
 - `android-review-code-quality`：编码后检查架构一致性、最小修改、资源规范、重复逻辑和测试覆盖。
 
@@ -124,7 +124,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 编码后必须基于实际 diff 快速复核影响面，不做全量矩阵分析，只判断是否触发专项审查：
 
-- 修改 `res/layout`、`res/drawable`、`res/values`、Activity、Fragment、Adapter、Composable，且存在设计稿、截图或可对比基准：触发 `android-verify-ui`。
+- 修改 `res/layout`、`res/drawable`、`res/values`、Activity、Fragment、Adapter、Composable，且存在设计稿、截图或可对比基准：提示用户单独运行 `android-verify-ui`，不加入自动队列。
 - 修改 UI 相关文件但没有设计稿、截图或可对比基准：跳过设计稿一致性验证，只在变更审查、稳定性审查或代码质量审查中做必要的 UI 基础检查。
 - 修改 Api、Service、Request、Response、DTO、mapper、网络 Repository、缓存字段：触发 `android-verify-api-contract`。
 - 修改 Entity、Dao、Database、DataStore、SharedPreferences、缓存结构：触发数据兼容检查。
@@ -141,12 +141,13 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
   - 除非业务逻辑改变了 UI 状态展示，否则不做 UI 还原验证。
   - 除非业务逻辑改变了接口字段、请求参数、DTO、mapper、Repository 网络行为或缓存结构，否则不做接口契约审查。
 - UI 变更：
-  - 有设计稿、截图或可对比基准时包含 `android-verify-ui`。
+  - 有设计稿、截图或可对比基准时提示单独运行 `android-verify-ui`。
   - 没有设计稿、截图或可对比基准时跳过设计稿一致性验证，并说明“设计资料缺失，未验证与设计稿一致”。
+  - 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断 Journey 适用性，不向用户询问测试工具选择。只有布局、颜色、字号、间距或资源变化时标记 `SKIPPED_VISUAL_ONLY`；涉及点击、输入、导航、可见状态流转或系统交互且前置稳定、结果可见时，才生成并执行 Journey。
   - 如果只是 UI 展示，不涉及接口字段或请求逻辑，跳过 `android-verify-api-contract`。
 - 接口 / 数据契约变更：
   - 必须包含 `android-verify-api-contract`。
-  - 如果接口变更影响 UI 状态展示，再包含 `android-verify-ui`。
+  - 如果接口变更影响 UI 状态展示，提示单独运行 `android-verify-ui`。
 - 数据存储 / 缓存变更：
   - 必须额外关注旧数据兼容、迁移、默认值、清缓存、降级路径和回滚风险。
 - 系统能力变更：
@@ -181,7 +182,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env --config
 ```
 
 **AI 动作**：环境检查通过后，你已获准编码，但必须遵守以下强制规约：
-1. **先物化测试**：把已确认 BDD 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 按能力生成 Compose/Espresso/Journey/截图测试。不得只输出 BDD 文本。
+1. **先物化测试**：把已确认 BDD 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 测试由 `android-test-and-fix` 按能力生成 Compose/Espresso/Journey/截图测试。Journey 此时只做候选初判和用例草稿，不启动壳；编码后结合实际 diff 终判，适用才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
 3. **UI 逻辑接管 (最小化修改)**：如果前置步骤生成纯 XML，主动补充对应的 Kotlin ViewBinding 和业务代码。
 4. **首次验证**：编码后运行受影响测试、`assemble` 和 `lint`。命令必须按项目模块与 variant 动态选择。
@@ -201,7 +202,8 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route --config pro
 - 不要自行脑补脚本未列出的审查项。
 - P0/P1 发现后立即修复，并从受影响的最小测试集开始重跑；低风险 P2/P3 可修复时一并关闭。
 - 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
-- 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更且具备验证资料/设备时再执行 `android-verify-ui`。
+- 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更时在报告中提示用户另行调用 `android-verify-ui`，不得在自动 route 中执行。
+- `android-test-and-fix` 在此阶段结合实际 diff 对 Journey 做最终判定；需求阶段的候选结论不能直接触发 Journey 执行。
 
 ### Definition of Done
 

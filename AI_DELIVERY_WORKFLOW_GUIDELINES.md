@@ -65,7 +65,7 @@
 | Diff 涉及 | 触发 Skill |
 |---|---|
 | DTO、Api 接口、Repository、mapper | `android-verify-api-contract` |
-| XML 布局、资源、Activity/Fragment/Compose，且有设计稿/截图 | `android-verify-ui` |
+| XML 布局、资源、Activity/Fragment/Compose，且有设计稿/截图 | 只提示用户单独运行 `android-verify-ui`，不进自动 route |
 | 任意业务逻辑变更 | `android-audit-stability` + `android-review-code-quality` |
 | 任意变更 | `android-review-diff` + `android-test-and-fix` |
 | 修改了 XML 但无设计稿或截图 | 跳过 `android-verify-ui` 的设计稿一致性部分，说明"设计资料缺失，未验证" |
@@ -134,6 +134,9 @@
 ### android-test-and-fix 黑盒状态驱动原则
 - **严禁编写只验证内部方法调用次数的白盒单测**（如 `verify(repo).fetchData()`），这类测试阻碍重构且不反映业务。
 - 必须强制编写**基于状态驱动的黑盒测试**：给定特定 Action，断言最终吐出的 UI State 或返回数据是否正确。
+- Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test 和 UIAutomator 等测试用例统一由 `android-test-and-fix` 生成和执行。
+- `android-verify-ui` 只复用测试截图或自行采集页面证据做设计还原验收，不得重新定义或执行测试用例。
+- Journey 采用“两次判断、一次执行”：需求确认后只做候选初判和用例设计，编码后结合实际 diff 终判，只有终判适用才启动 Journey；不得要求用户选择测试工具。
 
 ---
 

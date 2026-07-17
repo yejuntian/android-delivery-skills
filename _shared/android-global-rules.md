@@ -165,8 +165,9 @@
 - `android-implement-and-verify`：负责完整需求交付，包括需求确认、BDD、测试物化、编码、路由编排、自修复、重验和最终门禁；不替代专项 Skill 的专业检查清单。
 - `android-review-diff`：只负责实际 diff、业务逻辑、变更范围、架构边界、回归和上线风险审查。
 - `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段和契约兼容审查。
-- `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态和可见轻交互的 UI 表现验证；不得判断或实现接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
-- `android-test-and-fix`：负责 BDD 测试物化、验证命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
+- `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态和可见轻交互的 UI 表现验证；可以复用测试产出的截图，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
+- `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器测试物化、验证命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
+- Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`，只有 UI 行为或可见状态流转变化才生成 Journey；`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
 - `android-audit-stability`：只负责崩溃、生命周期、协程、内存泄漏、ANR、资源释放和 Android 版本兼容风险。
 - `android-review-code-quality`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
 
@@ -188,7 +189,7 @@
 - 编码后必须按实际 diff 轻量复核影响面：未修改 UI 相关文件时跳过 UI 还原验证；修改 UI 相关文件但没有设计稿、截图或可对比基准时跳过设计稿一致性验证，只做必要的 UI 基础检查；未修改接口、DTO、mapper、Repository 网络行为或缓存结构时跳过接口契约审查；如果 diff 与需求影响面不一致，必须重新标记并说明原因。
 - `android-review-diff` 默认用于编码后审查实际 diff；只有用户要求先分析或变更范围阻塞时才前置。
 - `android-verify-api-contract` 默认用于编码后审查接口实现；只有关键接口资料缺失导致无法安全编码时才前置。
-- `android-verify-ui` 默认用于编码后 UI 验证；只有关键设计资料缺失导致无法实现时才前置。
+- `android-verify-ui` 是编码后手动独立 UI 验收闭环；总入口和 route 只能提示，不得自动调用。
 - `android-test-and-fix`、`android-audit-stability`、`android-review-code-quality` 默认用于编码后验证和审查。
 - 涉及 Figma UI 还原时，编码前先输出一份精简 Design Spec Gate，至少包含 target screen、resource tokens、layout structure、component mapping、assets 和 risks/assumptions；这属于实现闸门，不等同于额外展开一轮完整分析报告。
 - Figma UI 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding；不要先堆完整 XML 再回头补资源。

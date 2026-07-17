@@ -3,7 +3,10 @@
 ================================================================================
 脚本名称：detect_package.py
 用    途：自动嗅探目标 Android 项目的 applicationId（包名）。
-         供 journey-harness 壳项目通过 JOURNEYS_CUSTOM_APP_ID 注入使用。
+         仅作源码阶段诊断；正式运行以实际 APK 中的 applicationId 为准。
+
+局限说明：源码正则无法可靠解析 applicationIdSuffix、productFlavor、约定插件或动态
+Gradle 值。正式 Journey 执行必须使用 apkanalyzer/aapt 从最终 APK 读取真实包名。
 
 嗅探优先级（从可靠到兜底）：
 1. 各 app 模块 build.gradle(.kts) 中的 applicationId =
@@ -16,9 +19,7 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -62,7 +63,7 @@ def extract_manifest_package(project_path: Path) -> list[str]:
 
 
 def detect(project_path: str) -> dict:
-    """主嗅探逻辑,返回 {default, all, source}。"""
+    """执行源码级包名嗅探，返回 {default, all, source}，结果仅供诊断。"""
     root = Path(project_path)
     if not root.is_dir():
         return {"error": f"项目路径无效: {project_path}"}

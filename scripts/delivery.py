@@ -96,7 +96,7 @@ def print_route_instructions(skills_to_run):
         print(f"  - {s}")
     print("注意：一次只调用一个。修复导致 diff 变化时重新执行 route，直到路由稳定。")
     print("最终必须执行 android-test-and-fix 全绿门禁；未执行项不得计为通过。")
-    print("UI 校验(android-verify-ui)在存在 UI 变更且具备验证条件时作为最后一项执行。")
+    print("UI 校验(android-verify-ui)不进自动队列；检测到 UI 变更时提示用户单独执行。")
 
 
 def cmd_init(args):
@@ -212,14 +212,13 @@ def cmd_route(args):
     skills_to_run.extend(["android-review-code-quality", "android-audit-stability", "android-test-and-fix"])
     print("  3. android-review-code-quality (默认:代码质量和架构一致性)")
     print("  4. android-audit-stability (默认:稳定性和兼容性风险)")
-    print("  5. android-test-and-fix (必跑:测试、自修复和全绿门禁)")
+    print("  5. android-test-and-fix (必跑:测试、自修复和全绿门禁；Journey 仅适用时执行)")
 
-    # 动态路由：UI 层变更 —— 作为最后一步，Skill 内部按环境降级。
-    print("\n【最后·UI 验收(检测到 UI 变更时条件触发)】")
+    # UI 验收依赖设备和设计基准，保持为独立手动闭环。
+    print("\n【独立·UI 验收(不进自动队列)】")
     if ui_files:
-        skills_to_run.append("android-verify-ui")
-        print("  6. [条件必跑] android-verify-ui (检测到 UI 层变更)")
-        print("     └─ Skill 内部按设备情况降级(L1/L2/静态)。")
+        print("  6. [建议单独执行] android-verify-ui (检测到 UI 层变更)")
+        print("     └─ 只做截图与设计还原；Journey 功能测试由 android-test-and-fix 负责。")
     else:
         print("  6. android-verify-ui (跳过:无 UI 层变更)")
 

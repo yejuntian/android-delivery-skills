@@ -11,7 +11,7 @@
 4. 重试前置、skip-build、截图过滤、超时和敏感命令脱敏。
 5. 同步当前需求用例时清理壳暂存 XML，避免串用缓存。
 6. Gradle 用户缓存、项目缓存、壳构建输出和兜底报告位于 Skill 目录外，并支持显式环境变量覆盖。
-7. Journey 初始化缺失、FULL/PARTIAL 适用性和原子 BDD/Then 证据不会被静默忽略。
+7. Journey 初始化缺失、确认需求修订、FULL/PARTIAL 适用性和原子证据不会被静默忽略。
 
 隔离说明：所有目录和文件均位于临时目录；测试不连接设备、不运行 Gradle、
 不安装 APK，也不修改真实 Android 项目。
@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 import os
@@ -29,6 +30,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 
@@ -39,6 +41,12 @@ run_journey = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = run_journey
 SPEC.loader.exec_module(run_journey)
+
+# Journey 目录名包含连字符，无法作为常规 Python 包导入；沿用被测脚本已建立的
+# Skill 根目录，通过动态模块对象访问修订工具，避免 IDE 把跨目录静态导入误报为缺失。
+REQUIREMENT_SNAPSHOT: Any = importlib.import_module("scripts.requirement_snapshot")
+apply_requirement_revision = REQUIREMENT_SNAPSHOT.apply_requirement_revision
+write_requirement_snapshot = REQUIREMENT_SNAPSHOT.write_requirement_snapshot
 
 
 class RunJourneyTest(unittest.TestCase):
@@ -281,6 +289,111 @@ class RunJourneyTest(unittest.TestCase):
         with mock.patch.object(run_journey, "baseline_path_for_config", return_value=baseline):
             scoped = run_journey.requirement_scope_id(config_path, config)
         self.assertTrue(scoped.startswith("run-123-"))
+
+    def test_confirmed_revision_keeps_unconfirmed_cases_out_of_scope(self):
+        """验证用例目录只随确认修订变化，编辑中的候选需求不会污染当前 Journey。"""
+        root = Path(tempfile.mkdtemp())
+        config_path = root / "profiles" / "local.yaml"
+        config_path.parent.mkdir()
+        requirement = root / "requirement" / "requirement.md"
+        requirement.parent.mkdir()
+        requirement.write_text("显示错误", encoding="utf-8")
+        snapshot = root / "snapshot.json"
+        baseline = root / "baseline.json"
+        baseline.write_text(json.dumps({"id": "run-123"}), encoding="utf-8")
+        write_requirement_snapshot(
+            snapshot, requirement, "显示错误", requirement_id="run-123",
+        )
+        apply_requirement_revision(
+            snapshot,
+            requirement,
+            "显示错误",
+            {
+                "version": 1,
+                "requirement_id": "run-123",
+                "base_revision": 0,
+                "scope": "SAME_REQUIREMENT",
+                "changes": [{
+                    "id": "BDD-001/T1",
+                    "change_type": "ADDED",
+                    "decision": "CONFIRMED",
+                    "text": "显示错误",
+                    "required": True,
+                }],
+            },
+        )
+        config = {
+            "workspace_root": str(root),
+            "requirement_dir": "requirement",
+            "requirement_file": "requirement.md",
+        }
+        with (
+            mock.patch.object(run_journey, "baseline_path_for_config", return_value=baseline),
+            mock.patch.object(
+                run_journey, "requirement_snapshot_path_for_config", return_value=snapshot,
+            ),
+        ):
+            confirmed_scope = run_journey.requirement_scope_id(config_path, config)
+            requirement.write_text("显示错误并允许重试", encoding="utf-8")
+            apply_requirement_revision(
+                snapshot,
+                requirement,
+                "显示错误并允许重试",
+                {
+                    "version": 1,
+                    "requirement_id": "run-123",
+                    "base_revision": 1,
+                    "scope": "SAME_REQUIREMENT",
+                    "changes": [
+                        {
+                            "id": "BDD-001/T1",
+                            "change_type": "UNCHANGED",
+                            "decision": "CONFIRMED",
+                        },
+                        {
+                            "id": "BDD-001/T2",
+                            "change_type": "ADDED",
+                            "decision": "PENDING",
+                            "text": "允许重试",
+                            "required": True,
+                            "reason": "等待产品确认",
+                        },
+                    ],
+                },
+            )
+            unconfirmed_scope = run_journey.requirement_scope_id(config_path, config)
+
+        self.assertEqual(confirmed_scope, unconfirmed_scope)
+        self.assertIn("-r1-", confirmed_scope)
+
+    def test_behavior_journey_blocks_unconfirmed_requirement(self):
+        """验证需求候选仍待确认时不生成或执行行为型 Journey。"""
+        root = Path(tempfile.mkdtemp())
+        harness = root / "harness"
+        with (
+            mock.patch.object(run_journey, "load_config", return_value={}),
+            mock.patch.object(
+                run_journey,
+                "delivery_context",
+                return_value={"requirement_status": "PENDING_CONFIRMATION"},
+            ),
+            mock.patch.object(run_journey, "resolve_journeys_dir") as resolve_cases,
+        ):
+            exit_code = run_journey.main([
+                "--config", str(root / "local.yaml"),
+                "--harness-dir", str(harness),
+                "--ui-impact", "behavior",
+                "--applicability", "FULL",
+                "--covered-then", "BDD-001/T1",
+            ])
+
+        self.assertEqual(1, exit_code)
+        resolve_cases.assert_not_called()
+        result = json.loads(
+            run_journey.resolve_fallback_result_path(harness).read_text(encoding="utf-8")
+        )
+        self.assertEqual(run_journey.HARNESS_UNAVAILABLE, result["status"])
+        self.assertIn("尚未全部确认", result["message"])
 
     def test_stages_only_current_journeys(self):
         """验证同步当前用例前清除旧 XML，避免上一需求残留被执行。"""

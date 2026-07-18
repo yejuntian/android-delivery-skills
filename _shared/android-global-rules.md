@@ -40,8 +40,11 @@
 
 ### 需求验证与证据完整性
 
-- `init` 只读取和比较需求，不得创建、覆盖或删除 Git 基线；Git 基线和已确认需求快照只允许在干净工作区通过 `check-env` 一起建立。
-- 同一需求中途变化时，对比已确认快照与当前正文，按 `ADDED/CHANGED/REMOVED/UNCHANGED` 汇总；保留未变化 ID，删除项等待确认，不自动删代码或重建需求起点。
+- `init` 只读取和比较需求，不得创建、覆盖或删除 Git 基线；`check-env` 只在干净工作区建立 Git 起点和需求起点，后续需求修订不得重建该 Git 基线。
+- 同一需求中途变化时，必须对比最近确认修订与当前正文，逐项记录 `ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED` 和 `CONFIRMED/PENDING/REJECTED/CONFLICT`；待定或冲突不得推进修订，拒绝项不得进入总需求。
+- 未变化 BDD/Then 保留 ID；删除已实现义务必须明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`，不得把文本删除直接等同于删除公共代码。
+- 用户确认的聊天补充必须同步到 `requirement_file`；需求确认命令只更新需求修订和有效义务，不修改 Git。最终报告义务集合必须与最近确认修订完全一致。
+- 仅排版或 DOCX 元数据变化时使用修订清单 `format_only=true` 并保持全部 Then 为 `UNCHANGED`；不得借此掩盖业务文字变化。
 - 把每条已确认 BDD 的复合 Then 拆成可独立证明的验证义务；每项必须映射到自动测试、实际人工证据、未验证或阻塞，不得被单一工具的笼统通过静默覆盖。
 - 需求确认后初判影响面和 `L1/L2/L3/BLOCKED` 风险，编码后根据最终 diff 终判；风险按业务后果、边界和调用链判断，不按代码行数判断。
 - 选择能够证明行为的最低且足够测试层。UI 与业务混合需求必须拆层验证，Journey、截图、Unit、静态扫描均不得越过各自证据边界。

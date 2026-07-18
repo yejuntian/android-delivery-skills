@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """脚本名称：delivery_gate.py
 
-用途：校验最终交付报告是否覆盖全部必需 BDD/Then、专项门禁和新鲜执行证据。
+用途：校验最终交付报告是否覆盖最新版全部 BDD/Then、专项门禁和新鲜执行证据。
 
-职责边界：只读取配置、Git 基线、当前工作树和 delivery-result.json；不运行测试、
-不调用 Skill、不修代码、不维护流程阶段，也不执行任何 Git 写操作。
+职责边界：只读取配置、确认需求修订、Git 基线、当前工作树和最终报告；不运行
+测试、不调用 Skill、不修代码、不维护流程阶段，也不执行任何 Git 写操作。
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -22,9 +21,18 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 
-from .config_paths import baseline_path_for_config, resolve_config_paths  # noqa: E402
-from .delivery import DeliveryError, load_config  # noqa: E402
+from .config_paths import (  # noqa: E402
+    baseline_path_for_config,
+    requirement_snapshot_path_for_config,
+    resolve_config_paths,
+)
+from .delivery import DeliveryError, load_config, read_requirement  # noqa: E402
 from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from .requirement_snapshot import (  # noqa: E402
+    RequirementSnapshotError,
+    load_requirement_snapshot,
+    requirement_digest,
+)
 
 
 PASSING_CONCLUSIONS = {"FULL_PASS", "LOCAL_PASS_DEVICE_PENDING"}
@@ -53,20 +61,46 @@ class DeliveryGateError(RuntimeError):
 
 
 def requirement_file_digest(path: Path) -> str:
-    """计算需求源文件摘要，使需求变化后旧报告自动失效。"""
+    """计算提取正文的规范化摘要，避免 DOCX 元数据或换行变化造成误失效。"""
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError as exc:
-        raise DeliveryGateError(f"无法读取需求文件: {path}: {exc}") from exc
+        return requirement_digest(read_requirement(path))
+    except DeliveryError as exc:
+        raise DeliveryGateError(str(exc)) from exc
 
 
-def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, str]:
-    """返回最终报告必须绑定的需求、基线和当前代码摘要。"""
+def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
+    """返回最终报告必须绑定的确认修订、有效义务、基线和当前代码摘要。"""
     paths = resolve_config_paths(config, config_path)
     if not paths.project_path or not paths.project_path.is_dir():
         raise DeliveryGateError(f"项目路径无效: {paths.project_path}")
     if not paths.requirement_path or not paths.requirement_path.is_file():
         raise DeliveryGateError(f"需求文件无效: {paths.requirement_path}")
+    requirement_sha256 = requirement_file_digest(paths.requirement_path)
+    try:
+        requirement_snapshot = load_requirement_snapshot(
+            requirement_snapshot_path_for_config(config_path)
+        )
+    except RequirementSnapshotError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    if requirement_snapshot is None:
+        raise DeliveryGateError("尚未建立需求修订，请先执行 check-env 和 confirm-requirement-update")
+    if Path(str(requirement_snapshot["requirement_path"])).resolve() != paths.requirement_path.resolve():
+        raise DeliveryGateError("当前 requirement_file 与需求修订记录路径不一致")
+    if requirement_snapshot["status"] != "CONFIRMED" or requirement_snapshot["pending_changes"]:
+        raise DeliveryGateError("需求修订仍有待定或冲突项，不能进入最终交付门禁")
+    if requirement_snapshot["sha256"] != requirement_sha256:
+        raise DeliveryGateError("requirement_file 尚未确认为当前需求修订")
+
+    expected_obligations = {
+        item["id"]: {
+            "text": item["text"],
+            "required": item["required"],
+            "sha256": item["sha256"],
+        }
+        for item in requirement_snapshot["obligations"]
+    }
+    if not expected_obligations:
+        raise DeliveryGateError("当前确认修订没有原子 BDD/Then")
     result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
     excluded: set[str] = set()
     try:
@@ -83,7 +117,10 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, str]
         raise DeliveryGateError(str(exc)) from exc
     return {
         **snapshot,
-        "requirement_file_sha256": requirement_file_digest(paths.requirement_path),
+        "requirement_id": requirement_snapshot["requirement_id"],
+        "requirement_revision": requirement_snapshot["revision"],
+        "requirement_file_sha256": requirement_sha256,
+        "expected_obligations": expected_obligations,
         "result_path": str(result_path),
     }
 
@@ -109,14 +146,17 @@ def _indexed(items: Any, label: str, errors: list[str]) -> dict[str, dict[str, A
     return indexed
 
 
-def validate_delivery_result(payload: Any, context: dict[str, str]) -> list[str]:
+def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]:
     """验证报告结构、证据引用、通过结论和当前代码新鲜度，返回全部错误。"""
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["delivery-result.json 根节点必须是 object"]
-    if payload.get("version") != 1:
-        errors.append("version 必须为 1")
-    for field in ("baseline_id", "requirement_file_sha256", "snapshot_sha256"):
+    if payload.get("version") != 2:
+        errors.append("version 必须为 2")
+    for field in (
+        "requirement_id", "requirement_revision", "baseline_id",
+        "requirement_file_sha256", "snapshot_sha256",
+    ):
         if payload.get(field) != context[field]:
             errors.append(f"{field} 与当前需求/代码不一致，旧证据已经失效")
     conclusion = payload.get("conclusion")
@@ -126,6 +166,16 @@ def validate_delivery_result(payload: Any, context: dict[str, str]) -> list[str]
     evidence = _indexed(payload.get("evidence"), "evidence", errors)
     obligations = _indexed(payload.get("obligations"), "obligations", errors)
     gates = _indexed(payload.get("gates"), "gates", errors)
+    expected_obligations = context.get("expected_obligations", {})
+    expected_ids = set(expected_obligations)
+    actual_ids = set(obligations)
+    if actual_ids != expected_ids:
+        missing = sorted(expected_ids - actual_ids)
+        unexpected = sorted(actual_ids - expected_ids)
+        if missing:
+            errors.append(f"最终报告漏掉当前确认义务: {', '.join(missing)}")
+        if unexpected:
+            errors.append(f"最终报告包含非当前义务: {', '.join(unexpected)}")
 
     for identifier, item in evidence.items():
         kind = item.get("kind")
@@ -144,6 +194,19 @@ def validate_delivery_result(payload: Any, context: dict[str, str]) -> list[str]
         elif kind in {"MANUAL", "REVIEW"}:
             if not isinstance(item.get("summary"), str) or not item["summary"].strip():
                 errors.append(f"{kind} 证据 {identifier} 缺少实际结果 summary")
+        obligation_hashes = item.get("obligation_sha256s", {})
+        if not isinstance(obligation_hashes, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in obligation_hashes.items()
+        ):
+            errors.append(f"evidence {identifier}.obligation_sha256s 必须是字符串映射")
+            continue
+        for obligation_id, digest in obligation_hashes.items():
+            expected = expected_obligations.get(obligation_id)
+            if not expected:
+                errors.append(f"evidence {identifier} 绑定了非当前义务: {obligation_id}")
+            elif digest != expected["sha256"]:
+                errors.append(f"evidence {identifier} 对 {obligation_id} 的需求证据已失效")
 
     def validate_refs(owner: str, item: dict[str, Any]) -> list[str]:
         """验证一个义务或门禁引用的证据都真实存在。"""
@@ -164,6 +227,12 @@ def validate_delivery_result(payload: Any, context: dict[str, str]) -> list[str]
             errors.append(f"obligation id 格式无效: {identifier}")
         if not isinstance(item.get("required"), bool):
             errors.append(f"obligation {identifier}.required 必须是 boolean")
+        expected = expected_obligations.get(identifier)
+        if expected:
+            if item.get("required") != expected["required"]:
+                errors.append(f"obligation {identifier}.required 与当前确认修订不一致")
+            if item.get("obligation_sha256") != expected["sha256"]:
+                errors.append(f"obligation {identifier} 的语义摘要与当前确认修订不一致")
         status = item.get("status")
         if status not in OBLIGATION_STATUSES:
             errors.append(f"obligation {identifier} 的 status 无效")
@@ -172,11 +241,17 @@ def validate_delivery_result(payload: Any, context: dict[str, str]) -> list[str]
         if passing and required and status not in {"COVERED_AUTOMATED", "COVERED_MANUAL"}:
             errors.append(f"必需 obligation {identifier} 尚未覆盖，不能使用通过结论")
         if status == "COVERED_AUTOMATED" and not any(
-            evidence.get(ref, {}).get("kind") == "AUTOMATED" for ref in refs
+            evidence.get(ref, {}).get("kind") == "AUTOMATED"
+            and evidence.get(ref, {}).get("obligation_sha256s", {}).get(identifier)
+            == (expected or {}).get("sha256")
+            for ref in refs
         ):
             errors.append(f"obligation {identifier} 缺少自动执行证据")
         if status == "COVERED_MANUAL" and not any(
-            evidence.get(ref, {}).get("kind") == "MANUAL" for ref in refs
+            evidence.get(ref, {}).get("kind") == "MANUAL"
+            and evidence.get(ref, {}).get("obligation_sha256s", {}).get(identifier)
+            == (expected or {}).get("sha256")
+            for ref in refs
         ):
             errors.append(f"obligation {identifier} 缺少实际人工证据")
 

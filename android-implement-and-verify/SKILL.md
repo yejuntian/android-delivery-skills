@@ -9,7 +9,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用完整交付模式：本次需求范围内的问题默认自修复并重验，不采用专项 Skill 的 standalone report-only 默认值。
 
-维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
+维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。物化中途需求增删改时遵守 `references/requirement-revision.schema.json`，生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
 
 ## 定位
 
@@ -146,6 +146,15 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 - 需求确认时把复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，填写来源、初步影响面、风险和必需性；编码与验证后补齐实现、测试、命令、新鲜证据和覆盖状态。同一 BDD 可由多个测试层共同覆盖，不建立跨需求状态机。
 - 所有已确认 `REQ-ID` 都必须有实现或明确“不需要代码”的依据，并映射到测试或可复现人工验收。需求映射率必须为 100%；这是需求覆盖，不等于代码行覆盖率。
 
+### 中途需求修订
+
+- `<requirement_dir>/test-cases/requirement-revision.json` 是 AI 物化、用户审阅的修订清单；结构必须符合 `references/requirement-revision.schema.json`，并绑定脚本输出的 `requirement_id` 和 `base_revision`。
+- 同一需求逐项使用 `ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED`；决策使用 `CONFIRMED/PENDING/REJECTED/CONFLICT`。`PENDING/CONFLICT` 只保存候选且不推进版本，`REJECTED` 不进入当前总需求。
+- `REMOVED + CONFIRMED` 必须明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`；`SUPERSEDED` 必须在同轮指向一个已确认的新增 Then。
+- 每轮必须分类全部既有有效 Then 和上轮待定项；未变化项保留 ID。只在聊天中确认的变化先同步到 `requirement_file`，不得让聊天成为唯一事实来源。
+- 只有用户确认正文语义完全不变时才允许 `format_only=true`，并要求全部 Then 为 `UNCHANGED`；该操作同步正文摘要但不推进语义修订号。
+- `confirm-requirement-update` 只更新最近确认正文、修订号、有效义务和修订历史，不读取或修改 Git。新的串行需求必须完成当前需求后，在干净工作区重新执行 `check-env`。
+
 ## 影响面识别与路由
 
 需求理解阶段必须先判断本次需求影响面，并在“当前需求理解”中输出：
@@ -228,7 +237,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 
 **AI 动作**：脚本会输出需求上下文。分配稳定 `REQ-###` / `BDD-###`，检查主流程、备选、异常、恢复和非功能场景，提炼足以覆盖真实需求的 **BDD (Given/When/Then)** 验收标准；把复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，初判影响面与 `L1/L2/L3/BLOCKED`，并同时输出最小修改预览。BDD 和 Then 数量服从实际需求，不为凑数量脑补场景；最多一次提出 5 个真正影响实现或验收的问题。
 
-同一需求编码中途再次运行 `init` 时，读取编码起点需求快照和现有追溯表，输出 `ADDED/CHANGED/REMOVED/UNCHANGED`。保留未变化的 REQ/BDD/Then ID；修改和新增项重新确认，删除项不得自动删除实现。用户明确开始新的串行需求时不沿用旧 ID；`init` 仍不修改 Git 基线，由后续干净工作区上的 `check-env` 覆盖旧起点。
+同一需求编码中途再次运行 `init` 时，读取最近确认需求修订和现有追溯表，输出增改删、替代和逐项确认决策。保留未变化的 REQ/BDD/Then ID；修改和新增项重新确认，删除项选择实现处置。用户明确开始新的串行需求时不沿用旧 ID；`init` 和 `confirm-requirement-update` 均不修改 Git 基线。
 **DoR (准备就绪) 门禁**：如果需求缺少继续实现所必需的业务含义、边界条件或报错证据，列出缺口并暂停请求补充；能够明确表达一个真实场景时，不得仅因条目少而阻塞。
 
 最小修改预览中的每个新增或改动组件必须附轻量架构边界卡片：`组件/文件 | 职责 | 输入 | 输出 | 依赖方向 | 复用点 | 明确不修改范围`。同一组件的相关文件可以合并一行，避免文档膨胀。卡片服从目标项目现有架构，不用于强推分层、拆模块或技术迁移。需求确认且 `check-env` 成功建立基线后，在 `<requirement_dir>/test-cases/traceability.md` 建立追溯表前半部分，不能让追溯文件反过来触发脏工作区门禁。
@@ -242,7 +251,13 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 ```
 
-**AI 动作**：环境检查只在目标分支和工作区干净时一起建立当前需求 Git 基线与已确认需求快照；任一失败都不进入编码。检测到已有改动时停止，不自动 stash、提交或清理。基线建立后你已获准编码，并遵守以下规约：
+**AI 动作**：环境检查只在目标分支和工作区干净时一起建立当前需求 Git 基线与需求起点；任一失败都不进入编码。检测到已有改动时停止，不自动 stash、提交或清理。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
+```
+
+退出码 `0` 才表示最新版总需求已确认并允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。编码中途发生变化时重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update`，始终保留最初 Git 基线。修订确认后遵守以下规约：
 1. **先物化测试**：把每个已确认 `BDD/Then` 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动壳；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
 3. **UI 逻辑接管 (最小化修改)**：如果前置步骤生成纯 XML，主动补充对应的 Kotlin ViewBinding 和业务代码。
@@ -270,7 +285,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
 
-所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前基线、需求和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
+所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前确认修订、有效义务、Git 基线和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
 
 通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/设备等条件 gate 按真实影响追加。
 
@@ -285,6 +300,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 只有同时满足以下条件才可声明交付完成：
 
 - 每条 BDD 的所有原子 Then 均映射到实现和可执行测试，或明确标记为实际人工覆盖、未验证或阻塞；计划人工执行但尚未执行时不得写成已覆盖。
+- 需求修订状态为 `CONFIRMED`，不存在 `PENDING/CONFLICT`；最终报告的 obligation ID、必需性和语义摘要与当前有效 Then 集合完全一致。
 - 当前需求追溯表覆盖全部已确认 `REQ-ID` 和必需 Then，需求映射率为 100%，每条记录包含最终实现、测试/实际人工验收、必需性与证据状态。
 - 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
 - 必需命令在最后一次代码或测试修复后重新执行，最终报告记录命令、退出码、测试数、关键输出和报告/产物路径。

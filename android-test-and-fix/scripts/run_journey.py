@@ -42,8 +42,18 @@ JOURNEY_BUILD_ROOT_ENV = "ANDROID_DELIVERY_JOURNEY_BUILD_ROOT"
 # Journey 与总入口必须使用完全相同的配置路径语义。
 if str(SUITE_ROOT) not in sys.path:
     sys.path.insert(0, str(SUITE_ROOT))
-from scripts.config_paths import baseline_path_for_config, resolve_config_paths  # noqa: E402
+from scripts.config_paths import (  # noqa: E402
+    baseline_path_for_config,
+    requirement_snapshot_path_for_config,
+    resolve_config_paths,
+)
+from scripts.delivery import DeliveryError, read_requirement  # noqa: E402
 from scripts.git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from scripts.requirement_snapshot import (  # noqa: E402
+    RequirementSnapshotError,
+    load_requirement_snapshot,
+    requirement_digest,
+)
 
 PASS = "PASS"
 PREFLIGHT_PASS = "PREFLIGHT_PASS"
@@ -129,6 +139,9 @@ class JourneyResult:
     applicability: str | None = None
     covered_then_ids: list[str] = field(default_factory=list)
     uncovered_then_ids: list[str] = field(default_factory=list)
+    requirement_id: str | None = None
+    requirement_revision: int | None = None
+    requirement_status: str | None = None
     baseline_id: str | None = None
     requirement_file_sha256: str | None = None
     snapshot_sha256: str | None = None
@@ -324,14 +337,27 @@ def resolve_journeys_dir(
 
 
 def requirement_scope_id(config_path: Path, config: dict[str, Any]) -> str:
-    """优先使用本次 Git 基线隔离用例；单独调用时退回需求内容哈希。"""
+    """优先使用确认需求修订隔离用例；单独调用时退回当前需求内容哈希。"""
     requirement_path = resolve_config_paths(config, config_path).requirement_path
     digest: str | None = None
+    revision: int | None = None
+    try:
+        snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(config_path))
+    except RequirementSnapshotError:
+        snapshot = None
+    if (
+        snapshot
+        and requirement_path
+        and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve()
+    ):
+        digest = str(snapshot["sha256"])[:16]
+        revision = int(snapshot["revision"])
     if requirement_path and requirement_path.is_file():
-        try:
-            digest = hashlib.sha256(requirement_path.read_bytes()).hexdigest()[:16]
-        except OSError:
-            pass
+        if digest is None:
+            try:
+                digest = requirement_digest(read_requirement(requirement_path))[:16]
+            except DeliveryError:
+                pass
 
     baseline_path = baseline_path_for_config(config_path)
     try:
@@ -339,10 +365,11 @@ def requirement_scope_id(config_path: Path, config: dict[str, Any]) -> str:
     except (OSError, UnicodeError, json.JSONDecodeError):
         baseline = {}
     baseline_id = baseline.get("id") if isinstance(baseline, dict) else None
+    revision_suffix = f"-r{revision}" if revision is not None else ""
     if isinstance(baseline_id, str) and re.fullmatch(r"[A-Za-z0-9._-]+", baseline_id):
-        return f"{baseline_id}-{digest}" if digest else baseline_id
+        return f"{baseline_id}{revision_suffix}-{digest}" if digest else baseline_id
     if digest:
-        return f"requirement-{digest}"
+        return f"requirement{revision_suffix}-{digest}"
     return "standalone"
 
 
@@ -653,17 +680,27 @@ def missing_task_status(discovery: CommandResult | None) -> tuple[str, str]:
     )
 
 
-def delivery_context(config_path: Path, config: dict[str, Any]) -> dict[str, str]:
-    """读取需求文件、Git 基线和最终代码摘要，失败时保留其他 Journey 证据。"""
-    context: dict[str, str] = {}
+def delivery_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
+    """读取确认修订、Git 基线和最终代码摘要，失败时保留其他 Journey 证据。"""
+    context: dict[str, Any] = {}
     paths = resolve_config_paths(config, config_path)
     if paths.requirement_path and paths.requirement_path.is_file():
         try:
-            context["requirement_file_sha256"] = hashlib.sha256(
-                paths.requirement_path.read_bytes()
-            ).hexdigest()
-        except OSError:
+            current_digest = requirement_digest(read_requirement(paths.requirement_path))
+            requirement_snapshot = load_requirement_snapshot(
+                requirement_snapshot_path_for_config(config_path)
+            )
+        except (DeliveryError, RequirementSnapshotError):
             pass
+        else:
+            context["requirement_file_sha256"] = current_digest
+            if requirement_snapshot:
+                context["requirement_id"] = requirement_snapshot["requirement_id"]
+                context["requirement_revision"] = requirement_snapshot["revision"]
+                status = requirement_snapshot["status"]
+                if requirement_snapshot["sha256"] != current_digest:
+                    status = "UNCONFIRMED_CHANGE"
+                context["requirement_status"] = status
     if paths.project_path and paths.project_path.is_dir():
         excluded: set[str] = set()
         journey_result = resolve_result_path(config_path, config)
@@ -923,6 +960,9 @@ def write_result(result: JourneyResult, path: Path) -> None:
         f"- 实际执行测试数：`{result.executed_tests}`\n"
         f"- 执行轮次：`{result.attempts}`\n"
         f"- Journey 适用性：`{result.applicability or '未记录'}`\n"
+        f"- 需求集合：`{result.requirement_id or '未识别'}`\n"
+        f"- 需求修订：`{result.requirement_revision if result.requirement_revision is not None else '未识别'}`\n"
+        f"- 需求状态：`{result.requirement_status or '未识别'}`\n"
         f"- Git 基线：`{result.baseline_id or '未识别'}`\n"
         f"- 最终代码摘要：`{result.snapshot_sha256 or '未识别'}`\n"
         f"- 开始时间：`{result.started_at or '未记录'}`\n"
@@ -1029,6 +1069,9 @@ def main(argv: list[str] | None = None) -> int:
         result.applicability = applicability
         result.covered_then_ids = list(dict.fromkeys(args.covered_then))
         result.uncovered_then_ids = list(dict.fromkeys(args.uncovered_then))
+        result.requirement_id = context.get("requirement_id")
+        result.requirement_revision = context.get("requirement_revision")
+        result.requirement_status = context.get("requirement_status")
         result.baseline_id = context.get("baseline_id")
         result.requirement_file_sha256 = context.get("requirement_file_sha256")
         result.snapshot_sha256 = context.get("snapshot_sha256")
@@ -1044,6 +1087,19 @@ def main(argv: list[str] | None = None) -> int:
         return complete(JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1), fallback_result_path)
 
     context.update(delivery_context(config_path, config))
+    if (
+        args.ui_impact == "behavior"
+        and context.get("requirement_status")
+        and context["requirement_status"] != "CONFIRMED"
+    ):
+        return complete(
+            JourneyResult(
+                HARNESS_UNAVAILABLE,
+                "当前需求修订尚未全部确认，拒绝生成或执行可能过期的 Journey",
+                1,
+            ),
+            fallback_result_path,
+        )
     result_path = resolve_result_path(config_path, config)
     skipped = skip_result(args.ui_impact)
     if skipped:

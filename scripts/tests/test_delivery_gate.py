@@ -3,8 +3,8 @@
 
 用途：验证最终交付门禁只接受当前代码上的完整原子义务、专项门禁和真实证据。
 
-覆盖范围：通过报告、过期摘要、缺失证据、人工证据类型、未完成结论，以及隔离 Git
-仓库中的当前摘要。测试不运行 Android 构建、不修改真实仓库。
+覆盖范围：通过报告、最新版义务集合、过期需求语义、缺失证据、未完成结论，以及
+隔离 Git 仓库中的确认修订。测试不运行 Android 构建、不修改真实仓库。
 """
 
 from __future__ import annotations
@@ -25,8 +25,17 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
-from ..delivery_gate import current_context, main, validate_delivery_result  # noqa: E402
+from ..delivery_gate import (  # noqa: E402
+    DeliveryGateError,
+    current_context,
+    main,
+    validate_delivery_result,
+)
 from ..git_changes import write_baseline  # noqa: E402
+from ..requirement_snapshot import (  # noqa: E402
+    apply_requirement_revision,
+    write_requirement_snapshot,
+)
 
 
 class DeliveryGateTests(unittest.TestCase):
@@ -36,16 +45,24 @@ class DeliveryGateTests(unittest.TestCase):
         """建立同一基线和代码摘要下的最小有效交付报告。"""
         self.snapshot = "a" * 64
         self.requirement = "b" * 64
+        self.obligation = "d" * 64
         self.context = {
+            "requirement_id": "baseline-1",
+            "requirement_revision": 2,
             "baseline_id": "baseline-1",
             "baseline_head": "head-1",
             "head": "head-2",
             "snapshot_sha256": self.snapshot,
             "requirement_file_sha256": self.requirement,
+            "expected_obligations": {
+                "BDD-001/T1": {"required": True, "sha256": self.obligation},
+            },
             "result_path": "/tmp/result.json",
         }
         self.payload = {
-            "version": 1,
+            "version": 2,
+            "requirement_id": "baseline-1",
+            "requirement_revision": 2,
             "baseline_id": "baseline-1",
             "requirement_file_sha256": self.requirement,
             "snapshot_sha256": self.snapshot,
@@ -54,6 +71,7 @@ class DeliveryGateTests(unittest.TestCase):
                 {
                     "id": "BDD-001/T1",
                     "required": True,
+                    "obligation_sha256": self.obligation,
                     "status": "COVERED_AUTOMATED",
                     "evidence_ids": ["E-TEST"],
                 }
@@ -104,12 +122,14 @@ class DeliveryGateTests(unittest.TestCase):
                     "command": ["./gradlew", ":app:testDebugUnitTest"],
                     "exit_code": 0,
                     "executed_tests": 2,
+                    "obligation_sha256s": {"BDD-001/T1": self.obligation},
                 },
                 {
                     "id": "E-REVIEW",
                     "kind": "REVIEW",
                     "snapshot_sha256": self.snapshot,
                     "summary": "实际 diff 与需求范围一致，未发现阻断项。",
+                    "obligation_sha256s": {},
                 },
             ],
         }
@@ -134,6 +154,25 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("缺少实际人工证据" in error for error in errors))
+
+    def test_requires_exact_latest_obligation_set(self) -> None:
+        """验证最终报告少写或多写一个 Then 都不能绕过最新版总需求。"""
+        self.context["expected_obligations"]["BDD-001/T2"] = {
+            "required": True,
+            "sha256": "e" * 64,
+        }
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("漏掉当前确认义务: BDD-001/T2" in error for error in errors))
+
+    def test_changed_then_rejects_evidence_bound_to_old_semantics(self) -> None:
+        """验证同一 ID 的 Then 文本变化后，旧义务摘要和测试证据不能继续复用。"""
+        self.context["expected_obligations"]["BDD-001/T1"]["sha256"] = "f" * 64
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("语义摘要与当前确认修订不一致" in error for error in errors))
+        self.assertTrue(any("需求证据已失效" in error for error in errors))
+        self.assertTrue(any("缺少自动执行证据" in error for error in errors))
 
     def test_requires_every_core_review_build_and_lint_gate(self) -> None:
         """验证 AI 不能通过省略质量、稳定性、构建或 lint 门禁缩短完整交付。"""
@@ -176,18 +215,91 @@ class DeliveryGateTests(unittest.TestCase):
             requirement_dir.mkdir()
             requirement = requirement_dir / "requirement.md"
             requirement.write_text("修改 App\n", encoding="utf-8")
+            requirement_snapshot = root / "requirement-snapshot.json"
+            write_requirement_snapshot(
+                requirement_snapshot,
+                requirement,
+                "修改 App",
+                requirement_id=baseline_payload["id"],
+            )
+            confirmed, applied = apply_requirement_revision(
+                requirement_snapshot,
+                requirement,
+                "修改 App",
+                {
+                    "version": 1,
+                    "requirement_id": baseline_payload["id"],
+                    "base_revision": 0,
+                    "scope": "SAME_REQUIREMENT",
+                    "changes": [{
+                        "id": "BDD-001/T1",
+                        "change_type": "ADDED",
+                        "decision": "CONFIRMED",
+                        "text": "App 行为已修改",
+                        "required": True,
+                    }],
+                },
+            )
+            self.assertTrue(applied)
             config = {
                 "workspace_root": str(root),
                 "project_path": str(repo),
                 "requirement_dir": str(requirement_dir),
                 "requirement_file": str(requirement),
             }
-            with mock.patch("scripts.delivery_gate.baseline_path_for_config", return_value=baseline):
+            with (
+                mock.patch("scripts.delivery_gate.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery_gate.requirement_snapshot_path_for_config",
+                    return_value=requirement_snapshot,
+                ),
+            ):
                 context = current_context(root / "local.yaml", config)
 
         self.assertEqual(baseline_payload["id"], context["baseline_id"])
         self.assertEqual(64, len(context["snapshot_sha256"]))
         self.assertEqual(64, len(context["requirement_file_sha256"]))
+        self.assertEqual(confirmed["requirement_id"], context["requirement_id"])
+        self.assertEqual(1, context["requirement_revision"])
+        self.assertIn("BDD-001/T1", context["expected_obligations"])
+
+    def test_current_context_blocks_unconfirmed_requirement_update(self) -> None:
+        """验证需求文件变化或待定修订存在时，最终门禁不能生成可通过上下文。"""
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            repo = root / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Gate Test"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "gate@example.invalid"], cwd=repo, check=True,
+            )
+            (repo / "App.kt").write_text("class App\n", encoding="utf-8")
+            subprocess.run(["git", "add", "App.kt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "baseline"], cwd=repo, check=True)
+            baseline = root / "baseline.json"
+            baseline_payload = write_baseline(repo, baseline)
+            requirement = root / "requirement.md"
+            requirement.write_text("初始需求\n", encoding="utf-8")
+            snapshot = root / "snapshot.json"
+            write_requirement_snapshot(
+                snapshot, requirement, "初始需求", requirement_id=baseline_payload["id"],
+            )
+            config = {
+                "workspace_root": str(root),
+                "project_path": str(repo),
+                "requirement_dir": str(root),
+                "requirement_file": str(requirement),
+            }
+            with (
+                mock.patch("scripts.delivery_gate.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery_gate.requirement_snapshot_path_for_config",
+                    return_value=snapshot,
+                ),
+            ):
+                with self.assertRaisesRegex(DeliveryGateError, "待定或冲突"):
+                    current_context(root / "local.yaml", config)
 
     def test_cli_validate_accepts_fresh_report(self) -> None:
         """验证 CLI 能读取结果文件并以退出码 0 表达机器门禁通过。"""

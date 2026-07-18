@@ -50,7 +50,11 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 4. 等你确认理解是否正确。
 5. 未确认前不进入最终方案、不改代码。
 
-同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比 `check-env` 保存的已确认快照和现有追溯表，输出 `ADDED/CHANGED/REMOVED/UNCHANGED`；未变化 ID 保留，删除项等待确认。
+同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比最近确认修订和现有追溯表，输出增改删、替代及逐项确认状态。用户确认后由 AI 更新 `<requirement_dir>/test-cases/requirement-revision.json`，再执行 `confirm-requirement-update`；下次变化从最近确认版本继续比较。
+
+修订规则：`PENDING/CONFLICT` 不推进版本，`REJECTED` 不进入总需求；删除项必须选择删除实现、保留兼容或停止未完成工作。只在聊天中补充的内容必须先同步到 `requirement_file`。
+
+`requirement-revision.json` 由 AI 根据已经确认的 BDD 自动生成，用户不需要手写 JSON、修订号或 Then 摘要；用户只确认业务变化和删除处置。文件结构以 `android-implement-and-verify/references/requirement-revision.schema.json` 为准。
 
 ### 需求文件读取失败时
 
@@ -61,7 +65,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 3. DOCX 使用 Python 标准库读取 OOXML 正文，不要求 IDE 额外安装文档解析库。
 4. 文件为空、损坏或格式不支持时，脚本会说明原因并停止；修正路径、重新导出 Word 或转换格式后重试。
 
-完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD 和已确认需求快照，`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化，并保留 `A/M/D/R` 状态与真实修改片段。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
+完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD 和需求起点；需求修订确认不会更新 Git 基线。`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化，并保留 `A/M/D/R` 状态与真实修改片段。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
 
 ## 确认后继续
 
@@ -74,11 +78,12 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 然后直接进入编码：
 
 1. 修改前校验项目路径、目标分支和干净工作区，并记录当前需求 Git 基线。
-2. 读取相关代码并复用现有链路。
-3. 直接实现需求，不再固定输出一轮前置分析报告。
-4. 只有遇到关键资料缺失、高风险改动或分支/工作区异常时才暂停询问。
-5. 编码后只对基线后的 diff 执行接口、测试、稳定性和代码质量检查；检测到 UI 变更时提示单独运行 UI 验收。
-6. 有 UI 基准但尚未完成独立 UI 验收时，只能报告“代码与自动测试完成，UI 验收待执行”。
+2. 物化全部已确认 Then 的需求修订清单并执行 `confirm-requirement-update`。
+3. 读取相关代码并复用现有链路。
+4. 直接实现需求，不再固定输出一轮前置分析报告。
+5. 只有遇到关键资料缺失、高风险改动或分支/工作区异常时才暂停询问。
+6. 编码后只对基线后的 diff 执行接口、测试、稳定性和代码质量检查；检测到 UI 变更时提示单独运行 UI 验收。
+7. 有 UI 基准但尚未完成独立 UI 验收时，只能报告“代码与自动测试完成，UI 验收待执行”。
 
 ## 整体流程顺序(一图看懂)
 
@@ -86,10 +91,11 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 ① delivery.py init    读需求 → 输出 BDD(Given/When/Then)
    └─ 停,等你确认「理解正确,继续」
                           ↓
-② delivery.py check-env   查 Git 分支/干净工作区 → 记录需求基线和快照 → 物化测试 → 开始编码
+② delivery.py check-env   查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
+③ delivery.py confirm-requirement-update   确认最新总需求和全部 Then → 开始编码
    └─ 受影响测试 + assemble + lint;失败自动修复并重跑
                           ↓
-③ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查
+④ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查
 
    【核心·业务逻辑层】(route 自动逐个调用,必先过)
      1. android-review-diff        ← 必跑:diff 影响范围
@@ -100,15 +106,15 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
    【独立·UI 校验】(route 只提示,用户单独调用)
      6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
 
-④ delivery_gate.py validate
-   └─ 核对最终需求/代码摘要、原子 Then、专项门禁和新鲜证据；退出码 0 才可声明通过
+⑤ delivery_gate.py validate
+   └─ 核对确认修订的完整 Then、最终代码、专项门禁和新鲜证据；退出码 0 才可声明通过
 ```
 
 脚本职责保持分离：
 
-- `scripts/delivery.py`：只编排需求、环境检查和专项 Skill 路由。
+- `scripts/delivery.py`：只编排需求读取、修订确认、环境检查和专项 Skill 路由。
 - `scripts/git_changes.py`：只读检查分支、工作区、四类 Git 变化、`A/M/D/R`、真实片段和最终摘要，不判断业务或路由。
-- `scripts/requirement_snapshot.py`：只保存已确认正文并生成中途文本差异，不判断业务语义。
+- `scripts/requirement_snapshot.py`：只校验和保存连续需求修订、有效义务及文本差异，不判断业务语义或修改 Git。
 - `scripts/delivery_gate.py`：只校验最终报告和证据新鲜度，不运行测试、不修改代码。
 
 最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：

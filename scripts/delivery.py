@@ -2,15 +2,16 @@
 """
 ================================================================================
 脚本名称：delivery.py
-用    途：Android Delivery Workflow 的三阶段 CLI 流程编排器。
+用    途：Android Delivery Workflow 的三阶段流程与需求修订确认 CLI 编排器。
 
 设计初衷：
 为了防止 AI 在长篇 Prompt 中出现“认知过载、幻觉乱改、超时卡死”等问题，
 本脚本将整个 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线
 与已确认需求快照：
-1. `init`: 负责首次需求提炼，或对比快照汇总中途需求变化并制定 BDD。
-2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求快照建立。
-3. `route`: 识别七类工程影响和第二轮条件能力候选，负责编码后的动态审查、
+1. `init`: 负责首次需求提炼，或对比最近确认修订汇总中途需求变化并制定 BDD。
+2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求起点建立。
+3. `confirm-requirement-update`: 负责确认原子义务修订，不修改 Git 基线。
+4. `route`: 识别七类工程影响和第二轮条件能力候选，负责编码后的动态审查、
    测试与自修复闭环分发；泄漏和性能仍由 AI 结合需求与真实 diff 终判。
 
 通过输出带 "👉 AI 指令" 的终端文本，强制 AI 采取“走一步看一步”的精准执行策略，
@@ -48,7 +49,9 @@ from .git_changes import (  # noqa: E402
 )
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
+    apply_requirement_revision,
     load_requirement_snapshot,
+    load_revision_manifest,
     render_requirement_diff,
     requirement_digest,
     write_requirement_snapshot,
@@ -66,7 +69,7 @@ class DeliveryError(RuntimeError):
 
 def parse_args(argv=None):
     """
-    解析命令行参数，定义支持的三大核心生命周期命令。
+    解析命令行参数，定义三大生命周期命令和独立需求修订确认命令。
     """
     parser = argparse.ArgumentParser(description="Android Delivery Workflow CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -78,6 +81,18 @@ def parse_args(argv=None):
     # 阶段二：check-env (环境与编码准备阶段)
     parser_check = subparsers.add_parser("check-env", help="检查环境并记录需求起点")
     parser_check.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
+
+    # 需求确认：只推进需求修订，不改变编码起点 Git 基线。
+    parser_confirm = subparsers.add_parser(
+        "confirm-requirement-update",
+        help="确认需求修订清单并更新当前有效 BDD/Then",
+    )
+    parser_confirm.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
+    parser_confirm.add_argument(
+        "--revision-file",
+        default=None,
+        help="需求修订清单；默认 <requirement_dir>/test-cases/requirement-revision.json",
+    )
 
     # 阶段三：route (动态路由审查阶段)
     parser_route = subparsers.add_parser("route", help="分析 diff 并路由到对应的审查 Skill")
@@ -166,11 +181,13 @@ def print_bdd_instruction():
     print("  - When：当 / 操作发生")
     print("  - Then：那么 / 期望结果")
     print("把复合 Then 拆成 BDD-001/T1 形式的原子验证义务，并初判 L1/L2/L3/BLOCKED 风险。")
-    print("检测到需求变化时输出 ADDED/CHANGED/REMOVED/UNCHANGED；保留未变化 ID，删除项等待确认。")
+    print("检测到变化时逐项输出 ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED 和确认决策。")
+    print("PENDING/CONFLICT 不得推进修订；REJECTED 不进入总需求；删除项必须明确实现处置。")
     print("正文不足时最多一次提出 5 个真正影响实现或验收的问题；不得补写不存在的需求。")
     print("同时输出【最小修改预览】和架构边界卡片：组件/文件、职责、输入、输出、依赖方向、复用点、不修改范围。")
     print("无法确认落点或边界时列为待确认项，不得创建猜测性文件。")
     print("用户确认且 check-env 成功建立基线后，在 <requirement_dir>/test-cases/traceability.md 建立追溯表。")
+    print("同时按 requirement-revision.schema.json 物化修订清单，并执行 confirm-requirement-update。")
     print("输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
 
 
@@ -415,9 +432,26 @@ def cmd_init(args):
     except RequirementSnapshotError as exc:
         raise DeliveryError(str(exc)) from exc
     if snapshot and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve():
+        print(
+            f"\n📚 当前确认修订: {snapshot['requirement_id']} "
+            f"r{snapshot['revision']} ({snapshot['status']})"
+        )
+        if snapshot["obligations"]:
+            print("=== 当前有效原子义务 ===")
+            for obligation in snapshot["obligations"]:
+                required = "必需" if obligation["required"] else "可选"
+                print(f"  - {obligation['id']} [{required}] {obligation['text']}")
+        if snapshot["pending_changes"]:
+            print("=== 尚未确认的需求变化 ===")
+            for change in snapshot["pending_changes"]:
+                reason = f": {change.get('reason')}" if change.get("reason") else ""
+                print(
+                    f"  - {change['id']} {change['change_type']}/"
+                    f"{change['decision']}{reason}"
+                )
         if snapshot["sha256"] == requirement_digest(content):
             print("\n=== 需求变化 ===")
-            print("✅ 当前需求正文与 check-env 时保存的已确认快照一致。")
+            print("✅ 当前需求正文与最近确认修订一致。")
         else:
             print("\n=== 需求变化候选 ===")
             print(render_requirement_diff(str(snapshot["content"]), content))
@@ -428,10 +462,13 @@ def cmd_init(args):
                     print(traceability.read_text(encoding="utf-8", errors="replace"))
             except OSError as exc:
                 raise DeliveryError(f"当前需求追溯表无法读取: {traceability}: {exc}") from exc
-            print("\n👉 AI 指令：把差异与追溯表按业务语义汇总为 ADDED/CHANGED/REMOVED/UNCHANGED。")
-            print("同一需求保留未变化 REQ/BDD/Then ID；修改和新增项重新确认，删除项不得自动删代码。")
+            print("\n👉 AI 指令：把差异与追溯表按业务语义汇总为增改删、替代和逐项确认决策。")
+            print("同一需求保留未变化 ID；修改和新增项重新确认，删除项必须选择实现处置。")
+            print("只在聊天中出现的变化必须同步到 requirement_file；不得把待定内容写成已确认。")
             print("如果用户明确这是新的串行需求，不沿用旧 ID；确认后由干净工作区上的 check-env 覆盖旧起点。")
             print("Git 基线保持原需求起点不变；只使受影响映射和证据失效，最终门禁仍基于最终代码重跑。")
+        revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
+        print(f"📄 默认修订清单: {revision_file}")
 
     print("\n---")
     print_bdd_instruction()
@@ -487,6 +524,7 @@ def cmd_check_env(args):
             requirement_snapshot_path_for_config(args.config),
             requirement_path,
             requirement_content,
+            requirement_id=baseline["id"],
         )
     except RequirementSnapshotError as exc:
         # 两份起点证据必须一起成功；快照失败时恢复调用前的基线，而不是误删旧需求起点。
@@ -498,9 +536,56 @@ def cmd_check_env(args):
             ) from restore_exc
         raise DeliveryError(str(exc)) from exc
     print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
-    print(f"✅ 已确认需求快照: {requirement_snapshot['sha256'][:12]}")
+    print(f"✅ 需求起点快照: {requirement_snapshot['sha256'][:12]}")
+    print(f"✅ 当前需求集合: {requirement_snapshot['requirement_id']} r0")
+    revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
+    print("👉 AI 指令：先把用户已确认的全部原子 Then 写入需求修订清单，再确认修订。")
+    print(f"修订清单: {revision_file}")
+    print("未成功执行 confirm-requirement-update 前不得开始编码。")
 
+
+def cmd_confirm_requirement_update(args):
+    """确认需求修订及有效义务集合；有待定或冲突时保留上一确认版本。"""
+    config = load_config(args.config)
+    paths = resolve_paths(config, args.config)
+    requirement_path = paths.requirement_path
+    if not requirement_path:
+        raise DeliveryError("未配置 requirement_file，无法确认需求修订")
+    content = read_requirement(requirement_path)
+    revision_file = (
+        Path(args.revision_file).expanduser().resolve()
+        if args.revision_file
+        else (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve()
+    )
+    manifest = load_revision_manifest(revision_file)
+    snapshot, confirmed = apply_requirement_revision(
+        requirement_snapshot_path_for_config(args.config),
+        requirement_path,
+        content,
+        manifest,
+    )
+    if not confirmed:
+        print("⚠️ 需求修订尚未确认，上一确认版本和 Git 基线均保持不变。")
+        for change in snapshot["pending_changes"]:
+            if change["decision"] in {"PENDING", "CONFLICT"}:
+                print(
+                    f"  - {change['id']} {change['change_type']}/"
+                    f"{change['decision']}: {change.get('reason', '')}"
+                )
+        print("解决全部 PENDING/CONFLICT 并更新修订清单后重新执行本命令。")
+        return 2
+
+    print(
+        f"✅ 需求修订已确认: {snapshot['requirement_id']} "
+        f"r{snapshot['revision']} ({snapshot['sha256'][:12]})"
+    )
+    print("✅ 当前有效原子义务:")
+    for obligation in snapshot["obligations"]:
+        required = "必需" if obligation["required"] else "可选"
+        print(f"  - {obligation['id']} [{required}] {obligation['text']}")
+    print("✅ Git 基线未修改；后续 route 仍覆盖本需求起点后的全部代码变化。")
     print_environment_rules()
+    return 0
 
 
 def cmd_route(args):
@@ -629,6 +714,8 @@ def main(argv=None):
             cmd_init(args)
         elif args.command == "check-env":
             cmd_check_env(args)
+        elif args.command == "confirm-requirement-update":
+            return cmd_confirm_requirement_update(args)
         elif args.command == "route":
             cmd_route(args)
     except (DeliveryError, GitInspectionError, RequirementSnapshotError) as exc:

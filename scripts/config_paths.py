@@ -69,5 +69,5 @@ def baseline_path_for_config(config_path: str | Path) -> Path:
 
 
 def requirement_snapshot_path_for_config(config_path: str | Path) -> Path:
-    """返回已确认需求正文快照路径，供同一需求中途变化时做差异分析。"""
+    """返回外部需求修订路径，供连续确认、义务校验和中途差异分析共用。"""
     return _state_path_for_config(config_path, "requirement")

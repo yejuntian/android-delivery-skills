@@ -8,6 +8,8 @@
 2. `android-implement-and-verify/SKILL.md`：完整需求交付的唯一流程来源，定义需求确认、编码、路由、验证和完成标准。
 3. 各专项 `SKILL.md`：只定义本专项的触发条件、职责边界、检查方法和报告格式。
 4. `SIMPLE_USAGE.md`：面向使用者的名称与命令速查，不增加 AI 强制规则。
+5. `references/open-source-design-rationale.md`：维护流程时使用的设计依据，记录开源参考、采用/拒绝原因和长期不变量。
+6. `android-implement-and-verify/references/delivery-eval-scenarios.md`：修改 Skill、路由或门禁后的行为评测集，不是日常需求步骤。
 
 规则冲突时按以下顺序处理：目标项目 `AGENTS.md` / `CONTRIBUTING.md` 等更严格规则 → `_shared/android-global-rules.md` → 当前 Skill。无法确定时暂停说明，不自行选择宽松规则。
 
@@ -47,3 +49,4 @@ delivery.py route
 - 新的完整交付步骤只写入 `android-implement-and-verify/SKILL.md`。
 - 专项细节只写入对应 Skill；详细、低频资料放入该 Skill 的 `references/` 或 `assets/`。
 - 修改脚本行为时同步修改同职责文档和测试，不在本导航页复制实现细节。
+- 修改 Skill、路由或门禁后，按行为评测集做 forward test；新增设计决策时同步记录来源、取舍和边界。

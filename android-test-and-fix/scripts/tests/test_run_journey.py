@@ -52,12 +52,14 @@ class RunJourneyTest(unittest.TestCase):
         return directory
 
     def test_rejects_zero_journeys(self):
+        """验证空用例目录不能以零测试结果冒充 Journey 通过。"""
         files, count, error = run_journey.validate_journeys(self.make_harness())
         self.assertEqual([], files)
         self.assertEqual(0, count)
         self.assertIn("0 个测试", error)
 
     def test_counts_actions_and_steps(self):
+        """验证 action 与 step 都计入有效执行规模，供零测试门禁使用。"""
         harness = self.make_harness(
             "<journey><actions><action>Tap Home</action><step>Verify Home</step></actions></journey>"
         )
@@ -67,16 +69,19 @@ class RunJourneyTest(unittest.TestCase):
         self.assertIsNone(error)
 
     def test_rejects_empty_journey(self):
+        """验证只有根节点而没有有效步骤的 Journey 被明确拒绝。"""
         _, count, error = run_journey.validate_journeys(self.make_harness("<journey/>"))
         self.assertEqual(0, count)
         self.assertIn("不包含有效", error)
 
     def test_variant_task_suffix_preserves_camel_case(self):
+        """验证组合 variant 保留驼峰语义，并拒绝可注入非法任务字符的名称。"""
         self.assertEqual("DemoDebug", run_journey.variant_task_suffix("demoDebug"))
         with self.assertRaises(ValueError):
             run_journey.variant_task_suffix("demo-debug")
 
     def test_environment_errors_never_trigger_app_repair(self):
+        """验证只有明确 UI 断言才可进入应用分析，环境故障始终归壳失败。"""
         self.assertEqual(
             run_journey.HARNESS_FAILED,
             run_journey.classify_failure("Task ':harness-app:nope' not found"),
@@ -95,6 +100,7 @@ class RunJourneyTest(unittest.TestCase):
         )
 
     def test_reads_apk_from_output_metadata(self):
+        """验证优先使用 AGP 元数据精确定位指定 variant 的 APK。"""
         root = Path(tempfile.mkdtemp())
         output = root / "app" / "build" / "outputs" / "apk" / "demo" / "debug"
         output.mkdir(parents=True)
@@ -107,6 +113,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(apk, run_journey.find_apk_from_metadata(root, "app", "demoDebug"))
 
     def test_fallback_apk_never_crosses_variant(self):
+        """验证元数据缺失时仍只选择目标 variant，不拿更新的其他 APK 兜底。"""
         root = Path(tempfile.mkdtemp())
         debug = root / "app" / "build" / "outputs" / "apk" / "demo" / "debug" / "app-demo-debug.apk"
         release = root / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
@@ -122,6 +129,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertIsNone(run_journey.find_newest_apk(root, "app", "paidDebug"))
 
     def test_writes_json_and_markdown_reports(self):
+        """验证同一次结果同时生成机器 JSON 与人类可读 Markdown 证据。"""
         output = Path(tempfile.mkdtemp()) / "result.json"
         result = run_journey.JourneyResult(
             run_journey.PASS,
@@ -139,6 +147,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertIn("device-1", report)
 
     def test_resolves_cases_under_requirement_directory(self):
+        """验证默认 Journey 用例位于当前需求目录而非共享壳源码。"""
         config_path = Path(tempfile.mkdtemp()) / "local.yaml"
         config = {"workspace_root": str(config_path.parent), "requirement_dir": "requirement"}
         resolved = run_journey.resolve_journeys_dir(config_path, config, {}, None)
@@ -148,6 +157,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(expected, resolved)
 
     def test_requirement_scope_isolates_cases_and_reports(self):
+        """验证需求正文或 Git 基线变化会产生独立作用域，防止串用报告。"""
         root = Path(tempfile.mkdtemp())
         config_path = root / "profiles" / "local.yaml"
         config_path.parent.mkdir()
@@ -175,6 +185,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertTrue(scoped.startswith("run-123-"))
 
     def test_stages_only_current_journeys(self):
+        """验证同步当前用例前清除旧 XML，避免上一需求残留被执行。"""
         source = Path(tempfile.mkdtemp())
         current = source / "current.xml"
         current.write_text("<journey><action>Verify current</action></journey>", encoding="utf-8")
@@ -190,6 +201,7 @@ class RunJourneyTest(unittest.TestCase):
                          (target / "current.xml").read_text(encoding="utf-8"))
 
     def test_collects_only_structured_results_and_journey_screenshots(self):
+        """验证只收集本轮结构化结果和 Journey 证据目录，排除普通资源。"""
         harness = Path(tempfile.mkdtemp())
         result = harness / "harness-app" / "build" / "test-results" / "journey" / "TEST-home.xml"
         result.parent.mkdir(parents=True)
@@ -209,10 +221,12 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual([str(screenshot.resolve())], screenshots)
 
     def test_retries_reapply_precondition_before_counting_assertions(self):
+        """验证每次真实断言重试都会重置应用并重新应用 Given 前置。"""
         harness = Path(tempfile.mkdtemp())
         (harness / "gradlew").write_text("", encoding="utf-8")
 
         def fake_run(command, **_):
+            """模拟 force-stop 成功、Journey 断言失败的外部命令结果。"""
             if "force-stop" in command:
                 return run_journey.CommandResult(command, 0, "")
             return run_journey.CommandResult(command, 1, "assertion failed")
@@ -235,10 +249,12 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(2, prepare.call_count)
 
     def test_success_exit_without_structured_result_is_not_pass(self):
+        """验证 Gradle 零退出但缺少本轮 JUnit 证据时仍拒绝判绿。"""
         harness = Path(tempfile.mkdtemp())
         (harness / "gradlew").write_text("", encoding="utf-8")
 
         def fake_run(command, **_):
+            """模拟只有 BUILD SUCCESSFUL 文本、没有测试结果的空成功。"""
             return run_journey.CommandResult(command, 0, "BUILD SUCCESSFUL")
 
         with (
@@ -258,6 +274,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(run_journey.HARNESS_FAILED, result.status)
 
     def test_skip_build_does_not_require_source_project(self):
+        """验证已安装 APK 模式无需源码目录，但仍校验包名、设备和测试证据。"""
         root = Path(tempfile.mkdtemp())
         harness = root / "harness"
         (harness / "harness-app" / "src" / "main" / "journeys").mkdir(parents=True)
@@ -301,6 +318,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(run_journey.PASS, json.loads(result_path.read_text(encoding="utf-8"))["status"])
 
     def test_redacts_deep_links_and_returns_timeout_as_environment_failure(self):
+        """验证超时返回环境失败码，且命令与输出都不会泄漏 DeepLink 参数。"""
         command = ["adb", "shell", "am", "start", "-d", "sample://login?token=secret"]
         expired = subprocess.TimeoutExpired(command, timeout=1, output="sample://login?token=secret")
         with mock.patch.object(run_journey.subprocess, "run", side_effect=expired):
@@ -311,6 +329,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertNotIn("secret", result.output)
 
     def test_skips_journey_when_ui_is_not_applicable(self):
+        """验证无 UI 与纯视觉需求在接触设备前返回对应跳过状态。"""
         no_ui = run_journey.skip_result("none")
         visual = run_journey.skip_result("visual")
         self.assertEqual(run_journey.SKIPPED_NO_UI, no_ui.status)

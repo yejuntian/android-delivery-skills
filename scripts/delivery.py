@@ -9,7 +9,8 @@
 本脚本将整个 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线：
 1. `init`: 负责需求提炼与验收标准制定 (BDD)。
 2. `check-env`: 负责编码前的环境安全校验与编码后的自动纠错约束。
-3. `route`: 负责编码后的动态审查、测试与自修复闭环分发。
+3. `route`: 识别 UI、接口、数据、系统、构建、架构和测试影响候选，
+   负责编码后的动态审查、测试与自修复闭环分发。
 
 通过输出带 "👉 AI 指令" 的终端文本，强制 AI 采取“走一步看一步”的精准执行策略，
 实现媲美高级 Android 开发工程师的稳定性与工程纪律。
@@ -147,13 +148,15 @@ def read_requirement(path):
 def print_bdd_instruction():
     """打印 BDD 输出指令，要求 AI 用 Given/When/Then 结构写验收标准。"""
     print("👉 AI 指令：先输出【当前需求理解】及 UI/API/业务/存储/系统能力影响，再输出 BDD 验收标准。")
-    print("BDD 使用 Given/When/Then 格式，条目数量服从真实需求，不得为凑数量脑补。")
+    print("为需求、场景分配稳定 REQ-### / BDD-###；检查主流程、备选、异常、恢复和非功能场景。")
+    print("BDD 使用 Given/When/Then 格式，缺失类别标记待确认或不适用及原因，不得为凑数量脑补。")
     print("  - Given：给定 / 前置条件")
     print("  - When：当 / 操作发生")
     print("  - Then：那么 / 期望结果")
-    print("正文不足以确认业务含义时必须列出缺口，不得补写不存在的需求。")
-    print("同时输出【最小修改预览】：预计文件/模块、复用点、职责归属和明确不修改的范围。")
+    print("正文不足时最多一次提出 5 个真正影响实现或验收的问题；不得补写不存在的需求。")
+    print("同时输出【最小修改预览】和架构边界卡片：组件/文件、职责、输入、输出、依赖方向、复用点、不修改范围。")
     print("无法确认落点或边界时列为待确认项，不得创建猜测性文件。")
+    print("用户确认且 check-env 成功建立基线后，在 <requirement_dir>/test-cases/traceability.md 建立追溯表。")
     print("输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
 
 
@@ -166,9 +169,11 @@ def print_environment_rules():
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
     print("  3. 编码后：根据实际模块、variant 和项目已有任务选择 assemble，不得写死 assembleDebug。")
     print("  4. 编译后：根据实际模块、variant 和项目已有任务选择 lint，不得写死 lintDebug。")
-    print("  5. 测试左移：按已确认 BDD 生成可执行测试，不得只保留 Given/When/Then 文本。")
-    print("  6. 闭环：任一测试、构建或 Lint 失败，定位根因并修改后重跑；同一根因连续 3 轮失败才暂停。")
-    print("  7. 不得自动提交 Git；只有用户明确要求时才提交。")
+    print("  5. 测试左移：按 REQ/BDD 分配 TEST-###；Bug 或可观察行为变化优先先保留 Red，再最小修改转 Green。")
+    print("  6. 追溯：同步实现文件、测试、命令和证据；全部已确认需求的映射率必须为 100%。")
+    print("  7. 闭环：任一测试、构建或 Lint 失败，定位根因并修改后重跑；同一根因连续 3 轮失败才暂停。")
+    print("  8. 新鲜证据：最后一次修复后重新执行全部必需命令，旧轮次通过结果不能作为最终门禁。")
+    print("  9. 不得自动提交 Git；只有用户明确要求时才提交。")
 
 
 def get_diff_files(baseline_path):
@@ -176,35 +181,151 @@ def get_diff_files(baseline_path):
     return collect_changed_files(Path.cwd(), baseline_path=baseline_path)
 
 
-def classify_route_files(diff_files):
-    """只生成现有路由需要的 UI/API 候选，不替代 AI 的语义复核。"""
+def _read_route_signal(path):
+    """只读取体积合理的文本改动，内容不可读时安全退回路径候选。"""
+    text_suffixes = {
+        ".gradle", ".gql", ".graphql", ".java", ".json", ".kt", ".kts",
+        ".pro", ".properties", ".proto", ".toml", ".xml", ".yaml", ".yml",
+    }
+    if path.suffix.lower() not in text_suffixes:
+        return ""
+    try:
+        if not path.is_file() or path.stat().st_size > 512 * 1024:
+            return ""
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+
+
+def classify_route_impacts(diff_files, project_root=None):
+    """按路径和轻量内容信号生成影响候选；业务结论仍由 AI 结合 diff 复核。"""
     ui_resource_dirs = {
         "layout", "drawable", "values", "navigation", "menu", "font", "color",
         "anim", "animator", "mipmap",
     }
     ui_name = re.compile(r"(?:Activity|Fragment|Adapter|ViewHolder|Screen|Composable|View)$", re.I)
     api_name = re.compile(
-        r"(?:Api|Dto|Request|Response|Repository|Service|Endpoint|Mapper|DataSource|Cache)$",
+        r"(?:Api|Dto|Request|Response|Repository|Endpoint|Mapper|DataSource)$",
         re.I,
     )
     api_segments = {"api", "network", "remote", "dto", "openapi", "swagger"}
+    data_name = re.compile(
+        r"(?:Dao|Entity|Database|Migration|DataStore|Preferences|Cache|LocalDataSource)$",
+        re.I,
+    )
+    data_segments = {
+        "database", "db", "local", "room", "datastore", "preferences", "cache",
+        "schema", "schemas", "proto",
+    }
+    system_name = re.compile(
+        r"(?:Service|Receiver|Provider|Worker|WebView|DeepLink|Notification|FileProvider)$",
+        re.I,
+    )
+    architecture_name = re.compile(
+        r"(?:Module|Component|Subcomponent|Injector|Binds|Provides)$",
+        re.I,
+    )
+    build_files = {
+        "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+        "gradle.properties", "libs.versions.toml", "proguard-rules.pro", "consumer-rules.pro",
+    }
+    test_name = re.compile(r"(?:Test|Tests|Spec)$", re.I)
+    root = Path(project_root) if project_root is not None else Path.cwd()
+    impacts = {
+        "ui": [],
+        "api": [],
+        "data": [],
+        "system": [],
+        "build": [],
+        "architecture": [],
+        "tests": [],
+    }
 
-    ui_files = []
-    api_files = []
+    def add(category, path):
+        """同一类别内去重，同时保留 Git 返回的稳定顺序。"""
+        if path not in impacts[category]:
+            impacts[category].append(path)
+
     for path in diff_files:
         normalized = path.replace("\\", "/")
         parts = normalized.split("/")
-        lowered_parts = {part.lower() for part in parts}
+        lowered_parts = {part.lower() for part in parts if part}
+        filename = parts[-1].lower()
         stem = Path(parts[-1]).stem
-        if any(
+        suffix = Path(parts[-1]).suffix.lower()
+        is_ui = any(
             parts[index - 1].lower() == "res" and part.lower() in ui_resource_dirs
             for index, part in enumerate(parts)
             if index > 0
-        ) or ui_name.search(stem):
-            ui_files.append(path)
-        if lowered_parts & api_segments or api_name.search(stem):
-            api_files.append(path)
-    return ui_files, api_files
+        ) or bool(lowered_parts & {"ui", "presentation"}) or bool(ui_name.search(stem))
+        is_api = (
+            bool(lowered_parts & api_segments)
+            or bool(api_name.search(stem))
+            or suffix in {".graphql", ".gql"}
+        )
+        is_data = (
+            bool(lowered_parts & data_segments)
+            or bool(data_name.search(stem))
+            or suffix == ".proto"
+        )
+        is_system = filename == "androidmanifest.xml" or bool(system_name.search(stem))
+        is_build = (
+            filename in build_files
+            or "build-logic" in lowered_parts
+            or ("gradle" in lowered_parts and filename.endswith((".gradle", ".kts", ".properties")))
+            or filename.startswith(("proguard-", "r8-"))
+        )
+        is_architecture = (
+            is_build
+            or bool(lowered_parts & {"di", "impl"})
+            or bool(architecture_name.search(stem))
+        )
+        is_test = (
+            bool(lowered_parts & {"test", "androidtest", "testfixtures"})
+            or bool(test_name.search(stem))
+        )
+
+        # 内容只补充候选，不覆盖路径判断，也不把注解本身解释成业务变化。
+        content = _read_route_signal(root / normalized)
+        if content:
+            is_ui = is_ui or bool(re.search(r"@Composable\b", content))
+            is_api = is_api or bool(re.search(
+                r"@(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|HTTP)\b",
+                content,
+            ))
+            is_data = is_data or bool(re.search(
+                r"@(Entity|Dao|Database|TypeConverter)\b|\bMigration\s*\(",
+                content,
+            ))
+            is_system = is_system or bool(re.search(
+                r"<uses-permission\b|<(service|receiver|provider)\b|\b(registerReceiver|PendingIntent|NotificationManager|WebView)\b",
+                content,
+                re.I,
+            ))
+            is_architecture = is_architecture or bool(re.search(
+                r"@(Module|InstallIn|Binds|Provides|Component|Subcomponent)\b|\b(api|implementation|compileOnly|runtimeOnly)\s*\(\s*project\(",
+                content,
+            ))
+            is_test = is_test or bool(re.search(r"@(Test|ParameterizedTest|RunWith)\b", content))
+
+        for category, matched in (
+            ("ui", is_ui),
+            ("api", is_api),
+            ("data", is_data),
+            ("system", is_system),
+            ("build", is_build),
+            ("architecture", is_architecture),
+            ("tests", is_test),
+        ):
+            if matched:
+                add(category, path)
+    return impacts
+
+
+def classify_route_files(diff_files):
+    """兼容原有 UI/API 调用；完整候选由 classify_route_impacts 提供。"""
+    impacts = classify_route_impacts(diff_files)
+    return impacts["ui"], impacts["api"]
 
 
 def print_route_instructions(skills_to_run):
@@ -317,15 +438,50 @@ def cmd_route(args):
     for path in diff_files:
         print(f"  - {path}")
 
-    # 文件名仅用于生成候选，最终路由必须结合已确认需求和实际 diff。
-    ui_files, api_files = classify_route_files(diff_files)
+    # 路径和内容只生成候选，最终路由必须结合已确认需求和实际 diff。
+    impacts = classify_route_impacts(diff_files, project_root=project_path)
+    ui_files = impacts["ui"]
+    api_files = impacts["api"]
+
+    print("\n🧭 语义影响候选(不是业务结论):")
+    impact_labels = {
+        "ui": "UI",
+        "api": "接口契约",
+        "data": "数据存储",
+        "system": "系统能力",
+        "build": "构建配置",
+        "architecture": "架构依赖",
+        "tests": "测试",
+    }
+    print("  类别 | 状态 | 候选文件")
+    for category, label in impact_labels.items():
+        candidates = impacts[category]
+        status = f"检测到 {len(candidates)} 个" if candidates else "未检测到"
+        files = ", ".join(candidates) if candidates else "-"
+        print(f"  {label} | {status} | {files}")
+
+    attention = []
+    if impacts["data"]:
+        attention.append("数据存储：diff/稳定性/测试必须复核 schema、迁移、旧数据和回滚")
+    if impacts["system"]:
+        attention.append("系统能力：diff/稳定性/测试必须复核权限、生命周期和 Android 版本")
+    if impacts["build"]:
+        attention.append("构建配置：diff/质量/测试必须复核依赖解析、任务和老项目兼容")
+    if impacts["architecture"]:
+        attention.append("架构依赖：diff/质量必须复核模块方向、DI 和公共边界")
+    if impacts["tests"]:
+        attention.append("测试：diff/测试门禁必须复核断言有效性和覆盖映射")
+    if attention:
+        print("\n⚠️ 强制关注点:")
+        for item in attention:
+            print(f"  - {item}")
 
     print("\n🚀 触发的专项审查(按执行顺序):")
     print("\n【核心·业务逻辑层(必须先过,逐个执行)】")
     skills_to_run = ["android-review-diff"]
     print("  1. android-review-diff (默认:审查实际 diff 和影响范围)")
 
-    # 动态路由：网络接口层变更 —— 业务逻辑核心
+    # 接口候选拥有独立契约 Skill；其他候选进入既有 diff/质量/稳定性/测试职责。
     if api_files:
         skills_to_run.append("android-verify-api-contract")
         print("  2. android-verify-api-contract (检测到接口契约候选)")

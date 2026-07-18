@@ -1,5 +1,7 @@
 # Android Skills 名称、职责与用法
 
+流程维护者先读 `references/open-source-design-rationale.md`；修改 Skill、路由或门禁后用 `android-implement-and-verify/references/delivery-eval-scenarios.md` 做行为评测。日常执行需求不必加载这两份文档。
+
 ## 只记一个日常入口
 
 完整实现需求、修复 Bug 或完成迭代时，只调用：

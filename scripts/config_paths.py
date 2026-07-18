@@ -56,5 +56,6 @@ def baseline_path_for_config(config_path: str | Path) -> Path:
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
     ).expanduser()
+    # 同名 local.yaml 可能属于不同项目，用绝对路径摘要避免需求基线互相覆盖。
     digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
     return (state_root / "android-delivery-skills" / f"{path.stem}-{digest}.json").resolve()

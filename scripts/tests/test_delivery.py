@@ -50,6 +50,7 @@ from ..delivery import (  # noqa: E402
     cmd_confirm_requirement_update,
     cmd_init,
     cmd_route,
+    format_requirement_change,
     load_config,
     read_requirement,
     resolve_config_paths,
@@ -217,6 +218,20 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertEqual(self.requirement.resolve(), Path(payload["requirement_path"]))
         self.assertIn("+允许点击重试", diff)
         self.assertEqual(0o600, stat.S_IMODE(self.snapshot.stat().st_mode))
+
+    def test_requirement_change_is_presented_in_chinese(self) -> None:
+        """验证用户看到中文变化、确认状态和删除处置，不需要理解内部英文枚举。"""
+        text = format_requirement_change({
+            "id": "BDD-001/T2",
+            "change_type": "REMOVED",
+            "decision": "CONFIRMED",
+            "disposition": "KEEP_COMPATIBILITY",
+        })
+
+        self.assertEqual(
+            "BDD-001/T2：删除，已确认：只删除当前入口，保留兼容能力",
+            text,
+        )
 
     def test_legacy_snapshot_upgrades_without_losing_confirmed_text(self) -> None:
         """验证已有 v1 外部快照可继续使用，并在下一次确认时安全升级。"""

@@ -61,10 +61,48 @@ from .requirement_snapshot import (  # noqa: E402
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = SKILL_ROOT / "profiles/local.yaml"
 REQUIREMENTS_PATH = SKILL_ROOT / "requirements.txt"
+CHANGE_TYPE_LABELS = {
+    "ADDED": "新增",
+    "CHANGED": "修改",
+    "REMOVED": "删除",
+    "UNCHANGED": "未变化",
+    "SUPERSEDED": "已被新要求替代",
+}
+DECISION_LABELS = {
+    "CONFIRMED": "已确认",
+    "PENDING": "待确认",
+    "REJECTED": "已撤回/拒绝",
+    "CONFLICT": "存在冲突",
+}
+SNAPSHOT_STATUS_LABELS = {
+    "AWAITING_OBLIGATIONS": "等待生成验收清单",
+    "PENDING_CONFIRMATION": "存在待确认变化",
+    "CONFIRMED": "已确认",
+}
+REMOVAL_DISPOSITION_LABELS = {
+    "REMOVE_IMPLEMENTATION": "整个功能彻底删除",
+    "KEEP_COMPATIBILITY": "只删除当前入口，保留兼容能力",
+    "STOP_UNFINISHED_WORK": "取消本轮尚未完成的开发",
+}
 
 
 class DeliveryError(RuntimeError):
     """表示已有明确原因、不能继续猜测的流程错误。"""
+
+
+def format_requirement_change(change):
+    """把机器稳定枚举转换成面向用户的中文需求变化说明。"""
+    change_type = CHANGE_TYPE_LABELS.get(change.get("change_type"), "未知变化")
+    decision = DECISION_LABELS.get(change.get("decision"), "未知决定")
+    details = []
+    disposition = change.get("disposition")
+    if disposition:
+        details.append(REMOVAL_DISPOSITION_LABELS.get(disposition, "未知删除处置"))
+    reason = change.get("reason")
+    if reason:
+        details.append(str(reason))
+    suffix = f"：{'；'.join(details)}" if details else ""
+    return f"{change['id']}：{change_type}，{decision}{suffix}"
 
 
 def parse_args(argv=None):
@@ -434,7 +472,8 @@ def cmd_init(args):
     if snapshot and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve():
         print(
             f"\n📚 当前确认修订: {snapshot['requirement_id']} "
-            f"r{snapshot['revision']} ({snapshot['status']})"
+            f"r{snapshot['revision']} "
+            f"({SNAPSHOT_STATUS_LABELS.get(snapshot['status'], '状态未知')})"
         )
         if snapshot["obligations"]:
             print("=== 当前有效原子义务 ===")
@@ -444,11 +483,7 @@ def cmd_init(args):
         if snapshot["pending_changes"]:
             print("=== 尚未确认的需求变化 ===")
             for change in snapshot["pending_changes"]:
-                reason = f": {change.get('reason')}" if change.get("reason") else ""
-                print(
-                    f"  - {change['id']} {change['change_type']}/"
-                    f"{change['decision']}{reason}"
-                )
+                print(f"  - {format_requirement_change(change)}")
         if snapshot["sha256"] == requirement_digest(content):
             print("\n=== 需求变化 ===")
             print("✅ 当前需求正文与最近确认修订一致。")
@@ -568,11 +603,8 @@ def cmd_confirm_requirement_update(args):
         print("⚠️ 需求修订尚未确认，上一确认版本和 Git 基线均保持不变。")
         for change in snapshot["pending_changes"]:
             if change["decision"] in {"PENDING", "CONFLICT"}:
-                print(
-                    f"  - {change['id']} {change['change_type']}/"
-                    f"{change['decision']}: {change.get('reason', '')}"
-                )
-        print("解决全部 PENDING/CONFLICT 并更新修订清单后重新执行本命令。")
+                print(f"  - {format_requirement_change(change)}")
+        print("解决全部待确认项和冲突项并更新修订清单后，重新执行本命令。")
         return 2
 
     print(

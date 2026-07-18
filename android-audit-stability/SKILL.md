@@ -29,6 +29,20 @@ description: Android 运行时稳定性、性能、安全隐私与兼容性风�
 - 发现崩溃、内存泄漏、ANR、兼容性或协程风险后默认先报告，不自动修复。
 - 没有实体真机时继续静态审查和模拟器可覆盖验证；只把正式性能、厂商兼容、真实硬件或长期动态证据标为未验证，不得终止其他检查。
 
+## Kotlin / Java / Android 静态语义路由
+
+当需求或实际 diff 涉及 Kotlin、Java、混合调用、生命周期对象、异步任务、共享状态、监听器、回调或可关闭资源时，必须按需读取 `references/kotlin-java-static-analysis.md`，不得只靠文件名、关键词或固定泄漏清单判断。
+
+- 围绕“短生命周期不能被长生命周期持有、注册与解绑成对、获取与释放成对、异步任务不超过宿主、清理路径真实可达、共享状态具有并发纪律”六条不变量审查。
+- 存在生命周期或资源候选时，必须输出“对象/资源、创建位置、持有者、预期生命周期、释放/取消位置、引用逃逸、证据/风险”资源所有权表。
+- 存在共享可变状态、锁或多调度器候选时，必须输出写入者、读取者、线程/调度器、同步或串行保证和证据/风险并发访问表。
+- Java/Kotlin 混合调用必须核对 platform type、Nullability、primitive/boxed、异常、默认参数、异步桥接和真实公开契约；不机械要求 JVM 注解或技术迁移。
+- 只展开能证明创建、持有、逃逸、取消或清理关系的必要调用链；跨模块、反射、生成代码或第三方闭源边界无法确认时标记证据不足。
+- Android Lint、detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL 等告警是复核入口，不直接等于生产缺陷；无告警也不能证明没有泄漏或竞态。
+- 老项目告警区分 `NEW`、`AFFECTED`、`PRE_EXISTING`、`UNKNOWN_ORIGIN`；不清理无关历史债务，也不允许历史噪声掩盖本次新增问题。
+- 不自动安装工具或依赖，不自动创建/更新 baseline，不批量添加 suppress。
+- 静态未发现问题时只能写“在指定 diff、调用链和已执行规则中未发现明确静态问题”；没有动态证据时必须另写“动态泄漏未验证”。
+
 ## 严重级别
 
 - P0：确定会崩溃、ANR、数据丢失、安全风险，必须优先处理。
@@ -46,7 +60,7 @@ description: Android 运行时稳定性、性能、安全隐私与兼容性风�
 
 ### 生命周期与内存泄漏
 
-检查 ViewModel 是否持有 Activity / Fragment / View / Context，单例是否持有短生命周期对象，Handler / Runnable / Timer / Thread 是否清理，Receiver / Listener / Callback / Observer 是否解绑，Fragment view binding 是否在 `onDestroyView` 释放，Dialog / PopupWindow / WebView 是否泄漏 Activity。
+按适用的所有权与并发不变量检查创建、持有、引用逃逸和清理路径。ViewModel/单例持有短生命周期对象、Handler/任务未取消、注册未解绑、Fragment View 生命周期错配，以及 Dialog/WebView/Camera/Media 等资源未释放只是常见应用示例；最终结论必须落到真实所有者、调用链和 API 契约。
 
 #### 动态泄漏条件门禁
 
@@ -56,9 +70,9 @@ description: Android 运行时稳定性、性能、安全隐私与兼容性风�
 - 单次 `dumpsys meminfo`、静态未发现持有关系或页面退出后内存暂未下降，都不能证明无泄漏。
 - 修复前后使用相同进入/退出路径和轮次重验，证据记录引用链、报告路径、设备类型和能力损失。
 
-### 协程与 Flow
+### 异步、协程与 Flow
 
-检查 `GlobalScope`、协程作用域、`launch` 异常、`CancellationException` 误吞、Flow `catch`、`repeatOnLifecycle`、重复 collect、请求乱序、旧数据覆盖新状态、共享状态并发修改。
+Kotlin 核对 CoroutineScope/Job 所有者与取消边界、Flow 注册清理、共享作用域和 Compose Effect；Java 核对 Handler/Executor/Future、RxJava Disposable/Scheduler、旧式 Callback 和 `observeForever` 的所有者、线程与释放。混合调用同时检查异常、取消传播、请求乱序和共享状态竞态；具体方法见静态语义参考文档。
 
 ### ANR 与主线程
 
@@ -141,3 +155,5 @@ Firebase / Crashlytics 重点关注：崩溃堆栈、非致命异常、受影响
 - 是否建议立即修复
 
 最后汇总：已检查项；动态泄漏、性能和安全隐私的适用性、工具与新鲜证据；设备类型和降级能力；未验证项；剩余风险；是否等待用户确认修复。详细状态边界见 `../android-implement-and-verify/references/conditional-capability-gates.md`。
+
+存在生命周期或资源候选时，汇总中必须同时包含资源所有权表、静态结论和独立的动态结论；存在并发候选时再包含并发访问表。不得把“未发现明确静态问题”改写为“无泄漏”或“线程安全”。

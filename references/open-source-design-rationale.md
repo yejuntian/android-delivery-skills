@@ -5,12 +5,15 @@
 ## 目录
 
 1. [设计目标](#设计目标)
-2. [参考项目](#参考项目)
-3. [第一轮设计决策](#第一轮设计决策)
-4. [第二轮设计决策](#第二轮设计决策)
-5. [明确不照搬](#明确不照搬)
-6. [长期不变量](#长期不变量)
-7. [维护规则](#维护规则)
+2. [筛选方法](#筛选方法)
+3. [Android 交付 Top15](#android-交付-top15)
+4. [Java 老项目补充参考](#java-老项目补充参考)
+5. [排除与历史补充参考](#排除与历史补充参考)
+6. [第一轮设计决策](#第一轮设计决策)
+7. [第二轮设计决策](#第二轮设计决策)
+8. [明确不照搬](#明确不照搬)
+9. [长期不变量](#长期不变量)
+10. [维护规则](#维护规则)
 
 ## 设计目标
 
@@ -19,26 +22,73 @@
 - 先确认需求，再修改代码；不从代码或工具结果反推产品需求。
 - 把需求、BDD、实现、测试和执行证据连成可追溯闭环，减少遗漏。
 - 遵守目标项目既有架构，保持高内聚、低耦合和最小修改，不强推技术迁移。
+- Kotlin 作为现代 Android 优先方向，Java 老项目作为一等支持对象，混合项目不复制第二套流程。
 - 用真实命令、日志、报告和设备结果支撑结论；未验证项不得写成通过。
 - 失败时先找根因，再做单变量最小修复；不得用删测试、弱化断言或重复碰运气造绿。
 - 不承诺数学意义上的“零 Bug”，而是保证缺少必需证据时阻断完成声明。
 
-## 参考项目
+## 筛选方法
 
-Star 数是 2026-07-18 的调研快照，只用于说明社区采用度，不作为设计正确性的唯一依据。
+Star 数是 2026-07-18 的 GitHub 调研快照，只用于说明社区采用度，不作为设计正确性的唯一依据。本表不是全 GitHub 绝对排名，而是按以下方法得到的本流程相关 Top15：
 
-| 项目 | 调研时 Star | 吸收的做法 | 不照搬的做法 |
+1. 候选必须直接覆盖需求驱动开发、Android/Kotlin/Java 架构、异步并发、静态分析、契约、泄漏、性能、安全、UI 或自动化测试中的至少一项。
+2. Kotlin/Android 代表现代主路径，Java-first 项目用于补足老项目和混合语言证据；两者不因语言不同复制交付流程。
+3. 同一能力只保留更贴近当前目标或维护更活跃的代表，避免用多个同类工具堆满名额。
+4. 逐个核对仓库文档、源码目录、规则/查询、测试或报告能力；不只根据项目名和 Star 推断。
+5. 只吸收可迁移的设计原则，不因排名强制引入依赖、升级构建或改变旧项目架构。
+
+Star 会持续变化，后续维护只需更新快照日期和数值；除非项目能力或本流程目标改变，不应因名次小幅波动重写决策。
+
+## Android 交付 Top15
+
+Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目；Java 专项工具按下一节补充，不因 Star 排名强制接入。
+
+| 排名 | 项目 | 调研时 Star | 与本流程的直接关系 | 吸收的做法 | 不照搬的做法 |
+| ---: | --- | ---: | --- | --- | --- |
+| 1 | [obra/superpowers](https://github.com/obra/superpowers) | 256,945 | Agent 需求与验证流程 | 需求澄清、根因调查、行为级 Red-Green、完成前新鲜证据 | 每个小改动都写完整设计、强制多智能体、频繁自动提交或删除旧实现重写 |
+| 2 | [github/spec-kit](https://github.com/github/spec-kit) | 122,078 | 规格与追溯 | 稳定需求 ID、场景边界、跨产物覆盖分析 | 为每个需求复制完整 spec/plan/tasks/checklists 和复杂状态管理 |
+| 3 | [android/architecture-samples](https://github.com/android/architecture-samples) | 45,759 | Android 架构与分层测试 | 清晰层边界、Repository/DataSource、Unit/Integration/E2E 分层、fake 隔离 | 把示例架构当成所有旧项目模板 |
+| 4 | [square/leakcanary](https://github.com/square/leakcanary) | 29,949 | Kotlin/Android 泄漏证据 | Leak Trace、Heap/Object Inspector、生命周期前后动态泄漏验证 | 无条件新增依赖，或把工具输出直接当根因 |
+| 5 | [OpenAPITools/openapi-generator](https://github.com/OpenAPITools/openapi-generator) | 26,572 | OpenAPI 与 Kotlin 模型 | 机器可读 schema、Kotlin client/data class/Room 模板的一致性思路 | 直接覆盖旧项目手写网络层或信任未经审查的生成输入 |
+| 6 | [android/compose-samples](https://github.com/android/compose-samples) | 23,315 | Compose 状态与 UI 测试 | UI 状态、主题、输入、导航、UI 测试和自适应设备形态 | 无条件迁移 Compose |
+| 7 | [android/nowinandroid](https://github.com/android/nowinandroid) | 21,540 | Kotlin Android 生产样例 | 单向数据流、模块依赖图、截图测试、Benchmark、变更证据 | 照抄模块数量、Convention Plugin 或固定覆盖率阈值 |
+| 8 | [MobSF/Mobile-Security-Framework-MobSF](https://github.com/MobSF/Mobile-Security-Framework-MobSF) | 21,449 | 移动端安全分析 | Android 包、Manifest、代码和配置的静态/动态安全证据分层 | 把一次扫描写成渗透测试通过，或强制每个需求部署完整平台 |
+| 9 | [semgrep/semgrep](https://github.com/semgrep/semgrep) | 15,941 | Kotlin/Gradle 静态规则 | 项目已有规则优先、结构化告警和可审查规则 | 把社区版单文件/有限跨函数能力冒充完整调用链证明，或自动下载未知规则 |
+| 10 | [mobile-dev-inc/Maestro](https://github.com/mobile-dev-inc/Maestro) | 14,959 | Android E2E 自动化 | 可读 Flow、条件等待、模拟器/真机执行和结构化报告 | 本轮替换 Journey，或强制老项目安装第二套 UI 测试体系 |
+| 11 | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | 13,800 | Kotlin 协程与 Flow 契约 | 结构化并发、取消传播、Flow/callbackFlow 生命周期语义 | 把 API 名清单当成所有权分析，或要求旧项目迁移全部异步实现 |
+| 12 | [github/codeql](https://github.com/github/codeql) | 9,844 | Kotlin/Java 跨文件数据流 | Kotlin extractor、模型和查询提供的跨文件证据 | 未配置项目中自动建库/下载套件，或把查询零结果写成无风险 |
+| 13 | [detekt/detekt](https://github.com/detekt/detekt) | 7,007 | Kotlin 原生静态分析 | 复用项目既有规则、配置、baseline 和报告 | 自动接入插件、更新 baseline、批量 suppress 或以风格告警替代语义复核 |
+| 14 | [google/perfetto](https://github.com/google/perfetto) | 6,236 | Android 性能与内存 Trace | Java/Kotlin/native profiling、Trace SQL 和调用时间线证据 | 无 Trace 发明性能根因，或用模拟器单次结果宣称正式性能通过 |
+| 15 | [androidx/androidx](https://github.com/androidx/androidx) | 6,038 | AndroidX 实现与验证基准 | Lifecycle、Compose、Test、Benchmark 和 Kotlin Lint detector 的真实契约 | 复制内部实现、强制升级 AndroidX，或把最新 API 当成旧项目唯一解 |
+
+## Java 老项目补充参考
+
+以下 Star 同为 2026-07-18 GitHub API 快照。它们补充 Top15 的 Java、构建和测试证据，不构成另一套强制工具链。
+
+| 项目 | 调研时 Star | 采用点 | 边界 |
 | --- | ---: | --- | --- |
-| [obra/superpowers](https://github.com/obra/superpowers) | 256,904 | 需求澄清、根因调查、行为级 Red-Green、完成前新鲜证据、独立复审 | 每个小改动都写完整设计、强制多智能体、频繁自动提交、删除已有实现后重写 |
-| [github/spec-kit](https://github.com/github/spec-kit) | 122,063 | 稳定需求 ID、场景与边界覆盖、最多询问高影响问题、跨产物覆盖分析 | 为每个需求复制完整 spec/plan/tasks/checklists 体系和复杂状态管理 |
-| [OpenHands/OpenHands](https://github.com/OpenHands/OpenHands) | 81,177 | 工作区与权限边界、自动化和人工授权分离 | 常驻 Agent 平台、多后端服务和超出本仓库目标的运行时 |
-| [Aider-AI/aider](https://github.com/Aider-AI/aider) | 47,492 | 编辑后立即 lint/test、把真实失败输出交给 AI、分析与编辑职责分离 | 自动提交、自动提交用户脏改动、默认绕过 commit hook |
-| [android/architecture-samples](https://github.com/android/architecture-samples) | 45,758 | 清晰层边界、Repository/DataSource、Unit/Integration/E2E 分层、fake 与生产隔离 | 把示例架构当成所有旧项目的模板 |
-| [square/leakcanary](https://github.com/square/leakcanary) | 29,949 | 动态 Leak Trace、生命周期前后泄漏断言、CI 阻断新泄漏 | 无条件给所有项目新增依赖，或把工具输出直接当根因 |
-| [OpenAPITools/openapi-generator](https://github.com/OpenAPITools/openapi-generator) | 26,563 | 机器可读契约、schema 校验、Kotlin 模型与客户端一致性 | 直接覆盖旧项目手写网络层或信任未经审查的生成输入 |
-| [android/compose-samples](https://github.com/android/compose-samples) | 23,314 | UI 状态、主题、输入、导航、UI 测试和自适应设备形态 | 无条件迁移 Compose |
-| [android/nowinandroid](https://github.com/android/nowinandroid) | 21,538 | 单向数据流、模块依赖图、测试公共能力、截图测试、Benchmark、变更文件覆盖和 CI 证据 | 照抄模块数量、Convention Plugin 或固定覆盖率阈值 |
-| [mobile-dev-inc/Maestro](https://github.com/mobile-dev-inc/Maestro) | 14,950 | 可读 E2E Flow、条件等待、结构化 JUnit/HTML 报告 | 默认替换 Journey 或强制老项目安装另一套 UI 测试体系 |
+| [ReactiveX/RxJava](https://github.com/ReactiveX/RxJava) | 48,235 | Java 异步流、Scheduler、Disposable 和终止语义 | 不强制把旧项目迁移到 RxJava，也不把 dispose 调用存在等同于生命周期正确 |
+| [gradle/gradle](https://github.com/gradle/gradle) | 18,704 | source set、variant、Java/JVM toolchain 和可复用任务发现 | 不自动升级 Gradle、JDK 或重写构建体系 |
+| [facebook/infer](https://github.com/facebook/infer) | 15,666 | Java 空值、资源、并发静态证据 | 只在项目已有配置时执行，不把 Java 优势冒充 Kotlin 完整覆盖 |
+| [mockito/mockito](https://github.com/mockito/mockito) | 15,444 | 复用 Java 老项目既有测试替身 | 不用内部方法调用次数代替业务行为断言 |
+| [OWASP/mastg](https://github.com/OWASP/mastg) | 13,059 | 移动安全验证边界与动态证据 | 不把静态扫描写成完整安全测试通过 |
+| [android/testing-samples](https://github.com/android/testing-samples) | 9,295 | Java/Android 测试框架、runner 和分层示例 | 不复制样例依赖或强制迁移测试框架 |
+| [google/error-prone](https://github.com/google/error-prone) | 7,208 | Java 编译期常见错误 | 未配置项目不自动接入 compiler plugin |
+| [robolectric/robolectric](https://github.com/robolectric/robolectric) | 6,024 | 无设备 Java/Android 行为测试 | 不用 Robolectric 冒充真机、厂商 ROM 或硬件证据 |
+| [uber/NullAway](https://github.com/uber/NullAway) | 4,079 | Java Nullability 与低成本 NPE 约束 | 不批量补注解或把零告警写成绝对无 NPE |
+| [spotbugs/spotbugs](https://github.com/spotbugs/spotbugs) | 3,911 | Java bug pattern 与历史报告 | 不清理全仓库历史债务，不更新 baseline 掩盖新增问题 |
+
+## 排除与历史补充参考
+
+以下项目并非质量差，而是没有占用 Android 交付 Top15 名额：
+
+- **OpenHands、Cline、Aider、Continue**：属于通用 Agent/编码工具，和 Superpowers、Spec Kit 的流程能力重叠；Aider 的 repo context 与编辑后 lint/test 仍作为 M03、M08 的历史补充依据，OpenHands 的工作区权限边界只保留为全局安全原则的历史参考。
+- **Fastlane**：更偏 CI、签名和发布自动化，留到第三轮 CI/报告聚合讨论。
+- **Appium**：跨平台能力强但运行体系较重；当前 UI 自动化候选已经保留 Maestro，且本轮不改 Journey。
+- **Swagger Codegen**：与维护更活跃、Kotlin 模板更完整的 OpenAPI Generator 能力重复。
+- **Koin**：是具体 DI 方案，强纳入会违背兼容 Hilt/Dagger/手写 DI 和老项目的目标。
+- **ktlint**：主要解决格式与风格，不承担生命周期、泄漏或业务正确性证明。
+- **Retrofit、OkHttp**：是业务网络库而非交付门禁；接口核验仍兼容它们，但不绑定为强制方案。
 
 ## 第一轮设计决策
 
@@ -130,8 +180,18 @@ Star 数是 2026-07-18 的调研快照，只用于说明社区采用度，不作
 
 ### M15 安全隐私门禁
 
-- **来源**：OpenHands 的权限边界和 Android 官方项目的 Manifest、网络、存储与日志安全实践。
+- **来源**：MobSF 的移动端静态/动态安全证据，以及 AndroidX/Android 官方项目的 Manifest、网络、存储与日志安全实践。
 - **决策**：权限、导出组件、WebView、用户数据和敏感日志变化才触发；复用项目已有扫描，不把静态检查写成渗透测试通过。
+
+### M16 Kotlin / Java Android 静态语义分析
+
+- **来源**：kotlinx.coroutines 与 RxJava 的异步契约，AndroidX 的 Lifecycle/Compose/Lint 实现，LeakCanary 的引用链模型，以及 detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL 的静态能力。
+- **决策**：不维护无限规则清单，统一用六条不变量审查：短生命周期不被长生命周期持有、注册/解绑成对、获取/释放成对、异步任务不超过宿主、清理路径可达、共享状态具有并发纪律。
+- **语言边界**：Kotlin 优先、Java 一等支持；混合调用额外核对 Nullability/platform type、primitive/boxed、异常、泛型、SAM/Callback、取消传播和公开 API/ABI，不复制第二套流程。
+- **执行**：`android-audit-stability` 建立资源所有权表和按需并发访问表、复核必要调用链并解释告警；`android-test-and-fix` 只发现和执行项目已有编译、Lint、语言专项、跨语言扫描、测试、release/R8 与 API/ABI 任务。
+- **历史债务**：告警区分 `NEW`、`AFFECTED`、`PRE_EXISTING`、`UNKNOWN_ORIGIN`；不更新 baseline 掩盖新增问题，也不借需求清理无关旧问题。
+- **证据边界**：生成代码、反射、AIDL、JNI、闭源 SDK 或 release 行为无法确认时标未验证；静态零告警只能写“未发现明确静态问题”，不能宣称无泄漏、线程安全或实机通过。
+- **原因**：项目配置变化只影响能力发现与证据，不要求修改路由脚本或强制迁移语言、AGP、Gradle、JDK 和测试框架。
 
 ## 明确不照搬
 
@@ -156,6 +216,8 @@ Star 数是 2026-07-18 的调研快照，只用于说明社区采用度，不作
 8. 没有新鲜执行证据时不能声明完成；没有动态证据时不能宣称无泄漏、无性能问题或实机通过。
 9. 缺少真机不停止其他可执行门禁；只限制对应动态能力和完整交付结论。
 10. 第二轮条件能力复用现有 Skill 和项目工具，不自动安装依赖或扩张为六个新 Skill。
+11. Kotlin/Java/Android 静态审查以六条不变量、语言边界和必要调用链为核心；工具零告警不能改写成无泄漏或线程安全。
+12. 老项目历史债务与本次新增问题必须分离；不更新 baseline 造绿，也不扩大需求清理无关旧问题。
 
 ## 维护规则
 
@@ -164,5 +226,6 @@ Star 数是 2026-07-18 的调研快照，只用于说明社区采用度，不作
 - 修改路由逻辑时，同步 `scripts/delivery.py`、`scripts/tests/test_delivery.py` 和相关场景预期。
 - 修改测试门禁时，同步 `android-test-and-fix/SKILL.md`；不得只改说明不改执行证据要求。
 - 修改第二轮条件能力时，同步 `android-implement-and-verify/references/conditional-capability-gates.md`、主责 Skill、route 提示和对应行为评测场景。
+- 修改 Kotlin/Java 生命周期、并发、语言边界或静态工具策略时，同步 `android-audit-stability/references/kotlin-java-static-analysis.md`、稳定性 Skill、测试执行 Skill、代码质量 Skill 和行为评测场景。
 - 新增外部参考时记录项目、采用点、拒绝点和日期；不要因为 Star 高就复制其全部流程。
 - 如果项目实践与本文冲突，以目标项目更严格的 `AGENTS.md` / `CONTRIBUTING.md` 和用户明确要求为准。

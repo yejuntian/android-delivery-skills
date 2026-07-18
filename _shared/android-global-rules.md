@@ -29,6 +29,15 @@
 - 每个 Skill 只执行自己的专业检查或交付职责。发现跨职责问题时记录证据并路由到对应 Skill，不得静默越权处理。
 - 最终报告必须能说明“为什么这些文件属于本次范围”和“每个新增组件负责什么”；无法说明时视为职责或范围未收敛。
 
+### Kotlin、Java 与老项目兼容
+
+- Kotlin 是现代 Android 优先方向，Java 是老项目的一等支持语言；混合项目共用同一交付流程，不新增重复 Java Skill，也不强制迁移语言。
+- 生命周期和静态语义统一检查六条不变量：短生命周期不被长生命周期持有、注册/解绑成对、获取/释放成对、异步任务不超过宿主、清理路径可达、共享状态具有并发纪律。
+- Java/Kotlin 互调按真实调用方核对 Nullability、platform type、primitive/boxed、异常、泛型、SAM/Callback、取消传播和公开契约；不得机械添加 JVM 注解。
+- 只发现和执行项目已有编译、Lint、语言专项、跨语言扫描、测试及 ABI/API 任务；不自动安装工具、升级构建或创建新规则体系。
+- 老项目告警必须区分本次新增、直接受影响、无关历史和来源不明；不得更新 baseline 或批量 suppress 掩盖新增问题，也不得顺手清理无关历史债务。
+- 反射、生成代码、AIDL、JNI、闭源 SDK、release/R8、JDK/AGP/desugaring 只在需求或 diff 触发时验证；证据不足时标未验证，不猜内部行为或关闭混淆造绿。
+
 ### Python 脚本简介与核心注释
 
 - 以后任何任务只要新增、修改、调用或验证 `.py` 文件，AI 都必须主动检查本次涉及的全部 Python 脚本并补齐中文文件级简介，用户不需要重复提醒。
@@ -111,7 +120,7 @@
 2. **性能与卡顿分析（防背诵八股文）**：遇到卡顿、ANR 或内存泄漏优化任务时，禁止直接修改业务代码或背诵通用优化理论。必须先使用项目/本机已有能力采集 Trace、Leak Trace 或 Heap Dump；无法安全采集时再请求用户提供。性能问题优先调用 `perfetto-trace-analysis` 等专项技能通过真实数据找到确切瓶颈。
 3. **深层 Gradle 冲突（防盲猜版本号）**：遇到 `Duplicate class` 或深层依赖库版本冲突导致构建失败时，严禁盲目修改 `build.gradle` 的版本号撞运气。必须强制运行 `./gradlew app:dependencies` (或相关模块的 dependencies task) 打印完整依赖树，分析确切冲突链路后使用 `exclude` 精准解决。
 4. **Release 包混淆闪退（防乱关混淆）**：遇到 Release 包特有的 `ClassNotFoundException` 等混淆问题时，严禁大面积使用通配符 `-keep class **` 关闭混淆！必须强制要求使用 `r8-analyzer` 技能（或查阅 `usage.txt` / `mapping.txt`），精准定位被缩减的类，仅针对引发崩溃的最小闭环添加 Keep 规则。
-5. **协程与异步生命周期（防内存泄漏）**：处理协程生命周期异常或并发时序问题时，绝对禁止使用 `GlobalScope` 逃避生命周期，绝对禁止使用 `delay()` 掩盖时序报错。必须强制追溯宿主生命周期状态，严格使用 `viewModelScope` 或 `repeatOnLifecycle` 进行重构。
+5. **异步生命周期（防内存泄漏）**：处理协程、RxJava、Handler、Executor 或 Callback 生命周期异常时，禁止用无所有者全局任务或固定延时掩盖问题。必须追溯宿主、任务、线程和取消/释放关系；项目使用协程时优先沿用其 lifecycle-aware scope，Java/Rx 老项目沿用可证明安全的 dispose/cancel/remove 契约，不强制迁移技术栈。
 6. **大版本适配与权限（防盲猜废弃 API）**：涉及 Android 权限申请（存储、相册、通知等）和隐式 Intent 跳转修改时，严禁依赖模型自身的“记忆”！必须强制调用 `android docs search` 等命令查阅目标 API Level 的官方变更指南，以最新规范为准修改 Manifest 和代码。
 
 ## 外部资料读取策略（非终止）

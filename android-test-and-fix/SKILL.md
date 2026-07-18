@@ -68,6 +68,53 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 - 涉及清数据、卸载、Monkey、真实支付、真实删除、生产环境接口或破坏性操作时，必须用户明确同意。
 - 每次执行后记录命令、退出码、关键日志、失败原因和剩余风险；没有实际执行不得写成已通过。
 
+## 项目已有静态门禁发现与执行
+
+测试阶段必须根据最终 diff 自动发现目标项目已经具备的 Kotlin、Java 和 Android 静态能力，只执行与受影响语言、模块和 variant 相符的现有任务或配置。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
+
+执行顺序：
+
+1. **Kotlin/Java 编译**：读取项目模块、variant 和 Gradle task，优先执行受影响模块已有的 Kotlin/Java compile task；无法可靠确定独立 compile task 时，使用项目已有最小 assemble/test task 覆盖编译，不猜任务名造结果。
+2. **Android Lint**：存在 Android 模块和对应 lint task 时执行受影响范围的现有 lint；保存文本输出及项目生成的 SARIF、XML 或 HTML 报告路径。
+3. **语言专项**：Kotlin 仅执行项目已配置的 detekt；Java 仅执行项目已配置的 Error Prone、NullAway、SpotBugs 或 Infer。遵守现有版本、task、config 和扫描范围，不临时生成规则集。
+4. **质量任务**：PMD、Checkstyle、ktlint 等只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
+5. **跨语言扫描**：Semgrep 只有本机/项目已有 binary 且仓库已有明确 config/rules 时执行；CodeQL 只有仓库、脚本或 CI 已配置 Kotlin/Java 流程时复用。不得自动下载未知规则、创建数据库或设计新查询套件。
+6. **公开契约**：公共 Java/Kotlin API 变化且项目已有 Metalava、ABI/API validator 或兼容任务时执行；没有既有能力时做人工兼容审查并记录机器校验未验证。
+
+发现与结论规则：
+
+- 从 Gradle 配置、version catalog、脚本、配置目录和 CI 文件确认能力是否真实存在；不能因电脑上有 binary 就假定项目已采用该门禁。
+- 不自动创建或更新任何静态工具 baseline，不批量添加 `@Suppress`、`//noinspection`、规则排除或忽略路径来造绿。
+- 每项记录发现依据、完整命令、执行目录、variant、退出码、关键输出、结构化报告路径和报告生成时间。
+- 工具失败先按失败分类处理；规则告警需交给对应质量或稳定性 Skill 结合调用链复核，不能自动等同于生产缺陷。
+- 工具不存在、配置缺失或老项目无法执行时，记录“未执行 + 原因 + 损失能力”；这不是通过，也不停止编译、测试及其他仍可运行门禁。
+- 最终代码变化后，受影响的静态门禁证据失效，必须重新执行。
+
+### 老项目历史债务隔离
+
+已有可比较基线或旧报告时，把告警标为 `NEW`、`AFFECTED`、`PRE_EXISTING` 或 `UNKNOWN_ORIGIN`：
+
+- `NEW`：本次 diff 新增；按严重级别关闭，不能写入 baseline。
+- `AFFECTED`：旧问题位于本次直接调用链且可能被改动触发或放大；必须结合证据处理。
+- `PRE_EXISTING`：需求开始前已存在且不在直接影响面；记录但不扩大本次修改。
+- `UNKNOWN_ORIGIN`：报告不可比或基线不足；记录能力损失，不脑补为新增、历史或通过。
+
+历史告警总量不能掩盖本次新增问题，也不能成为顺手清理全仓库的理由。完整交付必须关闭本次新增和直接受影响的 P0/P1；无关历史债务只进入剩余风险。
+
+### Java 与混合项目测试发现
+
+- 同时检索 `src/test/java`、`src/androidTest/java`、Kotlin source set、变体 source set 和自定义测试目录。
+- 识别并沿用项目已有 JUnit4/JUnit5、Robolectric、Mockito、PowerMock、Espresso、Instrumentation runner 和自定义 Gradle task；不为统一风格迁移框架。
+- Mockito/PowerMock 只作为现有测试能力，仍优先断言状态、返回值和可观察副作用，不用内部调用次数代替业务行为。
+- 老框架无法安全先 Red 时，记录原因并选择覆盖相同 BDD 的最小编译、Robolectric、仪器或人工路径。
+
+### release、R8 与 Java 版本条件门禁
+
+- 反射序列化、注解生成、JNI、动态加载、R8/ProGuard、公共 API、Java language level、desugaring 或构建配置变化时适用。
+- 只执行项目已有且不需要生产签名/凭据的 release、minify、consumer-rules、ABI/API 或等价验证 task；不得自动升级 AGP、Gradle、JDK 或关闭混淆。
+- 没有可执行任务时继续 debug、本地测试和其他门禁，并写“Debug 已验证，release/R8/目标 Java 兼容未验证”。
+- Release 特有失败保留 mapping、usage、missing rules 和堆栈证据，交给稳定性/`r8-analyzer` 做最小根因修复后重验。
+
 ## 失败分类与降级记录
 
 - 每个失败命令或测试先按共享规则标记一个当前主分类：`REQUIREMENT_BLOCKED`、`ENVIRONMENT_FAILED`、`TEST_FAILED`、`IMPLEMENTATION_FAILED` 或 `UNKNOWN`。测试失败只证明观察结果不符，不能直接证明生产代码有错。
@@ -103,11 +150,14 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 - 网络异常：无网络、超时、服务端错误、登录过期。
 - 权限异常：拒绝、永久拒绝、降级展示。
 - 生命周期：返回、旋转、后台切前台、页面销毁后回调。
+- Kotlin/Java 混合边界：null/platform type、primitive/boxed、异常、Callback/异步取消和公开 API 兼容。
+- 并发时序：旧请求晚返回、共享状态竞争、取消与回调同时发生；只在真实并发候选存在时生成。
 - 列表场景：快速滑动、分页、刷新、重复点击、复用错位、请求乱序。
 - 本地数据：旧缓存、清缓存、迁移失败、默认值。
 - UI 状态：加载、成功、失败、空态、禁用、选中。
 - 灰度开关：开启、关闭、默认值缺失。
 - Android 版本兼容：项目 `minSdk` 到目标 `targetSdk` 范围内的权限、存储、通知、后台任务、系统组件和 UI 行为差异。
+- 构建兼容：反射、生成代码、R8/ProGuard、Java language level 或 desugaring 变化时覆盖项目已有 release/minify/目标 variant。
 - 回归影响：相关入口、详情页、搜索、筛选、推送、DeepLink。
 
 每条用例标注：用例名、前置条件、步骤、预期结果、自动化类型、是否本次必须执行。
@@ -156,7 +206,7 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 
 ### 泄漏、性能与安全任务协作
 
-- `android-audit-stability` 判定动态泄漏、性能或安全隐私适用后，本 Skill 只负责执行项目已有 LeakCanary/Heap、Benchmark/Perfetto、lint/detekt/Semgrep/MobSF 等命令并保留证据。
+- `android-audit-stability` 判定动态泄漏、性能或安全隐私适用后，本 Skill 只负责执行项目已有 LeakCanary/Heap、Benchmark/Perfetto、Lint、detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL、MobSF 等命令并保留证据。
 - 工具不存在时不自动安装，不用较弱命令冒充等价通过；继续其他门禁并记录未验证与能力损失。
 - 模拟器结果必须标明，正式性能、厂商 ROM 和真实硬件验收没有真机时保持未验证。
 
@@ -293,13 +343,16 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 
 1. 测试范围
 2. 追溯覆盖率：`REQ-ID -> BDD-ID -> TEST-ID/人工验收 -> 最终证据`
-3. 条件能力矩阵：OpenAPI / 迁移 / 泄漏 / 性能 / UI-A11y / 安全隐私的适用性、设备类型和结论
-4. 测试用例矩阵：主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
-5. Red-Green 证据：首次 Red、最小修改和最终 Green；不适用时说明原因
-6. 自动化可执行项和需要人工验证项
-7. 最终新鲜证据：命令、退出码、测试数、关键输出和报告/产物路径
-8. flaky 状态：首次失败、重试原因/次数/结果、是否已关闭
-9. 自修复轮次、根因和修改
-10. 失败项与降级记录（失败分类、原专项能力/工具、证据、AI 替代、能力损失、所需输入、当前状态）
-11. 未验证项和剩余风险
-12. 门禁结论：全绿 / 代码与本地门禁完成、真机专项待验证 / 未完成 / 受阻
+3. 项目已有静态门禁：Kotlin/Java 编译、Lint、语言专项、跨语言扫描和 API/ABI 任务的发现依据、命令、退出码、报告和能力损失
+4. 历史债务：`NEW` / `AFFECTED` / `PRE_EXISTING` / `UNKNOWN_ORIGIN` 数量、处置和证据
+5. release/R8/Java 兼容：适用性、variant、命令、结论与未验证项
+6. 条件能力矩阵：OpenAPI / 迁移 / 泄漏 / 性能 / UI-A11y / 安全隐私的适用性、设备类型和结论
+7. 测试用例矩阵：主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
+8. Red-Green 证据：首次 Red、最小修改和最终 Green；不适用时说明原因
+9. 自动化可执行项和需要人工验证项
+10. 最终新鲜证据：命令、退出码、测试数、关键输出和报告/产物路径
+11. flaky 状态：首次失败、重试原因/次数/结果、是否已关闭
+12. 自修复轮次、根因和修改
+13. 失败项与降级记录（失败分类、原专项能力/工具、证据、AI 替代、能力损失、所需输入、当前状态）
+14. 未验证项和剩余风险
+15. 门禁结论：全绿 / 代码与本地门禁完成、真机专项待验证 / 未完成 / 受阻

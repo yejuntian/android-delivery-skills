@@ -32,6 +32,15 @@ description: Android 代码质量与架构一致性审查。用于 AI 或人工�
 - 新增或修改组件能否在不读取无关模块实现细节的情况下独立理解和测试，能否在保持公开契约时替换内部实现；做不到时指出具体耦合点。
 - 审查服从项目既有架构；不得为了追求理想分层强推 MVVM/MVI/Clean、Compose、Hilt、拆模块或公共重构。
 
+### Kotlin / Java 混合边界与公开契约
+
+- Kotlin 优先但 Java 老项目是一等支持对象；只按真实调用方、模块边界和现有公开 API 审查，不要求迁移语言。
+- Java/Kotlin 互调核对 Nullability、platform type、primitive/boxed、泛型可变性、SAM/Callback、checked exception 和异步取消语义。
+- Kotlin 默认参数、顶层函数、companion、`@JvmStatic`、`@JvmOverloads` 只有真实 Java 调用或既有契约需要时才调整，不能机械添加。
+- 公共方法、构造器、字段或接口变化必须区分源码兼容、二进制兼容和行为兼容；项目已有 Metalava、ABI/API 检查或兼容任务时交由测试 Skill 执行。
+- 注解处理器、KAPT/KSP、DataBinding、AIDL 等生成文件不得直接修改；应修生成源、配置或手写边界，并重新生成验证。
+- 不为消除混合语言风险顺手重写整个 Java 类、转换为 Kotlin 或清理无关历史债务。
+
 ### 最小修改
 
 - 是否只修改本次任务相关文件。

@@ -34,14 +34,38 @@ description: Android API 实现与接口契约核验。用于涉及 Retrofit、O
 
 接口资料缺失时，不得脑补接口地址、字段名、字段类型、枚举值或错误码。
 
+## 序列化框架识别
+
+核对字段契约前，必须先从依赖、插件、DTO 注解、adapter/serializer 和网络配置识别本次真实使用的序列化框架。不能仅凭 Kotlin data class 或某个依赖存在就假定生效。
+
+按项目实际情况检查：
+
+- **kotlinx.serialization**：`@Serializable`、`@SerialName`、自定义 serializer，以及实际 `Json` 的 `ignoreUnknownKeys`、`coerceInputValues`、`explicitNulls` 等配置。
+- **Moshi**：`@JsonClass`、`@Json`、Kotlin adapter/codegen、自定义 adapter，以及未知枚举或缺字段处理。
+- **Gson**：`@SerializedName`/alternate、自定义 TypeAdapter、GsonBuilder 配置，以及缺字段后 Kotlin 非空属性的真实运行时风险。
+- **Jackson**：Kotlin module、`@JsonProperty`/`@JsonSetter`、ObjectMapper 的 unknown property、null 和 unknown enum 配置。
+- **自定义或混合方案**：Converter、手写 parser、反射/代码生成边界和不同 endpoint 实际使用的 converter。
+
+没有识别到框架或关键配置时写“序列化行为未确认”，不得默认按 kotlinx.serialization 解释，也不得为统一检查而引入或迁移到新框架。
+
+Java DTO 或 Java/Kotlin 混合模型还必须核对：
+
+- primitive 与 boxed 类型对缺字段和显式 null 的不同结果，例如 `int` 与 `Integer`。
+- AndroidX、JetBrains、JSpecify 或项目自定义 Nullability 注解是否真实参与编译、静态分析或运行时 adapter。
+- 序列化实际使用字段、构造器、Getter/Setter 还是生成 adapter；不能根据 data class 规则推断 Java Bean。
+- 泛型、继承、多态和未知子类型的真实 adapter/TypeToken 配置。
+- 反射序列化或生成 adapter 受 R8/ProGuard 影响时，路由到稳定性和测试门禁执行项目已有 release/minify 验证；不自动增加宽泛 keep 规则。
+
 ## 契约检查清单
 
 编码后必须检查：
 
 - 接口路径、请求方式、baseUrl、鉴权方式是否与文档一致。
 - 请求参数：必填、可选、默认值、分页、排序、筛选是否完整。
-- 字段可空性必须严格来自实际契约：同时检查 OpenAPI schema 的 `required` 列表、`nullable`、类型和项目序列化策略。契约未确认时不得凭业务语境断言非空，也不得把所有字段一律改成 nullable/default 来掩盖缺失契约。
-- 状态枚举：未知枚举、服务端新增枚举、默认兜底是否安全。
+- 字段可空性必须严格来自实际契约：区分 OpenAPI schema 的 `required`、`nullable` 和客户端默认值，再结合真实序列化框架判断“字段缺失”与“显式 null”。契约未确认时不得凭业务语境断言非空，也不得把所有字段一律改成 nullable/default 来掩盖缺失契约。
+- 状态枚举：核对未知枚举、服务端新增枚举和项目实际 serializer/adapter 的行为；没有明确 Unknown/default 契约时不得脑补兜底值。
+- 未知字段：确认真实配置是忽略还是失败，并检查其与前后兼容要求一致；不能把“忽略未知字段”误写成“未知枚举安全”。
+- 字段命名：逐项核对 `@SerialName`、`@Json`、`@SerializedName`、`@JsonProperty` 或自定义映射，避免只比较 Kotlin 属性名。
 - 错误码：业务错误、登录过期、权限不足、服务端异常、限流是否接入项目统一处理。
 - 网络异常：超时、无网络、弱网、重试、取消是否处理。
 - 数据分层：DTO 是否通过 mapper 转成领域模型，UI 是否避免直接依赖原始 DTO。
@@ -55,10 +79,11 @@ description: Android API 实现与接口契约核验。用于涉及 Retrofit、O
 执行顺序：
 
 1. 记录本地契约文件、正式导出或可访问链接，确认版本/摘要和本次涉及的 operation/schema。
-2. 优先运行目标项目或本机已有 OpenAPI 校验命令；不得自动安装校验器或生成器。
-3. 核对本次 operation 的 method/path、参数位置、`required`、`nullable`、类型、格式、枚举、错误响应和引用 schema。
-4. 对照 DTO、序列化注解、mapper、Repository 与相关测试，记录每个不一致的真实位置。
-5. 修复后重新运行机器校验和受影响测试，保存最终命令、退出码与报告。
+2. 识别本次 endpoint 实际使用的序列化框架、converter、全局/局部配置和自定义 adapter；无法确认时记录证据缺口。
+3. 优先运行目标项目或本机已有 OpenAPI 校验命令；不得自动安装校验器或生成器。
+4. 核对本次 operation 的 method/path、参数位置、`required`、`nullable`、默认值、类型、格式、枚举、错误响应和引用 schema。
+5. 对照 DTO、字段命名注解、未知字段策略、未知枚举策略、mapper、Repository 与相关测试，记录每个不一致的真实位置。
+6. 修复后重新运行机器校验和受影响测试，保存最终命令、退出码与报告。
 
 状态边界：
 
@@ -106,10 +131,12 @@ description: Android API 实现与接口契约核验。用于涉及 Retrofit、O
 最后汇总：
 
 1. 接口资料来源
-2. OpenAPI 适用性、operation/schema 和机器校验证据
-3. 已确认契约
-4. 实现一致性结论
-5. 待确认字段 / 枚举 / 错误码
-6. 兼容性风险
-7. 不应进入生产代码的部分
-8. 建议测试项
+2. 实际序列化框架、converter、配置与自定义 adapter
+3. OpenAPI 适用性、operation/schema 和机器校验证据
+4. `required` / `nullable` / 默认值 / unknown keys / unknown enum / 字段命名映射
+5. 已确认契约
+6. 实现一致性结论
+7. 待确认字段 / 枚举 / 错误码
+8. 兼容性风险
+9. 不应进入生产代码的部分
+10. 建议测试项

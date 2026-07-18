@@ -61,12 +61,10 @@ class RequirementPathTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
         self.config_path = self.root / "config" / "local.yaml"
         self.config_path.parent.mkdir()
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
 
     def test_relative_paths_follow_workspace_and_requirement_dir(self) -> None:
         workspace = self.root / "workspace"
@@ -105,10 +103,8 @@ class RequirementReaderTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
 
     def test_reads_utf8_markdown_and_text(self) -> None:
         for suffix in (".md", ".markdown", ".txt"):
@@ -157,19 +153,24 @@ class RequirementReaderTests(unittest.TestCase):
 class ConfigReaderTests(unittest.TestCase):
     """验证配置读取失败时给出明确原因，不依赖真实用户配置。"""
 
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+
     def test_rejects_missing_config_before_loading_yaml(self) -> None:
         with self.assertRaisesRegex(DeliveryError, "配置文件不存在"):
-            load_config(Path(tempfile.mkdtemp()) / "missing.yaml")
+            load_config(self.root / "missing.yaml")
 
     def test_reports_missing_pyyaml(self) -> None:
-        path = Path(tempfile.mkdtemp()) / "local.yaml"
+        path = self.root / "local.yaml"
         path.write_text("project_path: app\n", encoding="utf-8")
         with mock.patch.dict(sys.modules, {"yaml": None}):
             with self.assertRaisesRegex(DeliveryError, "缺少 PyYAML"):
                 load_config(path)
 
     def test_rejects_non_object_yaml_root(self) -> None:
-        path = Path(tempfile.mkdtemp()) / "local.yaml"
+        path = self.root / "local.yaml"
         path.write_text("- item\n", encoding="utf-8")
         fake_yaml = SimpleNamespace(YAMLError=Exception, safe_load=lambda _: ["item"])
         with mock.patch.dict(sys.modules, {"yaml": fake_yaml}):
@@ -212,6 +213,7 @@ class GitDiffCollectionTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
         self.repo = Path(self.temp_dir.name) / "repo"
         self.repo.mkdir()
         self.git("init", "-q")
@@ -240,9 +242,6 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.write(mixed, "class MixedV2\n")
         # 单独保留一个未跟踪文件，验证 untracked 不会被 `git diff` 漏掉。
         self.write("app/src/main/res/layout/untracked.xml", "<FrameLayout />\n")
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
 
     def git(self, *args: str) -> None:
         """执行测试仓库准备命令，失败立即终止当前测试。"""
@@ -344,16 +343,20 @@ class GitDiffCollectionTests(unittest.TestCase):
 class RouteCommandTests(unittest.TestCase):
     """验证 route 最终输出真实候选对应的专项 Skill。"""
 
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+
     def test_route_prints_api_and_manual_ui_selection(self) -> None:
-        root = Path(tempfile.mkdtemp())
-        args = SimpleNamespace(config=str(root / "local.yaml"))
+        args = SimpleNamespace(config=str(self.root / "local.yaml"))
         files = ["app/src/main/java/example/HomeScreen.kt", "app/src/main/java/example/UserMapper.kt"]
         output = io.StringIO()
         old_cwd = Path.cwd()
         try:
             with (
                 mock.patch("scripts.delivery.load_config", return_value={}),
-                mock.patch("scripts.delivery.resolve_config_paths", return_value=(root, None)),
+                mock.patch("scripts.delivery.resolve_config_paths", return_value=(self.root, None)),
                 mock.patch("scripts.delivery.current_branch", return_value="feature"),
                 mock.patch("scripts.delivery.get_diff_files", return_value=(files, [])),
                 redirect_stdout(output),

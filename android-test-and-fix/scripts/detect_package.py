@@ -99,6 +99,7 @@ def detect(project_path: str) -> dict:
 
 
 def cmd_detect(args):
+    """输出诊断结果；只有显式传入 --export 时才写入指定文件。"""
     result = detect(args.project_path)
     if "error" in result:
         print(f"❌ {result['error']}")

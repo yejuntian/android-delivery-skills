@@ -61,7 +61,7 @@ description: Android 运行时稳定性与兼容性风险审计。用于实现�
 
 ### 安全合规与隐私底线
 
-- **隐私日志脱敏底线**：严禁使用原生的 `android.util.Log` 随意打印。所有日志和异常上报必须对密码、手机号、Token 等个人敏感信息（PII）进行脱敏。严防包含用户敏感数据的明文打印，否则直接按高危 P0 漏洞处理。
+- **隐私日志脱敏底线**：优先复用项目日志封装；无论使用何种日志 API，都不得明文记录密码、手机号、Token 等个人敏感信息（PII）。确认存在敏感信息泄漏时按 P0 报告。
 
 ### 列表和 Adapter
 
@@ -71,9 +71,9 @@ description: Android 运行时稳定性与兼容性风险审计。用于实现�
 
 检查 Cursor、Stream、File、Socket、Camera、MediaPlayer、ExoPlayer、Location、Sensor、WebView、WorkManager、Service、PendingIntent、权限降级。
 
-### Android 版本兼容
+#### 版本范围核验
 
-必须检查本次改动是否涉及 Android 高低版本行为差异，尤其是项目 `minSdk`、`targetSdk`、`compileSdk` 支持范围内的系统 API。
+继续检查本次改动在项目 `minSdk`、`targetSdk`、`compileSdk` 支持范围内的系统行为差异。
 
 重点检查：
 

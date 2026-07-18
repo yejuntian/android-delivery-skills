@@ -132,7 +132,7 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 - 把 `Given` 转成可复现前置条件：启动入口、DeepLink、登录/数据、权限、语言、主题、字体和方向。壳只负责启动应用，不能隐式满足前置条件。
 - 把每个 `When` 拆成独立 action，避免一个 action 包含多个操作。
 - 把每个 `Then` 写成独立 verify/check action，不得只隐含在操作描述中。
-- 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/[场景名].xml`；也可用 `testing.journey_harness.cases_dir` 或 `--journeys-dir` 指定。至少包含一个有效 action/step，拒绝零测试假绿。
+- 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线和需求正文哈希，单独调用时来自需求正文哈希。也可用 `testing.journey_harness.cases_dir` 或 `--journeys-dir` 显式指定。至少包含一个有效 action/step，拒绝零测试假绿。
 - 不把需求用例长期保存在共享壳源码中。执行器每次只把当前用例集同步到壳的暂存目录，并清除上一次运行残留的 XML，防止跨项目串用测试。
 - 多指、长按、双击、旋转/折叠、精确计数或复杂条件不稳定时，改用项目已有 Compose/Espresso/UIAutomator，或明确列为人工测试。
 
@@ -144,22 +144,24 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \
   --ui-impact behavior
-# 已安装目标 APK 时可使用 --skip-build；此时必须配置 app_package_name。
+# 已安装目标 APK 时可使用 --skip-build；此时必须配置 app_package_name，但不要求源码项目存在。
 # 临时指定其他用例目录时可使用 --journeys-dir /path/to/journeys。
 ```
 
-`--ui-impact` 是 Skill 内部必填的安全参数，由模型的适用性判断产生，不要求用户提供。未判断时脚本拒绝启动。通常无 UI 或纯视觉需求不调用本脚本；需要结构化记录跳过原因时，模型才执行 `--ui-impact none` 或 `--ui-impact visual`，脚本会直接写报告并以 0 退出，不读取配置、不检查 SDK、不连接设备。
+`--ui-impact` 是 Skill 内部必填的安全参数，由模型的适用性判断产生，不要求用户提供。未判断时脚本拒绝启动。通常无 UI 或纯视觉需求不调用本脚本；需要结构化记录跳过原因时，模型才执行 `--ui-impact none` 或 `--ui-impact visual`。跳过模式只读取配置以定位当前需求报告目录，不检查 SDK、不连接设备。
 
 执行器必须：
 
-1. 拒绝零 Journey、空 action/step 和成功日志中的 `NO-SOURCE`/`0 tests`。
+1. 拒绝零 Journey、空 action/step、成功日志中的 `NO-SOURCE`/`0 tests`，以及没有本轮结构化 JUnit XML 的成功退出；只有实际测试数大于 0 且失败数为 0 才判绿。
 2. 使用目标项目自己的 Gradle wrapper 构建指定 module/variant，不改变其 AGP。
 3. 从最终 APK 读取 applicationId，安装后通过 `pm path` 校验实际包名。
 4. 通过独立 AGP 9 壳注入 `JOURNEYS_CUSTOM_APP_ID`，并隔离 `GRADLE_USER_HOME`。
-5. 仅把连续两次带明确断言信号的 UI 失败归类为 `APP_ASSERTION_FAILED`；它只允许进入根因分析，不证明生产代码必然有错。壳、认证、设备、XML、构建和安装错误不得触发目标代码修复。
-6. 始终输出 `assets/journey-harness/build/reports/journey-harness/result.json` 和同目录 `result.md`，记录状态、命令、设备、包名、APK、task、用例数、轮次和截图。
+5. 每轮先 force-stop 并重新应用配置中明确的 Given 前置条件；优先用结构化失败结果归类。只有连续两次真实 UI 断言失败才返回 `APP_ASSERTION_FAILED`，且不证明生产代码必然有错。
+6. 只从 Journey/screenshot/capture 结果目录收集截图，禁止把普通构建资源当成证据。
+7. 按需求作用域输出 `<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json` 和 `result.md`，记录实际测试数、结构化结果、命令、设备、包名、APK、task、轮次和截图。
+8. 对 adb、Gradle 和 Journey 命令设置超时；终端及报告中的 DeepLink 查询参数、Token、密码和密钥必须脱敏。
 
-退出码：`0` 表示 Journey 真实执行通过；`1` 表示环境或壳不可用，只能换用其他测试方式；`2` 表示连续两次真实 UI 断言失败，可进入根因分析。确认是生产缺陷才修目标代码；用例、数据或前置条件错误只修测试侧。
+退出码：`0` 表示 Journey 真实执行通过、明确不适用或仅预检；必须结合状态区分 `PASS`、`SKIPPED_*` 和 `PREFLIGHT_PASS`。`1` 表示环境、壳或结构化证据不足，只能修环境或换用其他测试；`2` 表示连续两次真实 UI 断言失败，可进入根因分析。确认是生产缺陷才修目标代码；用例、数据或前置条件错误只修测试侧。
 
 首次启用壳项目时，使用当前 Android Studio 的 `New > Journey Test` 生成与 Studio Labs 版本匹配的 XML schema、testSuites、依赖和任务。该操作只初始化共享壳一次，不要求用户为每个目标项目重复执行。
 

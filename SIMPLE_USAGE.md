@@ -22,9 +22,15 @@ android-implement-and-verify
 
 - `project_path`：Android 项目路径
 - `branch`：目标分支
-- `requirement_file`：需求 Word / Markdown / PDF / TXT 文件
+- `requirement_file`：需求 Word / Markdown / TXT 文件
 - 可选 `ui.links` / `ui.screenshots`
 - 可选 `api.links` / `api.files` / `api.status`
+
+首次使用时，从 `workspace_root` 安装脚本依赖：
+
+```bash
+python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
+```
 
 ## 最短调用
 
@@ -42,6 +48,17 @@ android-implement-and-verify
 4. 等你确认理解是否正确。
 5. 未确认前不进入最终方案、不改代码。
 
+### 需求文件读取失败时
+
+读取逻辑保持单一职责，不自行搜索其他文件或推测需求：
+
+1. 路径固定按 `workspace_root → requirement_dir → requirement_file` 解析，并输出最终绝对路径。
+2. 支持 `.docx`、`.md`、`.markdown`、`.txt`；PDF 可作为 UI 资料，但作为需求正文时需先转换为支持格式。
+3. DOCX 使用 Python 标准库读取 OOXML 正文，不要求 IDE 额外安装文档解析库。
+4. 文件为空、损坏或格式不支持时，脚本会说明原因并停止；修正路径、重新导出 Word 或转换格式后重试。
+
+完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD，`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
+
 ## 确认后继续
 
 如果需求理解正确，你说：
@@ -52,11 +69,12 @@ android-implement-and-verify
 
 然后直接进入编码：
 
-1. 修改前校验项目路径、目标分支和工作区状态。
+1. 修改前校验项目路径、目标分支和干净工作区，并记录当前需求 Git 基线。
 2. 读取相关代码并复用现有链路。
 3. 直接实现需求，不再固定输出一轮前置分析报告。
 4. 只有遇到关键资料缺失、高风险改动或分支/工作区异常时才暂停询问。
-5. 编码后执行 diff、接口、测试、稳定性和代码质量检查；检测到 UI 变更时提示单独运行 UI 验收。
+5. 编码后只对基线后的 diff 执行接口、测试、稳定性和代码质量检查；检测到 UI 变更时提示单独运行 UI 验收。
+6. 有 UI 基准但尚未完成独立 UI 验收时，只能报告“代码与自动测试完成，UI 验收待执行”。
 
 ## 整体流程顺序(一图看懂)
 
@@ -64,10 +82,10 @@ android-implement-and-verify
 ① delivery.py init    读需求 → 输出 BDD(Given/When/Then)
    └─ 停,等你确认「理解正确,继续」
                           ↓
-② delivery.py check-env   查 Git 分支/工作区 → 物化测试 → 开始编码
+② delivery.py check-env   查 Git 分支/干净工作区 → 记录需求基线 → 物化测试 → 开始编码
    └─ 受影响测试 + assemble + lint;失败自动修复并重跑
                           ↓
-③ delivery.py route   按 Git Diff 自动路由审查
+③ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查
 
    【核心·业务逻辑层】(route 自动逐个调用,必先过)
      1. android-review-diff        ← 必跑:diff 影响范围
@@ -77,6 +95,18 @@ android-implement-and-verify
      5. android-test-and-fix        ← 必跑:测试闭环/全绿门禁
    【独立·UI 校验】(route 只提示,用户单独调用)
      6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
+```
+
+脚本职责保持分离：
+
+- `scripts/delivery.py`：只编排需求、环境检查和专项 Skill 路由。
+- `scripts/git_changes.py`：只读检查分支、工作区以及四类 Git 变化，不判断业务或路由。
+
+需要单独排查 Git 收集结果时可以运行：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/git_changes.py \
+  --repo <Android项目路径> --base-branch <可选对比分支>
 ```
 
 ### 自动 vs 手动 速查
@@ -90,7 +120,7 @@ android-implement-and-verify
 | android-audit-stability | ✅ 必跑 | ✅ |
 | android-test-and-fix | ✅ 必跑 | ✅ |
 
-核心原则:**BDD 必须物化为测试;测试或 P0/P1 失败必须修复重跑;必需门禁全绿才可交付**。每个 skill 仍可脱离 route 单独运行。
+核心原则：**在已确认范围内最小修改；每个 Skill 恪守单一职责；BDD 必须物化为测试；测试或 P0/P1 失败必须修复重跑；必需门禁全绿才可交付**。每个 Skill 仍可脱离 route 单独运行。
 
 ## 外部链接读取
 
@@ -159,7 +189,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py \
 
 Journey 测试用例归 `android-test-and-fix`。老项目 AGP 保持不动，只构建并安装 APK；独立 AGP 9 壳通过 `JOURNEYS_CUSTOM_APP_ID` 测试实际包名。`android-verify-ui` 可以复用 Journey 截图做设计还原验收，但不生成或管理测试用例。
 
-当前需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/`。共享壳中的 `src/main/journeys/` 只是执行暂存目录，脚本每次会替换其中的 XML，避免不同项目串用旧测试用例。
+当前需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。完整流程使用 Git 基线 ID 与需求正文哈希，单独调用时使用需求正文哈希；共享壳中的 `src/main/journeys/` 只是执行暂存目录，因此串行需求不会复用旧测试用例。
 
 Journey 测试用例由 `android-test-and-fix` 根据已确认需求和 BDD 自动分析并生成，用户不需要提供 XML、action/step 或任务名。只有需求本身缺少前置条件或预期结果时，才需要用户补充业务含义。
 
@@ -184,4 +214,6 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/detect_pa
   --project-path <项目路径>
 ```
 
-设备未就绪时只跳过 Journey 等设备测试，本地单测、构建和 lint 仍要执行。首次使用共享壳时，在当前 Android Studio 中执行一次 `New > Journey Test`，让官方模板生成匹配版本的 XML schema、testSuites、依赖和运行配置。退出码：`0` Journey 真实通过 / `1` 环境或壳错误，禁止据此修改目标代码 / `2` 连续两次真实 UI 断言失败，只允许进入根因分析；确认是生产缺陷后才修目标代码。
+`--skip-build` 只要求设备中存在 `app_package_name`，不要求目标源码目录有效。设备未就绪时只跳过 Journey 等设备测试，本地单测、构建和 lint 仍要执行。首次使用共享壳时，在当前 Android Studio 中执行一次 `New > Journey Test`，让官方模板生成匹配版本的 XML schema、testSuites、依赖和运行配置。
+
+Journey 只有在 Gradle 成功且本轮存在测试数大于 0 的结构化 JUnit XML 时才返回 `PASS`；普通构建图片不会被当成截图证据。报告按需求作用域保存到 `<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json` 和 `result.md`。退出码：`0` 真实通过、明确跳过或仅预检 / `1` 环境、壳或证据不足 / `2` 连续两次结构化 UI 断言失败。`PREFLIGHT_PASS` 只代表预检通过，不代表测试通过。

@@ -1,14 +1,37 @@
+#!/usr/bin/env python3
+"""
+================================================================================
+脚本名称：test_run_journey.py
+用    途：验证 Journey 壳执行器的安全边界和关键确定性逻辑。
+
+覆盖范围：
+1. 拒绝零用例、空用例和无有效步骤造成的假绿。
+2. 正确定位指定 variant APK，并按需求作用域隔离用例与报告。
+3. 用结构化结果区分环境故障与真实 UI 断言，拒绝零测试假绿。
+4. 重试前置、skip-build、截图过滤、超时和敏感命令脱敏。
+5. 同步当前需求用例时清理壳暂存 XML，避免串用缓存。
+
+隔离说明：所有目录和文件均位于临时目录；测试不连接设备、不运行 Gradle、
+不安装 APK，也不修改真实 Android 项目。
+================================================================================
+"""
+
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "run_journey.py"
+# 动态加载被测脚本，避免要求 Journey 目录成为可安装 Python 包。
 SPEC = importlib.util.spec_from_file_location("run_journey", SCRIPT)
 run_journey = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -17,7 +40,10 @@ SPEC.loader.exec_module(run_journey)
 
 
 class RunJourneyTest(unittest.TestCase):
+    """覆盖 Journey 适用性、用例校验、失败归因和证据输出。"""
+
     def make_harness(self, journey: str | None = None) -> Path:
+        """创建最小临时 Journey 目录，绝不接触共享壳的真实用例。"""
         root = Path(tempfile.mkdtemp())
         directory = root / "harness-app" / "src" / "main" / "journeys"
         directory.mkdir(parents=True)
@@ -80,6 +106,21 @@ class RunJourneyTest(unittest.TestCase):
         )
         self.assertEqual(apk, run_journey.find_apk_from_metadata(root, "app", "demoDebug"))
 
+    def test_fallback_apk_never_crosses_variant(self):
+        root = Path(tempfile.mkdtemp())
+        debug = root / "app" / "build" / "outputs" / "apk" / "demo" / "debug" / "app-demo-debug.apk"
+        release = root / "app" / "build" / "outputs" / "apk" / "release" / "app-release.apk"
+        debug.parent.mkdir(parents=True)
+        release.parent.mkdir(parents=True)
+        debug.write_bytes(b"debug")
+        release.write_bytes(b"release")
+        now = time.time()
+        os.utime(debug, (now - 10, now - 10))
+        os.utime(release, (now, now))
+
+        self.assertEqual(debug, run_journey.find_newest_apk(root, "app", "demoDebug"))
+        self.assertIsNone(run_journey.find_newest_apk(root, "app", "paidDebug"))
+
     def test_writes_json_and_markdown_reports(self):
         output = Path(tempfile.mkdtemp()) / "result.json"
         result = run_journey.JourneyResult(
@@ -89,6 +130,7 @@ class RunJourneyTest(unittest.TestCase):
             device="device-1",
             journey_files=["home.xml"],
             action_count=2,
+            executed_tests=2,
         )
         run_journey.write_result(result, output)
         self.assertEqual("PASS", json.loads(output.read_text(encoding="utf-8"))["status"])
@@ -100,8 +142,37 @@ class RunJourneyTest(unittest.TestCase):
         config_path = Path(tempfile.mkdtemp()) / "local.yaml"
         config = {"workspace_root": str(config_path.parent), "requirement_dir": "requirement"}
         resolved = run_journey.resolve_journeys_dir(config_path, config, {}, None)
-        expected = (config_path.parent / "requirement" / "test-cases" / "journeys").resolve()
+        expected = (
+            config_path.parent / "requirement" / "test-cases" / "journeys" / "standalone"
+        ).resolve()
         self.assertEqual(expected, resolved)
+
+    def test_requirement_scope_isolates_cases_and_reports(self):
+        root = Path(tempfile.mkdtemp())
+        config_path = root / "profiles" / "local.yaml"
+        config_path.parent.mkdir()
+        requirement = root / "requirement" / "requirement.md"
+        requirement.parent.mkdir()
+        requirement.write_text("first requirement", encoding="utf-8")
+        config = {
+            "workspace_root": str(root),
+            "requirement_dir": "requirement",
+            "requirement_file": "requirement.md",
+        }
+
+        first_scope = run_journey.requirement_scope_id(config_path, config)
+        first_report = run_journey.resolve_result_path(config_path, config)
+        requirement.write_text("second requirement", encoding="utf-8")
+        second_scope = run_journey.requirement_scope_id(config_path, config)
+
+        self.assertNotEqual(first_scope, second_scope)
+        self.assertIn(first_scope, str(first_report))
+
+        baseline = root / "baseline.json"
+        baseline.write_text(json.dumps({"id": "run-123"}), encoding="utf-8")
+        with mock.patch.object(run_journey, "baseline_path_for_config", return_value=baseline):
+            scoped = run_journey.requirement_scope_id(config_path, config)
+        self.assertTrue(scoped.startswith("run-123-"))
 
     def test_stages_only_current_journeys(self):
         source = Path(tempfile.mkdtemp())
@@ -117,6 +188,127 @@ class RunJourneyTest(unittest.TestCase):
         self.assertFalse((target / "stale.xml").exists())
         self.assertEqual(current.read_text(encoding="utf-8"),
                          (target / "current.xml").read_text(encoding="utf-8"))
+
+    def test_collects_only_structured_results_and_journey_screenshots(self):
+        harness = Path(tempfile.mkdtemp())
+        result = harness / "harness-app" / "build" / "test-results" / "journey" / "TEST-home.xml"
+        result.parent.mkdir(parents=True)
+        result.write_text('<testsuite tests="2" failures="0" errors="0"/>', encoding="utf-8")
+        icon = harness / "harness-app" / "build" / "intermediates" / "res" / "icon.png"
+        screenshot = harness / "harness-app" / "build" / "reports" / "journey" / "screenshots" / "home.png"
+        icon.parent.mkdir(parents=True)
+        screenshot.parent.mkdir(parents=True)
+        icon.write_bytes(b"icon")
+        screenshot.write_bytes(b"screen")
+
+        summary = run_journey.collect_structured_results(harness, time.time())
+        screenshots = run_journey.collect_screenshots(harness, time.time())
+
+        self.assertEqual(2, summary.executed)
+        self.assertEqual([str(result.resolve())], summary.files)
+        self.assertEqual([str(screenshot.resolve())], screenshots)
+
+    def test_retries_reapply_precondition_before_counting_assertions(self):
+        harness = Path(tempfile.mkdtemp())
+        (harness / "gradlew").write_text("", encoding="utf-8")
+
+        def fake_run(command, **_):
+            if "force-stop" in command:
+                return run_journey.CommandResult(command, 0, "")
+            return run_journey.CommandResult(command, 1, "assertion failed")
+
+        structured = run_journey.StructuredTestResult(
+            executed=1, failures=1, files=["TEST-home.xml"]
+        )
+        with (
+            mock.patch.object(run_journey, "run", side_effect=fake_run),
+            mock.patch.object(run_journey, "apply_precondition", return_value=(True, [], "")) as prepare,
+            mock.patch.object(run_journey, "collect_structured_results", return_value=structured),
+            mock.patch.object(run_journey, "collect_screenshots", return_value=[]),
+        ):
+            result = run_journey.run_harness(
+                harness, ":harness-app:journeyTest", "com.example", "device", 2, "/sdk", {}
+            )
+
+        self.assertEqual(run_journey.APP_ASSERTION_FAILED, result.status)
+        self.assertEqual(2, result.attempts)
+        self.assertEqual(2, prepare.call_count)
+
+    def test_success_exit_without_structured_result_is_not_pass(self):
+        harness = Path(tempfile.mkdtemp())
+        (harness / "gradlew").write_text("", encoding="utf-8")
+
+        def fake_run(command, **_):
+            return run_journey.CommandResult(command, 0, "BUILD SUCCESSFUL")
+
+        with (
+            mock.patch.object(run_journey, "run", side_effect=fake_run),
+            mock.patch.object(run_journey, "apply_precondition", return_value=(True, [], "")),
+            mock.patch.object(
+                run_journey,
+                "collect_structured_results",
+                return_value=run_journey.StructuredTestResult(),
+            ),
+            mock.patch.object(run_journey, "collect_screenshots", return_value=[]),
+        ):
+            result = run_journey.run_harness(
+                harness, ":harness-app:journeyTest", "com.example", "device", 2, "/sdk", {}
+            )
+
+        self.assertEqual(run_journey.HARNESS_FAILED, result.status)
+
+    def test_skip_build_does_not_require_source_project(self):
+        root = Path(tempfile.mkdtemp())
+        harness = root / "harness"
+        (harness / "harness-app" / "src" / "main" / "journeys").mkdir(parents=True)
+        (harness / "gradlew").write_text("", encoding="utf-8")
+        journeys = root / "cases"
+        journeys.mkdir()
+        (journeys / "home.xml").write_text(
+            "<journey><action>Verify Home</action></journey>", encoding="utf-8"
+        )
+        result_path = root / "result.json"
+        config = {
+            "project_path": str(root / "missing-project"),
+            "testing": {"journey_harness": {"app_package_name": "com.example"}},
+        }
+        harness_result = run_journey.HarnessRunResult(
+            run_journey.PASS, 1, [], [], "", executed_tests=1, result_files=["TEST-home.xml"]
+        )
+        with (
+            mock.patch.object(run_journey, "load_config", return_value=config),
+            mock.patch.object(run_journey, "resolve_result_path", return_value=result_path),
+            mock.patch.object(run_journey, "resolve_journeys_dir", return_value=journeys),
+            mock.patch.object(run_journey, "resolve_android_sdk", return_value="/sdk"),
+            mock.patch.object(run_journey, "choose_device", return_value=("device", None)),
+            mock.patch.object(
+                run_journey,
+                "discover_journey_task",
+                return_value=(":harness-app:journeyTest", None),
+            ),
+            mock.patch.object(run_journey, "verify_installed", return_value=(True, ["adb"])),
+            mock.patch.object(run_journey, "run_harness", return_value=harness_result),
+        ):
+            exit_code = run_journey.main([
+                "--config", str(root / "local.yaml"),
+                "--harness-dir", str(harness),
+                "--journeys-dir", str(journeys),
+                "--ui-impact", "behavior",
+                "--skip-build",
+            ])
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(run_journey.PASS, json.loads(result_path.read_text(encoding="utf-8"))["status"])
+
+    def test_redacts_deep_links_and_returns_timeout_as_environment_failure(self):
+        command = ["adb", "shell", "am", "start", "-d", "sample://login?token=secret"]
+        expired = subprocess.TimeoutExpired(command, timeout=1, output="sample://login?token=secret")
+        with mock.patch.object(run_journey.subprocess, "run", side_effect=expired):
+            result = run_journey.run(command, timeout=1)
+
+        self.assertEqual(124, result.returncode)
+        self.assertNotIn("secret", " ".join(result.command))
+        self.assertNotIn("secret", result.output)
 
     def test_skips_journey_when_ui_is_not_applicable(self):
         no_ui = run_journey.skip_result("none")

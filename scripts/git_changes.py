@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""
+================================================================================
+脚本名称：git_changes.py
+用    途：只读检查 Git 分支、工作区状态和交付范围内的变更文件。
+
+职责边界：
+1. 记录当前需求开始时的仓库、分支和 HEAD，并校验基线没有失效。
+2. 收集基线后的 committed、staged、unstaged、untracked 四类变化并去重。
+3. 独立诊断时才使用显式 base_branch 或本地 upstream，不 fetch、不猜测主分支。
+4. 不判断 Android 业务含义，不决定调用哪个 Skill，不修改 Git 状态。
+================================================================================
+"""
+
+import argparse
+from datetime import datetime, timezone
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+GIT_TIMEOUT_SECONDS = 30
+
+
+class GitInspectionError(RuntimeError):
+    """表示 Git 仓库或只读检查命令无法继续执行。"""
+
+
+def _git(repo, args, optional=False):
+    """执行只读 Git 命令；optional=True 仅用于本地基准探测。"""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if optional:
+            return None
+        raise GitInspectionError(
+            f"Git 命令执行超时（{GIT_TIMEOUT_SECONDS} 秒）: git {' '.join(args)}"
+        ) from exc
+    if result.returncode == 0:
+        return result.stdout
+    if optional:
+        return None
+    message = result.stderr.decode("utf-8", errors="replace").strip()
+    raise GitInspectionError(f"Git 命令执行失败: git {' '.join(args)}\n{message}")
+
+
+def _require_repository(repo):
+    """所有公开检查共用同一仓库门禁。"""
+    repo = Path(repo).expanduser().resolve()
+    if _git(repo, ["rev-parse", "--is-inside-work-tree"], True) is None:
+        raise GitInspectionError(f"项目不是 Git 仓库: {repo}")
+    return repo
+
+
+def current_branch(repo):
+    """返回当前分支；detached HEAD 时返回空字符串。"""
+    repo = _require_repository(repo)
+    return _git(repo, ["branch", "--show-current"]).decode("utf-8").strip()
+
+
+def current_head(repo):
+    """返回当前 HEAD commit，供一次需求记录稳定的 diff 起点。"""
+    repo = _require_repository(repo)
+    return _git(repo, ["rev-parse", "HEAD"]).decode("utf-8").strip()
+
+
+def working_tree_status(repo):
+    """返回 Git porcelain 状态，空字符串表示工作区干净。"""
+    repo = _require_repository(repo)
+    return _git(repo, ["status", "--porcelain"]).decode("utf-8", errors="replace").strip()
+
+
+def write_baseline(repo, path):
+    """记录当前仓库、分支和 HEAD；不提交、不暂存，也不修改目标仓库。"""
+    repo = _require_repository(repo)
+    head = current_head(repo)
+    now = datetime.now(timezone.utc)
+    payload = {
+        "version": 1,
+        "id": f"{time.time_ns()}-{head[:8]}",
+        "repo": str(repo),
+        "branch": current_branch(repo),
+        "head": head,
+        "created_at": now.isoformat(),
+    }
+    target = Path(path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return payload
+
+
+def load_baseline(repo, path):
+    """校验基线属于当前仓库/分支，且仍是 HEAD 祖先，拒绝使用过期范围。"""
+    repo = _require_repository(repo)
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise GitInspectionError(f"当前需求 Git 基线不存在: {source}；请先运行 check-env")
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise GitInspectionError(f"当前需求 Git 基线无法读取: {source}: {exc}") from exc
+    required = {"id", "repo", "branch", "head", "created_at"}
+    if not isinstance(payload, dict) or not required.issubset(payload):
+        raise GitInspectionError(f"当前需求 Git 基线格式无效: {source}")
+    if Path(str(payload["repo"])).resolve() != repo:
+        raise GitInspectionError("当前需求 Git 基线属于其他项目；请重新运行 check-env")
+    branch = current_branch(repo)
+    if payload["branch"] != branch:
+        raise GitInspectionError(
+            f"当前分支 ({branch}) 与需求基线分支 ({payload['branch']}) 不一致"
+        )
+    head = str(payload["head"])
+    if _git(repo, ["merge-base", "--is-ancestor", head, "HEAD"], True) is None:
+        raise GitInspectionError("当前需求 Git 基线不再是 HEAD 祖先；请重新运行 check-env")
+    return payload
+
+
+def collect_changed_files(repo, base_branch=None, baseline_path=None):
+    """合并 committed、staged、unstaged、untracked，并按路径去重。"""
+    repo = _require_repository(repo)
+
+    def paths(args):
+        """用 NUL 分隔读取路径，避免空格或中文文件名被错误拆分。"""
+        output = _git(repo, args)
+        return {
+            item.decode("utf-8", errors="surrogateescape")
+            for item in output.split(b"\0")
+            if item
+        }
+
+    warnings = []
+    if baseline_path:
+        base_ref = str(load_baseline(repo, baseline_path)["head"])
+        use_merge_base = False
+    else:
+        base_ref = base_branch
+        use_merge_base = True
+        if base_ref and _git(
+            repo, ["rev-parse", "--verify", f"{base_ref}^{{commit}}"], True
+        ) is None:
+            warnings.append(f"配置的 base_branch 不存在: {base_ref}；已提交差异未验证")
+            base_ref = None
+        if not base_ref and not base_branch:
+            upstream = _git(
+                repo,
+                ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+                True,
+            )
+            base_ref = upstream.decode("utf-8").strip() if upstream else None
+            if not base_ref:
+                warnings.append("未配置 base_branch 且当前分支没有 upstream；只检查工作区变化")
+
+    files = set()
+    if base_ref:
+        if use_merge_base:
+            merge_base = _git(repo, ["merge-base", base_ref, "HEAD"], True)
+            comparison = merge_base.decode().strip() if merge_base else None
+        else:
+            comparison = base_ref
+        if comparison:
+            files.update(
+                paths(["diff", "--name-only", "-z", comparison, "HEAD"])
+            )
+        else:
+            warnings.append(f"无法计算 {base_ref} 与 HEAD 的 merge-base；已提交差异未验证")
+
+    # 三条命令分别覆盖暂存、未暂存和未跟踪文件，避免 `git diff HEAD` 漏报。
+    files.update(paths(["diff", "--cached", "--name-only", "-z"]))
+    files.update(paths(["diff", "--name-only", "-z"]))
+    files.update(paths(["ls-files", "--others", "--exclude-standard", "-z"]))
+    return sorted(files), warnings
+
+
+def main(argv=None):
+    """以 JSON 输出只读检查结果，供 AI 或其他脚本独立调用。"""
+    parser = argparse.ArgumentParser(description="只读检查 Git 分支、状态和变更文件")
+    parser.add_argument("--repo", default=".", help="Git 仓库路径")
+    parser.add_argument("--base-branch", help="可选的已提交差异对比分支")
+    args = parser.parse_args(argv)
+
+    try:
+        files, warnings = collect_changed_files(args.repo, args.base_branch)
+        result = {
+            "repo": str(Path(args.repo).expanduser().resolve()),
+            "branch": current_branch(args.repo),
+            "working_tree": working_tree_status(args.repo),
+            "changed_files": files,
+            "warnings": warnings,
+        }
+    except GitInspectionError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

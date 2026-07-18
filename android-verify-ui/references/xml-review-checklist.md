@@ -1,28 +1,28 @@
 # Android XML 布局代码审查清单
 
 ## 资源 (Resources)
-- [ ] 颜色是否全部提取为资源，且严格遵守了“十六进制字面量命名”？（如 `@color/color_FFFF86FC`，严禁使用语义命名）
-- [ ] 外边距(Margins)、内边距(Paddings)、控件尺寸、圆角和文字大小是否遵守了“按需抽取”？复用≥2次的抽取了 `@dimen`，孤立尺寸一律直接内联硬编码。
-- [ ] 静态文本使用了 `@string/...`，**预览用的假数据只硬编码在 `tools:text` 中，绝对没有污染到 `strings.xml`**。
-- [ ] 形状(Shape)和选择器(Selector)命名清晰，**按钮等交互组件必须使用带有按下态的 Selector**。
+- [ ] 颜色是否优先复用项目 Theme/Design Token；新增资源是否遵循项目现有语义命名方式。
+- [ ] 外边距、内边距、控件尺寸、圆角和文字大小是否复用现有资源；新增值是否按项目既有抽取规则处理，未为了单次使用制造重复 token。
+- [ ] 用户可见静态文本使用了 `@string/...`；仅预览数据使用 `tools:text`，运行时动态文本由代码或绑定提供。
+- [ ] Shape、Selector 和交互状态是否按设计稿及项目组件体系实现，不强制为没有按压态要求的组件新增状态。
 - [ ] 彻底复用了颜色和尺寸资源，**没有创建指向已有资源的纯别名**，也没有重复定义相同数值的 dimens。
 
 ## 文本与排版 (Text)
 - [ ] 字体家族匹配 Figma，或已说明最接近的降级替代方案。
 - [ ] 字重(Weight)和样式匹配设计稿。
-- [ ] **严格确保在必要处添加了 `android:includeFontPadding="false"`**。
+- [ ] `includeFontPadding` 是否根据项目排版基线和设计稿明确选择，而不是全局强制关闭。
 - [ ] 行高(Line height)和字间距(Letter spacing)准确还原或已作说明。
-- [ ] 若使用了文字阴影，`android:shadowDx` / `android:shadowDy` / `android:shadowRadius` 是否都直接写成了裸数字，而不是 `@dimen/...` 或 `dp/sp` 单位字符串。
+- [ ] 若使用文字阴影，参数是否符合 Android 属性格式、density 表现和项目资源约定，并在目标设备上验证。
 - [ ] 多行文本的省略(Ellipsis)和截断行为匹配设计稿。
 
 ## 布局 (Layout)
-- [ ] 复杂的页面根节点使用了 `ConstraintLayout`。
+- [ ] 根布局是否选择了满足当前结构且层级最少的布局，不为“复杂”标签强制更换项目已有方案。
 - [ ] 在 `ConstraintLayout` 内部，需要拉伸的维度使用了 `0dp`。
 - [ ] 避免了不必要的、深层的 `LinearLayout` 嵌套。
-- [ ] **对于 RecyclerView 等列表，重复的内容是否已提取到独立的 `item_*.xml` 文件中？**
+- [ ] RecyclerView 等列表项是否沿用项目已有组件和命名方式，并避免复制重复布局。
 - [ ] **当图片或容器有固定宽高比要求时，是否使用了 `app:layout_constraintDimensionRatio`？**
 - [ ] **浮层或角标（Overlays/badges）是否通过 `FrameLayout` 或约束(Constraints)正确实现？**
-- [ ] 动态数据仅使用 `tools:text`，未混用 `android:text`。
+- [ ] 预览数据使用 `tools:text`；运行时静态文案和动态绑定分别使用正确来源。
 
 ## 图片与图标 (Images and Icons)
 - [ ] 所有的 `ImageView` 均显式声明了 `scaleType`。

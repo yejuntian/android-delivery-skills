@@ -4,7 +4,7 @@ Journey 的适用场景、禁用场景、完整流程、配置和故障处理请
 
 先在当前 Android Studio 中使用 `New > Journey Test` 生成首个官方模板，确保 Studio 自动写入匹配当前版本的 XML schema、testSuites 和 Run Configuration。
 
-本目录只是共享壳的执行暂存区，不是测试用例的事实来源。每次需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/`，`run_journey.py` 执行前会清除这里的旧 XML，再同步当前用例集，避免切换项目后误跑旧用例。不要手工长期维护本目录中的 `.xml`。
+本目录只是共享壳的执行暂存区，不是测试用例的事实来源。每次需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/<需求作用域>/`，`run_journey.py` 执行前会清除这里的旧 XML，再同步当前作用域用例集，避免切换需求后误跑旧用例。不要手工长期维护本目录中的 `.xml`。
 
 Journey XML 应由 `android-test-and-fix` 根据用户已经确认的需求和 BDD 自动生成。不得要求用户理解或手写 XML；只有需求没有说明前置条件或预期结果时，才向用户确认业务含义。
 

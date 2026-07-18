@@ -74,6 +74,12 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 - `requirement_file`、`ui.directory`、`ui.screenshots`、`ui.assets` 如果是相对路径，优先基于 `requirement_dir` 解析。
 - 用户本次对话中提供的绝对路径优先，不受上述规则影响。
 
+需求正文读取规则：
+
+- `delivery.py init` 只读取 `.docx`、`.md`、`.markdown` 和 `.txt`；PDF 可作为 UI 资料，但作为 `requirement_file` 时先转换格式。
+- DOCX 使用 Python 标准库读取 OOXML 正文；文件损坏或结构不支持时重新导出，不要求额外安装文档解析库。
+- 文件不存在、为空、损坏或格式不支持时，报告最终绝对路径、失败原因和修正方式后停止需求判断；不得搜索其他同名文件或脑补正文。
+
 ## 外部资料读取策略（非终止）
 
 在需求理解前先尝试读取外部链接，但不要把“链接需要登录/授权”作为默认终止条件。
@@ -155,7 +161,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 ## 完整工作流
 
-这是一个由 `delivery.py` CLI 状态机驱动的闭环交付工作流。不得在测试或审查失败后只输出报告并结束。
+这是一个由 `delivery.py` 三阶段命令编排器驱动的闭环交付工作流。它只持久化当前需求 Git 基线，不维护通用状态机。不得在测试或审查失败后只输出报告并结束。
 
 ### 执行手册
 
@@ -163,14 +169,20 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 #### 阶段 1：初始化需求理解
 
-首先运行以下命令：
+首次使用时从 `workspace_root` 安装依赖：
 
 ```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py init --config profiles/local.yaml
+python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 ```
 
-**AI 动作**：脚本会输出需求上下文。请强制提炼出 **BDD (Given/When/Then)** 格式的验收标准（Acceptance Criteria）。
-**DoR (准备就绪) 门禁**：如果用户给的需求太短、没头没尾（不足以推导出至少 3 条真实的 BDD），**严禁你自己瞎编 BDD（脑补验收标准）！**你必须暂停并反问用户：“缺少具体边界条件/报错信息，无法开工，请补充细节。”
+然后运行：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/delivery.py init
+```
+
+**AI 动作**：脚本会输出需求上下文。提炼足以覆盖真实需求的 **BDD (Given/When/Then)** 验收标准，并同时输出最小修改预览；BDD 数量服从实际需求，不为凑数量脑补场景。
+**DoR (准备就绪) 门禁**：如果需求缺少继续实现所必需的业务含义、边界条件或报错证据，列出缺口并暂停请求补充；能够明确表达一个真实场景时，不得仅因条目少而阻塞。
 输出完毕后，**必须立即结束当前回合，等待用户确认**。绝不能直接开写代码。
 
 #### 阶段 2：测试左移、环境检查与编码
@@ -178,10 +190,10 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init --config prof
 在用户明确回复“确认”、“可以开始做”之后，运行以下命令：
 
 ```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env --config profiles/local.yaml
+python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 ```
 
-**AI 动作**：环境检查通过后，你已获准编码，但必须遵守以下强制规约：
+**AI 动作**：环境检查只在目标分支和工作区干净时建立当前需求 Git 基线；检测到已有改动时停止，不自动 stash、提交或清理。基线建立后你已获准编码，并遵守以下规约：
 1. **先物化测试**：把已确认 BDD 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 测试由 `android-test-and-fix` 按能力生成 Compose/Espresso/Journey/截图测试。Journey 此时只做候选初判和用例草稿，不启动壳；编码后结合实际 diff 终判，适用才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
 3. **UI 逻辑接管 (最小化修改)**：如果前置步骤生成纯 XML，主动补充对应的 Kotlin ViewBinding 和业务代码。
@@ -194,10 +206,11 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env --config
 代码写完的回合结束后，在紧接着的新回合里，运行以下命令：
 
 ```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py route --config profiles/local.yaml
+python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
-**AI 动作**：脚本按实际 diff 输出专项审查与测试顺序。逐个调用，每项输出必须进入闭环，而不是止于报告。
+**AI 动作**：脚本只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，并输出专项审查与测试顺序。逐个调用，每项输出必须进入闭环，而不是止于报告。
+- Git 分支、工作区和 committed/staged/unstaged/untracked 由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
 - P0/P1 发现后立即修复，并从受影响的最小测试集开始重跑；低风险 P2/P3 可修复时一并关闭。
@@ -213,15 +226,16 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route --config pro
 - 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
 - 所有 P0/P1 已关闭；无豁免的测试失败为 0。
 - UI/设备/外部环境无法验证时明确列出未验证项，但不得掩盖本可本地执行的失败。
+- 存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则结论只能是“代码与自动测试完成，UI 验收待执行”。
 - 最终报告包含变更、测试命令与结果、自修复记录、未验证项和剩余风险。
 
 任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
 
-## 资料缺失兜底 (Contract-First 降级策略)
+## 资料缺失降级边界
 
-如果在编码过程中缺乏关键资料（如 API 缺失接口文档、UI 缺少设计图），**不得直接停止工作或罢工**。请采取以下降级策略保证工程骨架完整：
+资料缺失时先区分是否会影响正式生产契约：
 
-1. **TODO 显式占位**：架构、类结构、ViewModel 和业务逻辑依然要写完。对于缺失的 Endpoint、具体请求参数或未知状态，使用 Kotlin 的 `TODO("原因")` 显式占位，将问题暴露在编译期，坚决不瞎编假数据糊弄。
-2. **纯前端领域模型与 Mock**：如果缺少整个接口定义，请先构建客户端视角的纯领域模型（Domain Entity），并编写 `FakeRepository` 使用本地 Mock 数据驱动 UI 完成剩余工作。网络层（DTO）留空，等待后续 API 就绪。
-3. **安全默认值兜底**：处理不明确的 API 字段时，所有的基础类型必须 `nullable` 或提供业务上安全的 default value。对于未明确的枚举状态，必须包含一个 `UNKNOWN` 兜底，防止线上 NPE。
-4. **风险强提示**：编码结束后，必须在当前回合的输出总结中，明确列出所有打上了 `TODO` 的位置和采取了 Mock 降级的地方。
+1. 缺少 Endpoint、请求方式、关键字段、枚举或错误码且需求要求接正式接口时，停止对应网络接入并请求契约，不创建猜测性 DTO、Endpoint 或运行时 `TODO()`。
+2. 用户明确允许先做 UI 骨架或 Mock 时，只在 `debug`、`fake`、`sampledata`、Preview 或测试范围内建立最小 Fake；不得进入 release 生产路径。
+3. 已有契约明确允许未知枚举/default 时，沿用项目现有兼容策略；契约未确认时不得把所有字段一律 nullable/default 当作完成。
+4. 最终报告列出未接入部分、降级位置、未验证项和恢复正式接入所需资料。

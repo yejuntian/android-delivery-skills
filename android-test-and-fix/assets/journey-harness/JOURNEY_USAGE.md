@@ -456,7 +456,8 @@ Journey 是 Studio Labs 预览能力。第一次使用共享壳时：
 2. 确认 Studio Labs/Gemini 已启用并登录。
 3. 执行 `New > Journey Test`。
 4. 让 Android Studio 生成匹配当前版本的 XML schema、testSuites、依赖、Run Configuration 和 Gradle task。
-5. 保留官方生成的结构，不手写猜测预览 DSL。
+5. 确认官方任务会在 `harness-app/build` 下生成 JUnit XML 或等价的结构化测试结果；没有实际测试数量时执行器会拒绝判绿。
+6. 保留官方生成的结构，不手写猜测预览 DSL，也不通过放宽判绿条件绕过缺失结果。
 
 这一步只初始化共享壳一次，不要求每个目标项目重复执行。
 
@@ -465,10 +466,10 @@ Journey 是 Studio Labs 预览能力。第一次使用共享壳时：
 当前需求的 Journey 用例默认放在：
 
 ```text
-<requirement_dir>/test-cases/journeys/*.xml
+<requirement_dir>/test-cases/journeys/<需求作用域>/*.xml
 ```
 
-也可以配置 `testing.journey_harness.cases_dir` 或由 Skill 内部使用 `--journeys-dir` 指定。
+完整交付的 `<需求作用域>` 使用 `check-env` 生成的 Git 基线 ID 和需求正文哈希；单独调用时使用需求正文内容哈希。这样即使复用同一个 `requirement_dir`，上一需求的 XML 也不会进入本次执行。也可以配置 `testing.journey_harness.cases_dir` 或由 Skill 内部使用 `--journeys-dir` 显式指定。
 
 壳目录：
 
@@ -508,7 +509,7 @@ testing:
 
 说明：
 
-- `cases_dir`：默认 `<requirement_dir>/test-cases/journeys`。
+- `cases_dir`：默认 `<requirement_dir>/test-cases/journeys/<需求作用域>`。
 - `module`：目标 application 模块。
 - `variant`：如 `debug`、`demoDebug`。
 - `device`：多设备时填写 adb serial。
@@ -527,11 +528,14 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 `--ui-impact` 是 Skill 内部安全参数，不要求用户选择。脚本将它设为必填，防止未做适用性判断就启动 Journey。
 
+每次重试前执行器都会 force-stop 目标包，并重新应用配置中明确的清数据、权限、DeepLink 或 Activity 前置条件。只有显式配置 `clear_app_data: true` 时才会清除本地数据。adb、Gradle 和 Journey 均有超时；报告中的 DeepLink 查询参数、Token、密码和密钥会脱敏。
+
 ## 状态码和安全边界
 
 | 状态 | 含义 | 是否可修改目标代码 |
 | --- | --- | --- |
 | `PASS` | Journey 真实执行并通过 | 不需要 |
+| `PREFLIGHT_PASS` | 壳、设备、task 和用例预检通过，尚未执行测试 | 否 |
 | `SKIPPED_NO_UI` | 无 UI 影响，Journey 不适用 | 否 |
 | `SKIPPED_VISUAL_ONLY` | 纯视觉变化，改用截图或 UI 验收 | 否 |
 | `NO_JOURNEY_FOUND` | 已终判需要 Journey，但用例未成功物化 | 先生成用例，不改目标代码 |
@@ -542,7 +546,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 退出码：
 
-- `0`：通过或明确不适用。
+- `0`：真实通过、明确不适用或仅预检；必须读取状态，不能把 `PREFLIGHT_PASS`/`SKIPPED_*` 写成测试通过。
 - `1`：壳、环境、用例物化或执行器问题。
 - `2`：连续两次真实 UI 断言失败。
 
@@ -553,8 +557,8 @@ python3 android-test-and-fix/scripts/run_journey.py \
 默认输出：
 
 ```text
-assets/journey-harness/build/reports/journey-harness/result.json
-assets/journey-harness/build/reports/journey-harness/result.md
+<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json
+<requirement_dir>/test-results/journey-harness/<需求作用域>/result.md
 ```
 
 报告包含：
@@ -562,11 +566,12 @@ assets/journey-harness/build/reports/journey-harness/result.md
 - 状态和退出码。
 - 设备、applicationId、APK 和 Gradle task。
 - Journey 文件和 action/step 数量。
+- 本轮实际执行测试数和结构化 JUnit XML 路径。
 - 执行轮次和命令。
 - 本次截图证据。
 - 失败原因和降级建议。
 
-Journey 截图可以交给 `android-verify-ui` 做设计还原对比，但 Journey 通过不能替代视觉验收通过。
+执行器只接受 Journey、screenshot 或 capture 结果目录中的图片，普通构建资源不能作为截图证据。Journey 截图可以交给 `android-verify-ui` 做设计还原对比，但 Journey 通过不能替代视觉验收通过。
 
 ## 常见故障与降级
 
@@ -591,7 +596,7 @@ Journey 截图可以交给 `android-verify-ui` 做设计还原对比，但 Journ
 
 - 优先使用 `apkanalyzer`。
 - 其次使用 `aapt dump badging`。
-- `--skip-build` 时才要求配置 `app_package_name`。
+- `--skip-build` 时才要求配置 `app_package_name`；只校验设备中已安装包，不要求目标源码目录存在。
 
 ### 壳构建被全局 Gradle 配置污染
 

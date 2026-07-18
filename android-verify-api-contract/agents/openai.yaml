@@ -1,4 +1,4 @@
 interface:
-  display_name: "Android API 契约核验"
-  short_description: "核对 endpoint、DTO、字段、映射和兼容性"
-  default_prompt: "使用 $android-verify-api-contract 核验这次 Android API 实现是否符合接口契约。"
+  display_name: "Android OpenAPI 与接口契约核验"
+  short_description: "核验 OpenAPI、endpoint、DTO、字段映射和兼容性"
+  default_prompt: "使用 $android-verify-api-contract 核验这次 Android API 实现和 OpenAPI 契约是否一致。"

@@ -9,8 +9,8 @@
 本脚本将整个 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线：
 1. `init`: 负责需求提炼与验收标准制定 (BDD)。
 2. `check-env`: 负责编码前的环境安全校验与编码后的自动纠错约束。
-3. `route`: 识别 UI、接口、数据、系统、构建、架构和测试影响候选，
-   负责编码后的动态审查、测试与自修复闭环分发。
+3. `route`: 识别七类工程影响和第二轮条件能力候选，负责编码后的动态审查、
+   测试与自修复闭环分发；泄漏和性能仍由 AI 结合需求与真实 diff 终判。
 
 通过输出带 "👉 AI 指令" 的终端文本，强制 AI 采取“走一步看一步”的精准执行策略，
 实现媲美高级 Android 开发工程师的稳定性与工程纪律。
@@ -328,6 +328,21 @@ def classify_route_files(diff_files):
     return impacts["ui"], impacts["api"]
 
 
+def classify_conditional_gate_candidates(impacts):
+    """把七类工程候选映射到第二轮门禁；泄漏和性能保留给 AI 语义终判。"""
+    return {
+        "openapi": bool(impacts.get("api")),
+        "migration": bool(impacts.get("data")),
+        "ui_a11y": bool(impacts.get("ui")),
+        "security_privacy": bool(
+            impacts.get("api") or impacts.get("data") or impacts.get("system")
+        ),
+        # 文件名不足以证明生命周期或热路径变化，避免脚本替代业务判断。
+        "dynamic_leak": None,
+        "performance": None,
+    }
+
+
 def print_route_instructions(skills_to_run):
     """打印路由审查指令，提示 AI 根据实际改动逐个触发对应 Skill。"""
     print("\n---")
@@ -336,6 +351,7 @@ def print_route_instructions(skills_to_run):
         print(f"  - {skill}")
     print("注意：一次只调用一个。修复导致 diff 变化时重新执行 route，直到路由稳定。")
     print("候选分类必须结合已确认需求和真实 diff 复核，不得凭文件名脑补业务变化。")
+    print("第二轮条件能力只在候选适用时执行；无真机继续其他门禁，动态能力未验证不得写成通过。")
     print("最终必须执行 android-test-and-fix 全绿门禁；未执行项不得计为通过。")
     print("UI 校验(android-verify-ui)不进自动队列；检测到 UI 变更时提示用户单独执行。")
 
@@ -475,6 +491,21 @@ def cmd_route(args):
         print("\n⚠️ 强制关注点:")
         for item in attention:
             print(f"  - {item}")
+
+    conditional_gates = classify_conditional_gate_candidates(impacts)
+    print("\n🔬 第二轮条件能力候选:")
+    conditional_labels = {
+        "openapi": "OpenAPI 契约",
+        "migration": "数据迁移",
+        "ui_a11y": "UI/A11y",
+        "security_privacy": "安全隐私",
+    }
+    for gate, label in conditional_labels.items():
+        status = "候选适用，交由对应 Skill 终判" if conditional_gates[gate] else "无候选，默认不适用"
+        print(f"  - {label}: {status}")
+    print("  - 动态泄漏: 由 android-audit-stability 结合需求、生命周期和资源释放语义终判")
+    print("  - 性能: 由 android-audit-stability 结合验收指标和性能敏感路径语义终判")
+    print("  - 设备降级: 无真机时继续其他门禁；真机专项标未验证，不得冒充通过")
 
     print("\n🚀 触发的专项审查(按执行顺序):")
     print("\n【核心·业务逻辑层(必须先过,逐个执行)】")

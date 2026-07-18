@@ -10,6 +10,7 @@
 4. `SIMPLE_USAGE.md`：面向使用者的名称与命令速查，不增加 AI 强制规则。
 5. `references/open-source-design-rationale.md`：维护流程时使用的设计依据，记录开源参考、采用/拒绝原因和长期不变量。
 6. `android-implement-and-verify/references/delivery-eval-scenarios.md`：修改 Skill、路由或门禁后的行为评测集，不是日常需求步骤。
+7. `android-implement-and-verify/references/conditional-capability-gates.md`：第二轮六类条件能力和无真机降级的详细边界，仅在候选触发时读取。
 
 规则冲突时按以下顺序处理：目标项目 `AGENTS.md` / `CONTRIBUTING.md` 等更严格规则 → `_shared/android-global-rules.md` → 当前 Skill。无法确定时暂停说明，不自行选择宽松规则。
 

@@ -108,7 +108,7 @@
 在遇到以下三大复杂疑难杂症时，**严禁凭空盲猜或仅靠代码分析，必须强制调用特定的工程工具进行诊断**：
 
 1. **复杂 UI 调试（防盲猜布局）**：如果调整 UI 时元素不可见、尺寸异常或被遮挡，严禁凭空修改 XML 参数试错。必须强制调用 `android layout` (或同等 Dump 脚本) 拉取当前设备的真实 View Tree (JSON)，根据实际测绘尺寸和渲染状态定位问题。
-2. **性能与卡顿分析（防背诵八股文）**：遇到卡顿、ANR 或内存泄漏优化任务时，禁止直接修改业务代码或背诵通用优化理论。必须要求用户提供 Trace 或 Heap Dump 文件，并优先调用 `perfetto-trace-analysis` 等专项技能通过 SQL 数据分析找到确切瓶颈。
+2. **性能与卡顿分析（防背诵八股文）**：遇到卡顿、ANR 或内存泄漏优化任务时，禁止直接修改业务代码或背诵通用优化理论。必须先使用项目/本机已有能力采集 Trace、Leak Trace 或 Heap Dump；无法安全采集时再请求用户提供。性能问题优先调用 `perfetto-trace-analysis` 等专项技能通过真实数据找到确切瓶颈。
 3. **深层 Gradle 冲突（防盲猜版本号）**：遇到 `Duplicate class` 或深层依赖库版本冲突导致构建失败时，严禁盲目修改 `build.gradle` 的版本号撞运气。必须强制运行 `./gradlew app:dependencies` (或相关模块的 dependencies task) 打印完整依赖树，分析确切冲突链路后使用 `exclude` 精准解决。
 4. **Release 包混淆闪退（防乱关混淆）**：遇到 Release 包特有的 `ClassNotFoundException` 等混淆问题时，严禁大面积使用通配符 `-keep class **` 关闭混淆！必须强制要求使用 `r8-analyzer` 技能（或查阅 `usage.txt` / `mapping.txt`），精准定位被缩减的类，仅针对引发崩溃的最小闭环添加 Keep 规则。
 5. **协程与异步生命周期（防内存泄漏）**：处理协程生命周期异常或并发时序问题时，绝对禁止使用 `GlobalScope` 逃避生命周期，绝对禁止使用 `delay()` 掩盖时序报错。必须强制追溯宿主生命周期状态，严格使用 `viewModelScope` 或 `repeatOnLifecycle` 进行重构。
@@ -203,11 +203,11 @@
 
 - `android-implement-and-verify`：负责完整需求交付，包括需求确认、BDD、测试物化、编码、路由编排、自修复、重验和最终门禁；不替代专项 Skill 的专业检查清单。
 - `android-review-diff`：只负责实际 diff、业务逻辑、变更范围、架构边界、回归和上线风险审查。
-- `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段和契约兼容审查。
-- `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态和可见轻交互的 UI 表现验证；可以复用测试产出的截图，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
-- `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器测试物化、验证命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
+- `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段、OpenAPI 和契约兼容审查。
+- `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态、可见轻交互和人工/设备 A11y 表现验证；可以复用测试产出的截图与 A11y 结果，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
+- `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器/迁移/A11y 测试物化、条件能力命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
 - Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`，只有 UI 行为或可见状态流转变化才生成 Journey；`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
-- `android-audit-stability`：只负责崩溃、生命周期、协程、内存泄漏、ANR、资源释放和 Android 版本兼容风险。
+- `android-audit-stability`：只负责崩溃、生命周期、协程、动态泄漏、ANR、性能、运行时安全隐私、资源释放和 Android 版本兼容风险。
 - `android-review-code-quality`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
 
 如果当前 Skill 发现问题属于其他职责范围，只能记录为“需要路由到对应 Skill / 需要用户确认”，不得在当前 Skill 中扩展处理或替代其他 Skill。
@@ -221,6 +221,15 @@
 - 单独调用审查 Skill 时，发现风险默认先报告，不自动扩大修复范围；用户明确要求修复后才修改。
 - 由 `android-implement-and-verify` 编排完整交付时，视为用户已授权修复本次需求范围内的问题：P0/P1、验收测试失败、构建失败和 lint Error 必须立即修复并重跑；P2/P3 仅在低风险且不扩大需求范围时修复，否则列为剩余风险。
 - 自修复不得越过分支、生产数据、破坏性操作、关键资料缺失或需求边界。连续 3 轮仍因同一根因失败时暂停，提交证据和阻塞项。
+
+## 条件专项门禁与设备降级
+
+- OpenAPI、数据迁移、动态泄漏、性能、UI/A11y、安全隐私只在已确认需求或实际 diff 触发时执行；不适用必须写明依据，不得机械运行全部能力。
+- 缺少真机不阻断需求理解、编码、构建、单测、lint、契约、迁移静态检查和其他仍可执行门禁，也不得提前终止后续专项检查。
+- 模拟器能够等价验证的功能、迁移、基础 A11y 或泄漏场景优先继续执行；不得仅因没有实体设备就跳过全部设备测试。
+- 正式性能、厂商 ROM、真实硬件和需求明确指定的真机验收没有等价替代时，保持“未验证”。这只阻断对应专项的通过和完整交付声明，不阻断其他范围继续完成。
+- 静态审查、模拟器结果或单次内存数值不得冒充真机性能、长期泄漏、厂商兼容或真实硬件通过；最终结论必须明确“代码与本地门禁完成，真机专项待验证”。
+- 不得为了启用条件能力自动增加 LeakCanary、Benchmark、OpenAPI Generator、Accessibility Scanner、安全扫描器或其他重型依赖；先复用项目和本机已有工具，新增依赖必须获得用户确认。
 
 ## 外部智能体与工具规则
 

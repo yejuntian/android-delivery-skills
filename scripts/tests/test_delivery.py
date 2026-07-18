@@ -7,7 +7,7 @@
 覆盖范围：
 1. 配置中的绝对/相对路径解析。
 2. Word、Markdown、TXT 需求正文读取及明确失败行为。
-3. UI/API/数据/系统/构建/架构/测试影响候选和 route 输出，不把模糊子串当成业务结论。
+3. 七类工程影响、第二轮条件能力候选和 route 输出，不把模糊子串当成业务结论。
 4. 当前需求 Git 基线、四类变化收集、脏工作区门禁和独立 JSON 输出。
 
 测试原则：
@@ -40,6 +40,7 @@ if __package__ in {None, ""}:
 
 from ..delivery import (  # noqa: E402
     DeliveryError,
+    classify_conditional_gate_candidates,
     classify_route_files,
     classify_route_impacts,
     cmd_check_env,
@@ -279,6 +280,30 @@ class ClassificationTests(unittest.TestCase):
         self.assertTrue(all(path not in impacts["data"] for path in files))
         self.assertTrue(all(path not in impacts["architecture"] for path in files))
 
+    def test_maps_engineering_impacts_to_conditional_gates(self) -> None:
+        """验证第二轮只映射确定候选，泄漏和性能始终保留给 AI 语义终判。"""
+        gates = classify_conditional_gate_candidates({
+            "ui": ["HomeScreen.kt"],
+            "api": ["UserApi.kt"],
+            "data": ["UserDao.kt"],
+            "system": [],
+        })
+
+        self.assertTrue(gates["openapi"])
+        self.assertTrue(gates["migration"])
+        self.assertTrue(gates["ui_a11y"])
+        self.assertTrue(gates["security_privacy"])
+        self.assertIsNone(gates["dynamic_leak"])
+        self.assertIsNone(gates["performance"])
+
+        no_candidates = classify_conditional_gate_candidates({
+            "ui": [], "api": [], "data": [], "system": [],
+        })
+        self.assertFalse(no_candidates["openapi"])
+        self.assertFalse(no_candidates["migration"])
+        self.assertFalse(no_candidates["ui_a11y"])
+        self.assertFalse(no_candidates["security_privacy"])
+
 
 class GitDiffCollectionTests(unittest.TestCase):
     """在隔离仓库中验证所有 Git 变化来源及安全降级。"""
@@ -459,6 +484,11 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("构建配置 | 检测到", text)
         self.assertIn("架构依赖 | 检测到", text)
         self.assertIn("schema、迁移、旧数据和回滚", text)
+        self.assertIn("OpenAPI 契约: 候选适用", text)
+        self.assertIn("数据迁移: 候选适用", text)
+        self.assertIn("UI/A11y: 候选适用", text)
+        self.assertIn("无真机时继续其他门禁", text)
+        self.assertIn("动态能力未验证不得写成通过", text)
 
 
 if __name__ == "__main__":

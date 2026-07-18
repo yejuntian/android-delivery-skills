@@ -1,6 +1,6 @@
 ---
 name: android-test-and-fix
-description: Android 测试驱动交付与自修复闭环。适用于 Android 需求、Bug 修复或功能迭代中，将已确认 BDD 物化为自动测试，按实际 diff 生成并执行单元测试、参数化测试、构建、lint、仪器、截图或 Journey UI 测试；低 AGP 老项目可通过独立 AGP 9 journey-harness 测试已安装 APK。测试失败时定位根因、修改代码并重跑，直到必需门禁全绿或连续三轮同根因受阻。完整交付时必须使用；单独调用时也可生成测试矩阵和验证报告。
+description: Android 测试驱动交付与自修复闭环。适用于 Android 需求、Bug 修复或功能迭代中，将已确认 BDD 物化为 Unit、参数化、迁移、A11y、仪器、截图或 Journey 测试，并按条件执行 OpenAPI、泄漏、性能和安全工具；低 AGP 老项目可通过独立 AGP 9 journey-harness 测试已安装 APK。失败时定位根因、最小修复并重跑，直到必需门禁全绿或明确受阻。完整交付时必须使用；单独调用时也可生成测试矩阵和验证报告。
 ---
 
 # Android 测试与失败自修复
@@ -135,6 +135,31 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 - CLI：Gradle 构建、lint、adb 安装、截图、logcat。
 - Manual：需要人工确认的设计稿、复杂交互、第三方环境、真实后端数据。
 
+## 第二轮条件测试
+
+六类能力的共同触发、设备降级和报告边界见 `../android-implement-and-verify/references/conditional-capability-gates.md`。本 Skill 只执行与已确认需求和最终 diff 相符的测试，不因为缺少真机停止其他可运行门禁。
+
+### 数据迁移
+
+- Room version/schema、Entity/Dao、DataStore、SharedPreferences、Proto 或缓存格式变化时适用。
+- 优先复用项目已有 schema、Migration、`MigrationTestHelper` 和仪器测试；验证真实旧版本到新版本、旧数据保留、默认值、索引、外键和约束。
+- 没有实体真机时优先使用模拟器；没有任何设备时继续 schema/代码静态检查和其他本地门禁，动态迁移标为未验证。
+- 缺少旧 schema 或旧数据样本时不得用新库建库成功代替迁移证据；禁止清数据、卸载重装或 destructive migration 造绿。
+- 证据记录源/目标版本、旧数据准备、命令、迁移后断言、测试数和报告路径。
+
+### UI/A11y 自动测试
+
+- UI、交互控件、图标、可见状态、Compose semantics、焦点、字体或主题变化时检查 A11y 适用性；视觉设计验收仍由 `android-verify-ui` 手动独立执行。
+- 优先复用项目已有 Compose/Espresso semantics、AccessibilityChecks、截图矩阵或仪器测试，不自动新增依赖。
+- 测试语义标签、装饰元素排除、可点击区域、焦点顺序、状态描述、错误提示、字体缩放，以及不能只靠颜色表达状态。
+- 模拟器可执行的项目继续运行；没有设备时完成静态 XML/Compose/resource 检查，把 TalkBack、动态焦点和触摸体验标为未验证。
+
+### 泄漏、性能与安全任务协作
+
+- `android-audit-stability` 判定动态泄漏、性能或安全隐私适用后，本 Skill 只负责执行项目已有 LeakCanary/Heap、Benchmark/Perfetto、lint/detekt/Semgrep/MobSF 等命令并保留证据。
+- 工具不存在时不自动安装，不用较弱命令冒充等价通过；继续其他门禁并记录未验证与能力损失。
+- 模拟器结果必须标明，正式性能、厂商 ROM 和真实硬件验收没有真机时保持未验证。
+
 ## Journey UI 测试
 
 Journey 属于 UI 功能测试用例，由本 Skill 根据已确认 BDD 生成和执行；`android-verify-ui` 只消费截图或结果做设计还原验收，不管理 Journey 用例。
@@ -268,12 +293,13 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 
 1. 测试范围
 2. 追溯覆盖率：`REQ-ID -> BDD-ID -> TEST-ID/人工验收 -> 最终证据`
-3. 测试用例矩阵：主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
-4. Red-Green 证据：首次 Red、最小修改和最终 Green；不适用时说明原因
-5. 自动化可执行项和需要人工验证项
-6. 最终新鲜证据：命令、退出码、测试数、关键输出和报告/产物路径
-7. flaky 状态：首次失败、重试原因/次数/结果、是否已关闭
-8. 自修复轮次、根因和修改
-9. 失败项与降级记录（失败分类、原专项能力/工具、证据、AI 替代、能力损失、所需输入、当前状态）
-10. 未验证项和剩余风险
-11. 门禁结论：全绿 / 未完成 / 受阻
+3. 条件能力矩阵：OpenAPI / 迁移 / 泄漏 / 性能 / UI-A11y / 安全隐私的适用性、设备类型和结论
+4. 测试用例矩阵：主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
+5. Red-Green 证据：首次 Red、最小修改和最终 Green；不适用时说明原因
+6. 自动化可执行项和需要人工验证项
+7. 最终新鲜证据：命令、退出码、测试数、关键输出和报告/产物路径
+8. flaky 状态：首次失败、重试原因/次数/结果、是否已关闭
+9. 自修复轮次、根因和修改
+10. 失败项与降级记录（失败分类、原专项能力/工具、证据、AI 替代、能力损失、所需输入、当前状态）
+11. 未验证项和剩余风险
+12. 门禁结论：全绿 / 代码与本地门禁完成、真机专项待验证 / 未完成 / 受阻

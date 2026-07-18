@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 测试与失败自修复"
-  short_description: "物化并执行 Android Unit、仪器和 Journey 测试，修复失败到全绿门禁"
-  default_prompt: "使用 $android-test-and-fix 为这次 Android 改动物化测试用例，按影响范围执行 Unit、仪器或 Journey 测试，并修复失败直到通过门禁。"
+  short_description: "执行 Unit、迁移、A11y、仪器和 Journey 测试并修复失败"
+  default_prompt: "使用 $android-test-and-fix 为这次 Android 改动物化并执行 Unit、迁移、A11y、仪器或 Journey 测试，修复失败直到通过门禁。"

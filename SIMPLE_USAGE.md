@@ -124,6 +124,8 @@ python3 ai-skills/android-delivery-skills/scripts/git_changes.py \
 
 核心原则：**在已确认范围内最小修改；每个 Skill 恪守单一职责；BDD 必须物化为测试；测试或 P0/P1 失败必须修复重跑；必需门禁全绿才可交付**。每个 Skill 仍可脱离 route 单独运行。
 
+第二轮条件能力不是每次全跑：接口变化查 OpenAPI，持久化变化查迁移，生命周期/热路径按语义判断泄漏和性能，UI 检查 A11y，权限/WebView/用户数据检查安全隐私。没有真机时继续构建、单测、lint、契约、静态审查和模拟器可执行项；真机专项写“未验证”，不能冒充通过，也不因此停止其他流程。
+
 ## 外部链接读取
 
 Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默认终止流程：
@@ -168,11 +170,11 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py \
 | --- | --- | --- | --- |
 | `android-implement-and-verify` | 确认需求、BDD、生成测试、编码、动态路由、自修复、重验和交付门禁 | 发布上线、生产数据、未授权 Git 提交 | 完整需求、Bug 或迭代的唯一入口 |
 | `android-review-diff` | 检查是否改对、改多、漏改，以及无关 diff 和业务回归 | 通用代码质量、API 字段、UI 像素和测试执行 | 任意代码改动后必跑 |
-| `android-verify-api-contract` | 核验 endpoint、Request/Response、DTO、mapper、错误码和兼容性 | 产品需求、通用架构、UI 和完整测试门禁 | API、DTO 或网络 Repository 变更时 |
+| `android-verify-api-contract` | 核验 OpenAPI、endpoint、Request/Response、DTO、mapper、错误码和兼容性 | 产品需求、通用架构、UI 和完整测试门禁 | API、DTO 或网络 Repository 变更时 |
 | `android-review-code-quality` | 检查架构一致性、可维护性、依赖边界、重复逻辑和资源规范 | 需求覆盖、API 契约、运行时专项风险和 UI 还原 | 任意代码改动后必跑 |
-| `android-audit-stability` | 检查崩溃、泄漏、ANR、生命周期、协程、并发和版本兼容 | diff 范围、通用风格、API 契约和设计还原 | 任意业务改动后必跑 |
-| `android-test-and-fix` | 把 BDD 物化为 Unit、仪器或 Journey 测试，执行并修复失败到全绿门禁 | 需求确认、接口契约来源、设计判断和发布 | 完整交付必跑 |
-| `android-verify-ui` | 独立验收布局、排版、资源、截图和设计还原 | 功能测试用例、接口、数据存储、支付和提交 | 用户在 UI 变更完成后单独调用 |
+| `android-audit-stability` | 检查崩溃、动态泄漏、性能、安全隐私、ANR、协程和版本兼容 | diff 范围、通用风格、API 契约和设计还原 | 任意业务改动后必跑，专项按条件执行 |
+| `android-test-and-fix` | 把 BDD 物化为 Unit、迁移、A11y、仪器或 Journey 测试，执行并修复失败 | 需求确认、接口契约来源、设计判断和发布 | 完整交付必跑 |
+| `android-verify-ui` | 独立验收布局、截图、设计还原和人工/设备 A11y 表现 | 自动测试用例、接口、数据存储、支付和提交 | 用户在 UI/A11y 变更完成后单独调用 |
 
 ### 单独调用示例
 

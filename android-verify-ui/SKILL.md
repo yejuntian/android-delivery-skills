@@ -1,6 +1,6 @@
 ---
 name: android-verify-ui
-description: 手动独立执行的 Android UI 实机与设计验收闭环。用于涉及 XML、ViewBinding、DataBinding、Compose、Adapter、资源、主题或页面状态的改动，通过已有截图证据、Android CLI + adb/layout/screenshot、静态检查或人工截图对比，验证布局、排版、间距、资源和设计还原。用户明确要求验收 UI、对照设计稿、检查视觉实现或修复视觉偏差时使用；不得由交付 route 自动调用。Journey、截图测试等测试用例归 android-test-and-fix。
+description: 手动独立执行的 Android UI 实机、设计与无障碍表现验收闭环。用于涉及 XML、Compose、Adapter、资源、主题、页面状态、交互控件、字体或 semantics 的改动，通过截图、Android CLI/adb、静态检查、TalkBack 或人工对比验证布局、设计还原和 A11y 表现。用户明确要求验收 UI、设计稿、视觉偏差或无障碍体验时使用；不得由交付 route 自动调用，Journey、截图和自动 A11y 测试归 android-test-and-fix。
 ---
 
 # Android UI 实机与设计验收
@@ -11,16 +11,17 @@ description: 手动独立执行的 Android UI 实机与设计验收闭环。用�
 
 ## 定位
 
-默认用于编码后处理 UI 链接、截图、设计稿和页面视觉还原，目标是审查实际实现是否符合设计稿和项目设计体系，而不是让 AI 自由发挥。没有设计稿、截图或可对比基准时，不进入设计稿一致性验证，只在变更审查、稳定性审查或代码质量审查中做必要的 UI 基础检查。只有关键设计资料缺失、继续编码会误实现时，才在编码前暂停确认。
+默认用于编码后处理 UI 链接、截图、设计稿、页面视觉还原和人工/设备 A11y 表现，目标是审查实际实现是否符合设计稿、项目设计体系和可访问性要求，而不是让 AI 自由发挥。没有设计稿、截图或可对比基准时不进入设计稿一致性验证，但 A11y 候选仍按静态或设备能力检查。只有关键设计资料缺失、继续编码会误实现时，才在编码前暂停确认。
 
 ## 职责边界
 
-- **负责**：验证用户实际可见的布局、排版、间距、资源、页面状态、轻交互和设计还原。
-- **调用**：存在 UI diff 且有设计稿、截图、设备或截图测试基准时。
+- **负责**：验证用户实际可见的布局、排版、间距、资源、页面状态、轻交互、设计还原和人工/设备 A11y 表现。
+- **调用**：存在 UI diff 且有设计稿、截图、设备、截图基准，或用户明确要求验收 A11y 表现时。
 - **执行方式**：用户手动单独调用；总交付流程只能提示，不得自动触发。
 - **不负责**：接口、Repository、数据存储、权限、支付、提交等不可由画面证明的业务正确性。
 - **验证底线**：没有真实截图或设备结果时，只能报告静态检查，不能声称完成截图级或实机验收。
 - **相对独立**：不调用 `android-test-and-fix` 的执行脚本；只读取其报告或截图证据。以后新增的截图采集、布局检查或视觉对比脚本必须放在本 Skill 的 `scripts/` 下。
+- **A11y 边界**：本 Skill 检查截图、布局树、TalkBack 和人工体验；Compose/Espresso semantics、AccessibilityChecks 等自动测试仍由 `android-test-and-fix` 定义和执行。
 
 ## 内置资源
 
@@ -68,6 +69,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 - 没有 UI 改动：跳过本 Skill。
 - 有 UI 改动但没有设计稿、截图或可对比基准：跳过设计稿一致性验证，只在其他后置审查中检查资源规范、明显布局风险和崩溃风险。
 - 有 UI 改动且存在可访问设计稿、截图或可对比基准：使用本 Skill 做 UI 还原验证。
+- A11y 候选不依赖设计稿；没有视觉基准时仍可执行静态语义检查，用户单独调用后可继续设备/TalkBack 验收。
 
 ## 项目 UI 事实识别
 
@@ -110,6 +112,18 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 - `targetSdk >= 35` 时必须额外检查 edge-to-edge / WindowInsets，避免内容被状态栏遮挡。
 - 不要依赖 `duplicateParentState` 处理复杂 tab/button 选中态；状态复杂时优先显式更新图标、文字色和背景。
 - 阴影、mask、复杂 blur、alpha mask 这类 Figma 效果在 View XML 中可能只能近似实现；如果需要像素级一致，必须明确记录偏差。
+
+## A11y 表现验收
+
+UI 或交互候选存在时同步检查，不要求必须有设计稿：
+
+- 非装饰图标、图片、按钮和自定义控件是否有准确语义；装饰元素是否从无障碍树排除。
+- 可点击区域、焦点顺序、TalkBack 朗读、选中/禁用/错误/加载状态描述是否符合真实操作。
+- 字体缩放后是否截断、重叠或失去操作入口，颜色是否成为唯一状态表达。
+- Compose semantics 与 XML 属性是否和屏幕可见含义一致，不用技术类名代替用户语义。
+- 优先引用 `android-test-and-fix` 已执行的 A11y 自动测试；有设备时再补布局树、TalkBack 或人工路径。
+
+没有设备时继续静态 A11y 检查并输出 `STATIC_ONLY`，动态焦点、TalkBack 和触摸体验列为未验证；不得因此终止其他 UI 静态检查，也不得写 A11y 全面通过。
 
 ## 资料缺失时
 
@@ -170,5 +184,6 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 每次调用都必须使用 `references/implementation-summary.md` 输出报告：
 
 - 有 UI：包含基准、环境、引擎降级链、命令、截图、偏差、自修复、未验证项和结论；可引用 `android-test-and-fix` 的 Journey 报告作为辅助证据。
+- 有 A11y 影响：增加语义、触摸区域、焦点、TalkBack、字体缩放、自动测试证据和未验证项。
 - 无 UI：输出最小 `SKIPPED_NO_UI` 报告，不启动验证工具。
-- 结论只能是 `PASS`、`STATIC_ONLY`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有实机/截图证据不得写 `PASS`。
+- 结论只能是 `PASS`、`STATIC_ONLY`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有实机/截图证据不得写 `PASS`，适用且必需的动态 A11y 没有证据时也不得写 `PASS`。

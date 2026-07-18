@@ -9,7 +9,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用完整交付模式：本次需求范围内的问题默认自修复并重验，不采用专项 Skill 的 standalone report-only 默认值。
 
-维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。两者都不是日常需求执行时的固定上下文。
+维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`。这些资料都不是日常需求执行时的固定上下文。
 
 ## 定位
 
@@ -27,10 +27,10 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 专项 Skill 的默认位置：
 
 - `android-review-diff`：编码后审查实际 diff、影响范围、无关改动和回归风险；只有变更范围不清或用户要求先分析时才前置。
-- `android-verify-api-contract`：编码后审查接口实现是否符合契约；只有关键接口资料缺失、继续写会脑补字段或 endpoint 时才前置。
-- `android-verify-ui`：独立手动收尾能力；总入口检测到 UI 变更时只提示用户单独调用，不自动执行。
-- `android-test-and-fix`：BDD 确认后物化自动测试，编码后执行测试矩阵、构建、单测、lint、Journey、截图或仪器测试；失败时驱动自修复。
-- `android-audit-stability`：编码后检查崩溃、内存泄漏、ANR、协程、生命周期和 Android 版本兼容。
+- `android-verify-api-contract`：编码后审查接口实现和 OpenAPI 是否符合契约；只有关键接口资料缺失、继续写会脑补字段或 endpoint 时才前置。
+- `android-verify-ui`：独立手动收尾能力；总入口检测到 UI/A11y 变更时只提示用户单独调用，不自动执行视觉或人工验收。
+- `android-test-and-fix`：BDD 确认后物化自动测试，编码后执行测试矩阵、构建、单测、lint、迁移、A11y、Journey、截图或仪器测试；失败时驱动自修复。
+- `android-audit-stability`：编码后检查崩溃、动态泄漏、性能、安全隐私、ANR、协程、生命周期和 Android 版本兼容。
 - `android-review-code-quality`：编码后检查架构一致性、最小修改、资源规范、重复逻辑和测试覆盖。
 
 ## 外部智能体与工具调用策略
@@ -160,6 +160,8 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 编码后的 `route` 另行输出 UI、接口、数据、系统、构建、架构和测试七类工程候选。候选只提示需要复核的证据：API 候选增加 `android-verify-api-contract`；数据、系统、构建、架构和测试候选进入既有 diff、质量、稳定性和测试职责，不为它们新增万能 Skill，也不由脚本直接下业务结论。
 
+第二轮条件能力继续由现有 Skill 承载：OpenAPI 归接口契约，动态泄漏/性能/运行时安全归稳定性，迁移和自动化 A11y 归测试，视觉与人工 A11y 归独立 UI 验收。每项记录触发依据、适用性、工具、执行证据、能力损失和结论；详细边界见 `references/conditional-capability-gates.md`。
+
 ### 轻量 diff 触发规则
 
 编码后必须基于实际 diff 快速复核影响面，不做全量矩阵分析，只判断是否触发专项审查：
@@ -256,6 +258,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
 - 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更时在报告中提示用户另行调用 `android-verify-ui`，不得在自动 route 中执行。
 - `android-test-and-fix` 在此阶段结合实际 diff 对 Journey 做最终判定；需求阶段的候选结论不能直接触发 Journey 执行。
+- 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
 
 ### Definition of Done
@@ -266,11 +269,13 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 当前需求追溯表覆盖全部已确认 `REQ-ID`，需求映射率为 100%，每条记录包含最终实现、测试/人工验收与证据。
 - 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
 - 必需命令在最后一次代码或测试修复后重新执行，最终报告记录命令、退出码、测试数、关键输出和报告/产物路径。
+- OpenAPI、迁移、泄漏、性能、UI/A11y、安全隐私均已记录适用性；所有明确验收所必需的条件能力有新鲜通过证据。
 - 所有 P0/P1 已关闭；无豁免的测试失败为 0。
 - UI/设备/外部环境无法验证时明确列出未验证项，但不得掩盖本可本地执行的失败。
 - 专项能力降级后，只有等价重验覆盖了同一 BDD 和风险才可计入通过；必需门禁能力缺失时结论必须是“未完成/受阻”。
 - 存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则结论只能是“代码与自动测试完成，UI 验收待执行”。
 - 最终报告包含变更、测试命令与结果、自修复记录、失败分类、专项能力/工具降级、AI 替代、能力损失、所需用户输入、未验证项和剩余风险。
+- 没有真机但不涉及真机必需验收时，结论只能是“代码与本地门禁完成，真机专项待验证”；真机是明确验收条件时保持“未完成/受阻”，但不否定其他已完成范围。
 
 任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
 

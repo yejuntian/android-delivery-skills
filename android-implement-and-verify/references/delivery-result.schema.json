@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "delivery-result.schema.json",
+  "title": "Android Delivery Final Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "baseline_id",
+    "requirement_file_sha256",
+    "snapshot_sha256",
+    "conclusion",
+    "obligations",
+    "gates",
+    "evidence"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "baseline_id": { "type": "string", "minLength": 1 },
+    "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "conclusion": {
+      "enum": ["FULL_PASS", "LOCAL_PASS_DEVICE_PENDING", "INCOMPLETE", "BLOCKED"]
+    },
+    "obligations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required", "status", "evidence_ids"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+          "required": { "type": "boolean" },
+          "status": {
+            "enum": ["COVERED_AUTOMATED", "COVERED_MANUAL", "UNVERIFIED", "BLOCKED", "NOT_APPLICABLE"]
+          },
+          "evidence_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required", "status", "evidence_ids"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean" },
+          "status": { "enum": ["PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"] },
+          "evidence_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "snapshot_sha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["AUTOMATED", "MANUAL", "REVIEW"] },
+          "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "exit_code": { "type": "integer" },
+          "executed_tests": { "type": "integer", "minimum": 0 },
+          "summary": { "type": "string" },
+          "report_paths": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

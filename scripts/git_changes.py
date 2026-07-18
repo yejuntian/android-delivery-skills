@@ -2,18 +2,23 @@
 """
 ================================================================================
 脚本名称：git_changes.py
-用    途：只读检查 Git 分支、工作区状态和交付范围内的变更文件。
+用    途：只读检查 Git 分支、工作区状态、变更状态/片段和最终代码摘要。
 
 职责边界：
 1. 记录当前需求开始时的仓库、分支和 HEAD，并校验基线没有失效。
 2. 收集基线后的 committed、staged、unstaged、untracked 四类变化并去重。
-3. 独立诊断时才使用显式 base_branch 或本地 upstream，不 fetch、不猜测主分支。
-4. 不判断 Android 业务含义，不决定调用哪个 Skill，不修改 Git 状态。
+3. 保留新增、修改、删除、重命名状态和零上下文 patch，计算最终工作树摘要。
+4. 独立诊断时才使用显式 base_branch 或本地 upstream，不 fetch、不猜测主分支。
+5. 不判断 Android 业务含义，不决定调用哪个 Skill，不修改 Git 状态。
 ================================================================================
 """
 
+from __future__ import annotations
+
 import argparse
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 import subprocess
 import sys
@@ -25,6 +30,16 @@ GIT_TIMEOUT_SECONDS = 30
 
 class GitInspectionError(RuntimeError):
     """表示 Git 仓库或只读检查命令无法继续执行。"""
+
+
+@dataclass(frozen=True)
+class GitChange:
+    """保存一个需求范围内文件的 Git 状态和真实变更片段。"""
+
+    status: str
+    path: str
+    old_path: str | None = None
+    patch: str = ""
 
 
 def _git(repo, args, optional=False):
@@ -93,7 +108,19 @@ def write_baseline(repo, path):
     }
     target = Path(path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+    except OSError:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return payload
 
 
@@ -177,6 +204,119 @@ def collect_changed_files(repo, base_branch=None, baseline_path=None):
     files.update(paths(["diff", "--name-only", "-z"]))
     files.update(paths(["ls-files", "--others", "--exclude-standard", "-z"]))
     return sorted(files), warnings
+
+
+def _parse_name_status(output: bytes) -> list[tuple[str, str | None, str]]:
+    """解析 Git NUL 分隔的 name-status，保留删除和重命名的原始路径。"""
+    tokens = [item.decode("utf-8", errors="surrogateescape") for item in output.split(b"\0") if item]
+    entries: list[tuple[str, str | None, str]] = []
+    index = 0
+    while index < len(tokens):
+        raw_status = tokens[index]
+        index += 1
+        status = raw_status[0]
+        if status in {"R", "C"}:
+            if index + 1 >= len(tokens):
+                raise GitInspectionError("Git 重命名状态输出不完整")
+            old_path, path = tokens[index], tokens[index + 1]
+            index += 2
+            entries.append((status, old_path, path))
+        else:
+            if index >= len(tokens):
+                raise GitInspectionError("Git 文件状态输出不完整")
+            path = tokens[index]
+            index += 1
+            entries.append((status, None, path))
+    return entries
+
+
+def collect_changed_entries(repo, baseline_path) -> tuple[list[GitChange], list[str]]:
+    """返回基线后的状态与零上下文补丁，供路由识别真实增删改而非整文件旧内容。"""
+    repo = _require_repository(repo)
+    baseline = load_baseline(repo, baseline_path)
+    base_ref = str(baseline["head"])
+    files, warnings = collect_changed_files(repo, baseline_path=baseline_path)
+    raw_status = _git(
+        repo,
+        ["diff", "--name-status", "-z", "--find-renames", base_ref],
+    )
+    status_by_path = {
+        path: (status, old_path)
+        for status, old_path, path in _parse_name_status(raw_status)
+    }
+    untracked = {
+        item.decode("utf-8", errors="surrogateescape")
+        for item in _git(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0")
+        if item
+    }
+
+    changes: list[GitChange] = []
+    for path in files:
+        status, old_path = status_by_path.get(path, ("A" if path in untracked else "M", None))
+        patch_paths = [old_path, path] if old_path else [path]
+        patch = _git(
+            repo,
+            [
+                "--literal-pathspecs",
+                "diff",
+                "--no-ext-diff",
+                "--unified=0",
+                "--find-renames",
+                base_ref,
+                "--",
+                *[item for item in patch_paths if item],
+            ],
+        ).decode("utf-8", errors="replace")
+        # 未跟踪文件没有 Git patch，用当前文本作为路由信号；业务结论仍由 AI 复核。
+        if not patch and path in untracked:
+            candidate = repo / path
+            try:
+                if candidate.is_file() and candidate.stat().st_size <= 512 * 1024:
+                    patch = candidate.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                patch = ""
+        changes.append(GitChange(status=status, path=path, old_path=old_path, patch=patch))
+    return sorted(changes, key=lambda item: item.path), warnings
+
+
+def current_delivery_snapshot(
+    repo,
+    baseline_path,
+    exclude_paths: set[str] | None = None,
+) -> dict[str, str]:
+    """计算基线到当前工作树的稳定摘要，可排除最终报告自身以避免自引用。"""
+    repo = _require_repository(repo)
+    baseline = load_baseline(repo, baseline_path)
+    excluded = {path.replace("\\", "/") for path in (exclude_paths or set())}
+    diff_args = ["diff", "--binary", "--no-ext-diff", str(baseline["head"])]
+    if excluded:
+        diff_args.extend(["--", "."])
+        diff_args.extend(f":(exclude,literal){path}" for path in sorted(excluded))
+    digest = hashlib.sha256()
+    digest.update(_git(repo, diff_args))
+    untracked = sorted(
+        item.decode("utf-8", errors="surrogateescape")
+        for item in _git(repo, ["ls-files", "--others", "--exclude-standard", "-z"]).split(b"\0")
+        if item
+    )
+    for relative in untracked:
+        if relative in excluded:
+            continue
+        digest.update(b"\0untracked\0")
+        digest.update(relative.encode("utf-8", errors="surrogateescape"))
+        path = repo / relative
+        try:
+            with path.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    digest.update(chunk)
+        except OSError as exc:
+            raise GitInspectionError(f"无法读取未跟踪文件以计算交付摘要: {relative}: {exc}") from exc
+    return {
+        "baseline_id": str(baseline["id"]),
+        "baseline_head": str(baseline["head"]),
+        "head": current_head(repo),
+        "snapshot_sha256": digest.hexdigest(),
+    }
 
 
 def main(argv=None):

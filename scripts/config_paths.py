@@ -50,12 +50,24 @@ def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> Con
     )
 
 
-def baseline_path_for_config(config_path: str | Path) -> Path:
-    """按配置路径隔离本机状态，确保项目内配置也不会污染目标 Git 仓库。"""
+def _state_path_for_config(config_path: str | Path, suffix: str | None = None) -> Path:
+    """按配置路径生成外部状态文件名，使同名配置和不同项目互不覆盖。"""
     path = Path(config_path).expanduser().resolve()
     state_root = Path(
         os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
     ).expanduser()
     # 同名 local.yaml 可能属于不同项目，用绝对路径摘要避免需求基线互相覆盖。
     digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
-    return (state_root / "android-delivery-skills" / f"{path.stem}-{digest}.json").resolve()
+    filename = f"{path.stem}-{digest}-{suffix}.json" if suffix else f"{path.stem}-{digest}.json"
+    return (state_root / "android-delivery-skills" / filename).resolve()
+
+
+def baseline_path_for_config(config_path: str | Path) -> Path:
+    """返回当前配置的 Git 基线路径，文件始终位于目标仓库之外。"""
+    # 保留既有文件名，升级脚本后仍能继续读取正在执行的需求基线。
+    return _state_path_for_config(config_path)
+
+
+def requirement_snapshot_path_for_config(config_path: str | Path) -> Path:
+    """返回已确认需求正文快照路径，供同一需求中途变化时做差异分析。"""
+    return _state_path_for_config(config_path, "requirement")

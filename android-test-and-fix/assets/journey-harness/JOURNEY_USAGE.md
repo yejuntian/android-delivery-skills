@@ -148,7 +148,7 @@ Journey 不能证明：
 只要终判仍有验证义务分配给 Journey，才为这些义务生成最终 Journey XML，并使用：
 
 ```text
---ui-impact behavior
+--ui-impact behavior --applicability FULL/PARTIAL --covered-then BDD-001/T1
 ```
 
 调用 Journey。终判为 `NONE` 时选择其他测试，不启动壳项目。`PARTIAL` 的非 Journey 验证义务必须独立执行和记录。
@@ -538,10 +538,13 @@ testing:
 ```bash
 python3 android-test-and-fix/scripts/run_journey.py \
   --config profiles/local.yaml \
-  --ui-impact behavior
+  --ui-impact behavior \
+  --applicability PARTIAL \
+  --covered-then BDD-001/T1 \
+  --uncovered-then BDD-001/T2
 ```
 
-`--ui-impact` 是 Skill 内部安全参数，不要求用户选择。脚本将它设为必填，防止未做适用性判断就启动 Journey。
+`--ui-impact`、`--applicability` 和 Then 参数均由 Skill 生成，不要求用户选择。行为型 Journey 必须是 `FULL/PARTIAL` 且至少记录一个覆盖 Then；未分配给 Journey 的原子 Then 用重复的 `--uncovered-then` 保留边界。
 
 每次重试前执行器都会 force-stop 目标包，并重新应用配置中明确的清数据、权限、DeepLink 或 Activity 前置条件。只有显式配置 `clear_app_data: true` 时才会清除本地数据。adb、Gradle 和 Journey 均有超时；报告中的 DeepLink 查询参数、Token、密码和密钥会脱敏。
 
@@ -555,6 +558,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 | `SKIPPED_VISUAL_ONLY` | 纯视觉变化，改用截图或 UI 验收 | 否 |
 | `NO_JOURNEY_FOUND` | 已终判需要 Journey，但用例未成功物化 | 先生成用例，不改目标代码 |
 | `MALFORMED_JOURNEY` | XML 无效、无 action/step | 修用例，不改目标代码 |
+| `INITIALIZATION_REQUIRED` | 壳还没有官方 Journey task | 用当前 Android Studio 执行一次 `New > Journey Test`，不改目标项目 |
 | `HARNESS_UNAVAILABLE` | SDK、设备、wrapper 等前置缺失 | 修环境或降级 |
 | `HARNESS_FAILED` | 壳、认证、task 或运行器失败 | 修环境或降级 |
 | `APP_ASSERTION_FAILED` | 连续两次出现明确 UI 断言失败 | 先分析根因 |
@@ -580,6 +584,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 - 状态和退出码。
 - Journey 适用性 `FULL/PARTIAL`、实际覆盖的 `BDD/Then` 和未由 Journey 覆盖的验证义务；`NONE` 不启动壳。
+- 当前需求文件摘要、Git 基线、最终代码摘要和执行起止时间；代码变化后旧 Journey 证据不得复用。
 - 设备、applicationId、APK 和 Gradle task。
 - Journey 文件和 action/step 数量。
 - 本轮实际执行测试数和结构化 JUnit XML 路径。

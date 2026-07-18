@@ -50,6 +50,8 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 4. 等你确认理解是否正确。
 5. 未确认前不进入最终方案、不改代码。
 
+同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比 `check-env` 保存的已确认快照和现有追溯表，输出 `ADDED/CHANGED/REMOVED/UNCHANGED`；未变化 ID 保留，删除项等待确认。
+
 ### 需求文件读取失败时
 
 读取逻辑保持单一职责，不自行搜索其他文件或推测需求：
@@ -59,7 +61,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 3. DOCX 使用 Python 标准库读取 OOXML 正文，不要求 IDE 额外安装文档解析库。
 4. 文件为空、损坏或格式不支持时，脚本会说明原因并停止；修正路径、重新导出 Word 或转换格式后重试。
 
-完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD，`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
+完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD 和已确认需求快照，`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化，并保留 `A/M/D/R` 状态与真实修改片段。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
 
 ## 确认后继续
 
@@ -84,7 +86,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 ① delivery.py init    读需求 → 输出 BDD(Given/When/Then)
    └─ 停,等你确认「理解正确,继续」
                           ↓
-② delivery.py check-env   查 Git 分支/干净工作区 → 记录需求基线 → 物化测试 → 开始编码
+② delivery.py check-env   查 Git 分支/干净工作区 → 记录需求基线和快照 → 物化测试 → 开始编码
    └─ 受影响测试 + assemble + lint;失败自动修复并重跑
                           ↓
 ③ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查
@@ -97,12 +99,26 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
      5. android-test-and-fix        ← 必跑:测试闭环/全绿门禁
    【独立·UI 校验】(route 只提示,用户单独调用)
      6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
+
+④ delivery_gate.py validate
+   └─ 核对最终需求/代码摘要、原子 Then、专项门禁和新鲜证据；退出码 0 才可声明通过
 ```
 
 脚本职责保持分离：
 
 - `scripts/delivery.py`：只编排需求、环境检查和专项 Skill 路由。
-- `scripts/git_changes.py`：只读检查分支、工作区以及四类 Git 变化，不判断业务或路由。
+- `scripts/git_changes.py`：只读检查分支、工作区、四类 Git 变化、`A/M/D/R`、真实片段和最终摘要，不判断业务或路由。
+- `scripts/requirement_snapshot.py`：只保存已确认正文并生成中途文本差异，不判断业务语义。
+- `scripts/delivery_gate.py`：只校验最终报告和证据新鲜度，不运行测试、不修改代码。
+
+最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py snapshot
+python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
+```
+
+第二条命令退出码为 `0` 才表示最终通过证据仍与当前需求和代码一致；它不会自动提交 Git。
 
 需要单独排查 Git 收集结果时可以运行：
 
@@ -197,7 +213,7 @@ Journey 测试用例归 `android-test-and-fix`。老项目 AGP 保持不动，�
 
 Journey 测试用例由 `android-test-and-fix` 根据已确认需求和 BDD 自动分析并生成，用户不需要提供 XML、action/step 或任务名。只有需求本身缺少前置条件或预期结果时，才需要用户补充业务含义。
 
-并非所有需求都运行 Journey：无 UI 影响返回 `SKIPPED_NO_UI`；只有布局、样式和资源变化返回 `SKIPPED_VISUAL_ONLY`；只有点击、输入、导航或可见状态流转等 UI 行为变化，才生成 Journey。`NO_JOURNEY_FOUND` 只表示“已经需要 Journey，但测试用例尚未成功物化”。
+并非所有需求都运行 Journey：无 UI 影响返回 `SKIPPED_NO_UI`；只有布局、样式和资源变化返回 `SKIPPED_VISUAL_ONLY`。涉及 UI 行为时再按原子 Then 聚合 `FULL/PARTIAL/NONE`，只为稳定可覆盖部分生成 Journey。`NO_JOURNEY_FOUND` 只表示“已有 Then 分配给 Journey，但测试用例尚未成功物化”。
 
 是否调用 Journey 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断，不需要用户选择。下面的 `--ui-impact` 是 Skill 调用脚本时使用的内部安全参数，用来防止未判断适用性就启动设备和壳流程。
 
@@ -207,11 +223,17 @@ Journey 测试用例由 `android-test-and-fix` 根据已确认需求和 BDD 自�
 # 一键：构建老项目 APK → 读取实际包名 → 指定设备安装 → 注入包名 → 跑 Journey → JSON 结果
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \
-  --ui-impact behavior
+  --ui-impact behavior \
+  --applicability PARTIAL \
+  --covered-then BDD-001/T1 \
+  --uncovered-then BDD-001/T2
 
 # 已装好 APK 时跳过构建
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
-  --ui-impact behavior --skip-build
+  --ui-impact behavior \
+  --applicability FULL \
+  --covered-then BDD-001/T1 \
+  --skip-build
 
 # 单独只嗅探包名（排查用）
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/detect_package.py \

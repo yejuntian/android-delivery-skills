@@ -6,9 +6,10 @@
 
 设计初衷：
 为了防止 AI 在长篇 Prompt 中出现“认知过载、幻觉乱改、超时卡死”等问题，
-本脚本将整个 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线：
-1. `init`: 负责需求提炼与验收标准制定 (BDD)。
-2. `check-env`: 负责编码前的环境安全校验与编码后的自动纠错约束。
+本脚本将整个 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线
+与已确认需求快照：
+1. `init`: 负责首次需求提炼，或对比快照汇总中途需求变化并制定 BDD。
+2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求快照建立。
 3. `route`: 识别七类工程影响和第二轮条件能力候选，负责编码后的动态审查、
    测试与自修复闭环分发；泄漏和性能仍由 AI 结合需求与真实 diff 终判。
 
@@ -16,6 +17,8 @@
 实现媲美高级 Android 开发工程师的稳定性与工程纪律。
 ================================================================================
 """
+
+from __future__ import annotations
 
 import argparse
 import os
@@ -32,14 +35,23 @@ if __package__ in {None, ""}:
 
 from .config_paths import (  # noqa: E402
     baseline_path_for_config,
+    requirement_snapshot_path_for_config,
     resolve_config_paths as resolve_paths,
 )
 from .git_changes import (  # noqa: E402
     GitInspectionError,
+    collect_changed_entries,
     collect_changed_files,
     current_branch,
     write_baseline,
     working_tree_status,
+)
+from .requirement_snapshot import (  # noqa: E402
+    RequirementSnapshotError,
+    load_requirement_snapshot,
+    render_requirement_diff,
+    requirement_digest,
+    write_requirement_snapshot,
 )
 
 
@@ -60,11 +72,11 @@ def parse_args(argv=None):
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 阶段一：init (需求分析阶段)
-    parser_init = subparsers.add_parser("init", help="初始化需求理解")
+    parser_init = subparsers.add_parser("init", help="读取或刷新需求理解")
     parser_init.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
 
     # 阶段二：check-env (环境与编码准备阶段)
-    parser_check = subparsers.add_parser("check-env", help="检查项目分支和工作区")
+    parser_check = subparsers.add_parser("check-env", help="检查环境并记录需求起点")
     parser_check.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
 
     # 阶段三：route (动态路由审查阶段)
@@ -153,6 +165,8 @@ def print_bdd_instruction():
     print("  - Given：给定 / 前置条件")
     print("  - When：当 / 操作发生")
     print("  - Then：那么 / 期望结果")
+    print("把复合 Then 拆成 BDD-001/T1 形式的原子验证义务，并初判 L1/L2/L3/BLOCKED 风险。")
+    print("检测到需求变化时输出 ADDED/CHANGED/REMOVED/UNCHANGED；保留未变化 ID，删除项等待确认。")
     print("正文不足时最多一次提出 5 个真正影响实现或验收的问题；不得补写不存在的需求。")
     print("同时输出【最小修改预览】和架构边界卡片：组件/文件、职责、输入、输出、依赖方向、复用点、不修改范围。")
     print("无法确认落点或边界时列为待确认项，不得创建猜测性文件。")
@@ -176,9 +190,24 @@ def print_environment_rules():
     print("  9. 不得自动提交 Git；只有用户明确要求时才提交。")
 
 
+def _restore_local_state(path: Path, previous: bytes | None) -> None:
+    """回滚本轮外部状态写入；只恢复 AI 自己管理的基线文件，不触碰目标仓库。"""
+    if previous is None:
+        path.unlink(missing_ok=True)
+        return
+    temporary = path.with_suffix(path.suffix + ".rollback")
+    temporary.write_bytes(previous)
+    temporary.replace(path)
+
+
 def get_diff_files(baseline_path):
     """只获取当前需求基线后的 Git 变化，避免串行需求互相污染。"""
     return collect_changed_files(Path.cwd(), baseline_path=baseline_path)
+
+
+def get_diff_changes(baseline_path):
+    """获取当前需求基线后的 Git 状态和真实修改片段，供动态路由使用。"""
+    return collect_changed_entries(Path.cwd(), baseline_path=baseline_path)
 
 
 def _read_route_signal(path):
@@ -197,7 +226,7 @@ def _read_route_signal(path):
         return ""
 
 
-def classify_route_impacts(diff_files, project_root=None):
+def classify_route_impacts(diff_files, project_root=None, route_signals=None):
     """按路径和轻量内容信号生成影响候选；业务结论仍由 AI 结合 diff 复核。"""
     ui_resource_dirs = {
         "layout", "drawable", "values", "navigation", "menu", "font", "color",
@@ -286,7 +315,11 @@ def classify_route_impacts(diff_files, project_root=None):
         )
 
         # 内容只补充候选，不覆盖路径判断，也不把注解本身解释成业务变化。
-        content = _read_route_signal(root / normalized)
+        content = ""
+        if route_signals is not None:
+            content = route_signals.get(path, "")
+        if not content:
+            content = _read_route_signal(root / normalized)
         if content:
             is_ui = is_ui or bool(re.search(r"@Composable\b", content))
             is_api = is_api or bool(re.search(
@@ -358,16 +391,13 @@ def print_route_instructions(skills_to_run):
 
 def cmd_init(args):
     """
-    执行 `init` 命令：读取需求文档并向 AI 抛出提取验收标准的强制约束。
-    防呆设计：严禁 AI 直接输出代码，强制采用 BDD (Given/When/Then) 格式。
+    执行 `init`：读取需求；存在已确认快照时补充差异和追溯表，但不触碰 Git 基线。
+    防呆设计：严禁 AI 直接编码，强制先确认 BDD 和中途需求增删改。
     """
     config = load_config(args.config)
-    project_path, requirement_path = resolve_config_paths(config, args.config)
-    baseline_path = baseline_path_for_config(args.config)
-    try:
-        baseline_path.unlink(missing_ok=True)
-    except OSError as exc:
-        raise DeliveryError(f"无法清除上一需求 Git 基线: {baseline_path}: {exc}") from exc
+    paths = resolve_paths(config, args.config)
+    project_path = paths.project_path
+    requirement_path = paths.requirement_path
 
     print("=== 初始化需求分析 ===")
     print(f"📌 项目路径: {project_path or '未配置'}")
@@ -375,8 +405,33 @@ def cmd_init(args):
 
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法读取需求正文")
+    content = read_requirement(requirement_path)
     print("\n=== 需求正文内容 ===")
-    print(read_requirement(requirement_path))
+    print(content)
+
+    snapshot_path = requirement_snapshot_path_for_config(args.config)
+    try:
+        snapshot = load_requirement_snapshot(snapshot_path)
+    except RequirementSnapshotError as exc:
+        raise DeliveryError(str(exc)) from exc
+    if snapshot and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve():
+        if snapshot["sha256"] == requirement_digest(content):
+            print("\n=== 需求变化 ===")
+            print("✅ 当前需求正文与 check-env 时保存的已确认快照一致。")
+        else:
+            print("\n=== 需求变化候选 ===")
+            print(render_requirement_diff(str(snapshot["content"]), content))
+            traceability = paths.requirement_dir / "test-cases" / "traceability.md"
+            try:
+                if traceability.is_file() and traceability.stat().st_size <= 1024 * 1024:
+                    print("\n=== 当前需求追溯表 ===")
+                    print(traceability.read_text(encoding="utf-8", errors="replace"))
+            except OSError as exc:
+                raise DeliveryError(f"当前需求追溯表无法读取: {traceability}: {exc}") from exc
+            print("\n👉 AI 指令：把差异与追溯表按业务语义汇总为 ADDED/CHANGED/REMOVED/UNCHANGED。")
+            print("同一需求保留未变化 REQ/BDD/Then ID；修改和新增项重新确认，删除项不得自动删代码。")
+            print("如果用户明确这是新的串行需求，不沿用旧 ID；确认后由干净工作区上的 check-env 覆盖旧起点。")
+            print("Git 基线保持原需求起点不变；只使受影响映射和证据失效，最终门禁仍基于最终代码重跑。")
 
     print("\n---")
     print_bdd_instruction()
@@ -384,15 +439,20 @@ def cmd_init(args):
 
 def cmd_check_env(args):
     """
-    执行 `check-env` 命令：在 AI 开始写代码前，锁定操作环境（检查 Git 状态）。
-    防呆设计：包含主动检索要求、强制自我纠错要求（自动编译）和 Android CLI 辅助要求。
+    执行 `check-env`：工作区干净时同时锁定 Git 起点和已确认需求正文。
+    防呆设计：任何一份起点证据写入失败都不允许进入编码阶段。
     """
     config = load_config(args.config)
-    project_path, _ = resolve_config_paths(config, args.config)
+    paths = resolve_paths(config, args.config)
+    project_path = paths.project_path
+    requirement_path = paths.requirement_path
     target_branch = config.get("branch")
 
     if not project_path or not os.path.isdir(project_path):
         raise DeliveryError(f"项目路径无效: {project_path}")
+    if not requirement_path:
+        raise DeliveryError("未配置 requirement_file，无法保存已确认需求快照")
+    requirement_content = read_requirement(requirement_path)
 
     os.chdir(project_path)
 
@@ -415,10 +475,30 @@ def cmd_check_env(args):
 
     baseline_path = baseline_path_for_config(args.config)
     try:
+        previous_baseline = baseline_path.read_bytes() if baseline_path.is_file() else None
+    except OSError as exc:
+        raise DeliveryError(f"无法备份原 Git 基线: {baseline_path}: {exc}") from exc
+    try:
         baseline = write_baseline(project_path, baseline_path)
     except OSError as exc:
         raise DeliveryError(f"无法写入当前需求 Git 基线: {baseline_path}: {exc}") from exc
+    try:
+        requirement_snapshot = write_requirement_snapshot(
+            requirement_snapshot_path_for_config(args.config),
+            requirement_path,
+            requirement_content,
+        )
+    except RequirementSnapshotError as exc:
+        # 两份起点证据必须一起成功；快照失败时恢复调用前的基线，而不是误删旧需求起点。
+        try:
+            _restore_local_state(baseline_path, previous_baseline)
+        except OSError as restore_exc:
+            raise DeliveryError(
+                f"{exc}\n同时无法恢复原 Git 基线: {baseline_path}: {restore_exc}"
+            ) from restore_exc
+        raise DeliveryError(str(exc)) from exc
     print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
+    print(f"✅ 已确认需求快照: {requirement_snapshot['sha256'][:12]}")
 
     print_environment_rules()
 
@@ -440,7 +520,8 @@ def cmd_route(args):
     if target_branch and branch != target_branch:
         raise DeliveryError(f"当前分支 ({branch}) 与目标分支 ({target_branch}) 不匹配")
 
-    diff_files, warnings = get_diff_files(baseline_path_for_config(args.config))
+    changes, warnings = get_diff_changes(baseline_path_for_config(args.config))
+    diff_files = [change.path for change in changes]
     print("=== 审查路由分析 ===")
 
     for warning in warnings:
@@ -451,11 +532,16 @@ def cmd_route(args):
         return
 
     print("📜 变更文件列表:")
-    for path in diff_files:
-        print(f"  - {path}")
+    for change in changes:
+        rename = f" <- {change.old_path}" if change.old_path else ""
+        print(f"  - [{change.status}] {change.path}{rename}")
 
     # 路径和内容只生成候选，最终路由必须结合已确认需求和实际 diff。
-    impacts = classify_route_impacts(diff_files, project_root=project_path)
+    impacts = classify_route_impacts(
+        diff_files,
+        project_root=project_path,
+        route_signals={change.path: change.patch for change in changes},
+    )
     ui_files = impacts["ui"]
     api_files = impacts["api"]
 
@@ -545,7 +631,7 @@ def main(argv=None):
             cmd_check_env(args)
         elif args.command == "route":
             cmd_route(args)
-    except (DeliveryError, GitInspectionError) as exc:
+    except (DeliveryError, GitInspectionError, RequirementSnapshotError) as exc:
         print(f"❌ {exc}", file=sys.stderr)
         return 1
     return 0

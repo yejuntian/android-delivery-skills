@@ -250,7 +250,7 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 
 1. **需求确认后初判**：根据已确认 BDD 和原子 Then 分配，标记整条 Journey 候选 `FULL/PARTIAL/NONE`，用于提前设计测试。候选可覆盖时可以生成 Journey 用例草稿，但不得启动设备或壳。
 2. **编码完成后终判**：读取实际 diff、最终页面入口和可执行前置条件，重新判断并记录最终原因；能力缩小则拆分路由，影响扩大则补充其他测试层。
-3. **只执行一次**：只要终判仍有验证义务分配给 Journey，就物化这些义务的最终 XML，并以 `--ui-impact behavior` 调用脚本；没有分配项时选择其他测试，不调用 Journey。
+3. **只执行一次**：只要终判仍有验证义务分配给 Journey，就物化这些义务的最终 XML，并携带 `--ui-impact behavior`、`--applicability FULL/PARTIAL`、覆盖及未覆盖 Then 调用脚本；没有分配项时选择其他测试，不调用 Journey。
 
 需求初判与实际 diff 不一致时，以编码后的终判为准，并在测试报告中说明变化原因。
 
@@ -271,12 +271,15 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 ```bash
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \
-  --ui-impact behavior
+  --ui-impact behavior \
+  --applicability PARTIAL \
+  --covered-then BDD-001/T1 \
+  --uncovered-then BDD-001/T2
 # 已安装目标 APK 时可使用 --skip-build；此时必须配置 app_package_name，但不要求源码项目存在。
 # 临时指定其他用例目录时可使用 --journeys-dir /path/to/journeys。
 ```
 
-`--ui-impact` 是 Skill 内部必填的安全参数，由模型的适用性判断产生，不要求用户提供。未判断时脚本拒绝启动。通常无 UI 或纯视觉需求不调用本脚本；需要结构化记录跳过原因时，模型才执行 `--ui-impact none` 或 `--ui-impact visual`。跳过模式只读取配置以定位当前需求报告目录，不检查 SDK、不连接设备。
+这些参数均由 Skill 根据需求、BDD 和最终 diff 生成，不要求用户提供。行为型 Journey 缺少 `FULL/PARTIAL` 或至少一个覆盖 Then 时脚本拒绝启动。通常无 UI 或纯视觉需求不调用本脚本；需要结构化记录跳过原因时，模型才执行 `--ui-impact none` 或 `--ui-impact visual`，适用性自动记为 `NONE`。
 
 执行器必须：
 
@@ -289,7 +292,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 7. 按需求作用域输出 `<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json` 和 `result.md`，记录实际测试数、结构化结果、命令、设备、包名、APK、task、轮次和截图。
 8. 对 adb、Gradle 和 Journey 命令设置超时；终端及报告中的 DeepLink 查询参数、Token、密码和密钥必须脱敏。
 
-退出码：`0` 表示 Journey 真实执行通过、明确不适用或仅预检；必须结合状态区分 `PASS`、`SKIPPED_*` 和 `PREFLIGHT_PASS`。`1` 表示环境、壳或结构化证据不足，只能修环境或换用其他测试；`2` 表示连续两次真实 UI 断言失败，可进入根因分析。确认是生产缺陷才修目标代码；用例、数据或前置条件错误只修测试侧。
+退出码：`0` 表示 Journey 真实执行通过、明确不适用或仅预检；必须结合状态区分 `PASS`、`SKIPPED_*` 和 `PREFLIGHT_PASS`。`1` 表示初始化、环境、壳或结构化证据不足；`INITIALIZATION_REQUIRED` 只允许用当前 Android Studio 的官方 `New > Journey Test` 一次性补齐，不手写预览 DSL。`2` 表示连续两次真实 UI 断言失败，可进入根因分析。确认是生产缺陷才修目标代码；用例、数据或前置条件错误只修测试侧。
 
 首次启用壳项目时，使用当前 Android Studio 的 `New > Journey Test` 生成与 Studio Labs 版本匹配的 XML schema、testSuites、依赖和任务。该操作只初始化共享壳一次，不要求用户为每个目标项目重复执行。
 

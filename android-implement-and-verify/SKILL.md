@@ -9,7 +9,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用完整交付模式：本次需求范围内的问题默认自修复并重验，不采用专项 Skill 的 standalone report-only 默认值。
 
-维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。这些资料都不是日常需求执行时的固定上下文。
+维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
 
 ## 定位
 
@@ -227,6 +227,8 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 ```
 
 **AI 动作**：脚本会输出需求上下文。分配稳定 `REQ-###` / `BDD-###`，检查主流程、备选、异常、恢复和非功能场景，提炼足以覆盖真实需求的 **BDD (Given/When/Then)** 验收标准；把复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，初判影响面与 `L1/L2/L3/BLOCKED`，并同时输出最小修改预览。BDD 和 Then 数量服从实际需求，不为凑数量脑补场景；最多一次提出 5 个真正影响实现或验收的问题。
+
+同一需求编码中途再次运行 `init` 时，读取编码起点需求快照和现有追溯表，输出 `ADDED/CHANGED/REMOVED/UNCHANGED`。保留未变化的 REQ/BDD/Then ID；修改和新增项重新确认，删除项不得自动删除实现。用户明确开始新的串行需求时不沿用旧 ID；`init` 仍不修改 Git 基线，由后续干净工作区上的 `check-env` 覆盖旧起点。
 **DoR (准备就绪) 门禁**：如果需求缺少继续实现所必需的业务含义、边界条件或报错证据，列出缺口并暂停请求补充；能够明确表达一个真实场景时，不得仅因条目少而阻塞。
 
 最小修改预览中的每个新增或改动组件必须附轻量架构边界卡片：`组件/文件 | 职责 | 输入 | 输出 | 依赖方向 | 复用点 | 明确不修改范围`。同一组件的相关文件可以合并一行，避免文档膨胀。卡片服从目标项目现有架构，不用于强推分层、拆模块或技术迁移。需求确认且 `check-env` 成功建立基线后，在 `<requirement_dir>/test-cases/traceability.md` 建立追溯表前半部分，不能让追溯文件反过来触发脏工作区门禁。
@@ -240,7 +242,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 ```
 
-**AI 动作**：环境检查只在目标分支和工作区干净时建立当前需求 Git 基线；检测到已有改动时停止，不自动 stash、提交或清理。基线建立后你已获准编码，并遵守以下规约：
+**AI 动作**：环境检查只在目标分支和工作区干净时一起建立当前需求 Git 基线与已确认需求快照；任一失败都不进入编码。检测到已有改动时停止，不自动 stash、提交或清理。基线建立后你已获准编码，并遵守以下规约：
 1. **先物化测试**：把每个已确认 `BDD/Then` 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动壳；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
 3. **UI 逻辑接管 (最小化修改)**：如果前置步骤生成纯 XML，主动补充对应的 Kotlin ViewBinding 和业务代码。
@@ -258,7 +260,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
 **AI 动作**：脚本只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，并输出专项审查与测试顺序。逐个调用，每项输出必须进入闭环，而不是止于报告。
-- Git 分支、工作区和 committed/staged/unstaged/untracked 由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
+- Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
 - P0/P1 发现后立即修复，并从受影响的最小测试集开始重跑；低风险 P2/P3 可修复时一并关闭。
@@ -267,6 +269,16 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - `android-test-and-fix` 在此阶段先根据最终 diff 终判风险和测试层，再根据原子 Then 分配聚合每条 BDD 的 Journey `FULL/PARTIAL/NONE`；需求阶段的候选结论不能直接触发 Journey 执行，Journey 通过也不能替代未分配给它的证据。
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
+
+所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前基线、需求和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
+
+通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/设备等条件 gate 按真实影响追加。
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
+```
+
+只有退出码为 0 才允许使用通过结论。`INCOMPLETE/BLOCKED` 可以作为诚实报告保存，但校验命令不会把它当成交付通过。该文件是一次性交付结果，不是 phase/state 状态机。
 
 ### Definition of Done
 
@@ -283,6 +295,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则结论只能是“代码与自动测试完成，UI 验收待执行”。
 - 最终报告包含变更、测试命令与结果、自修复记录、失败分类、专项能力/工具降级、AI 替代、能力损失、所需用户输入、未验证项和剩余风险。
 - 没有真机但不涉及真机必需验收时，结论只能是“代码与本地门禁完成，真机专项待验证”；真机是明确验收条件时保持“未完成/受阻”，但不否定其他已完成范围。
+- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、Git 基线、最终代码摘要和所有引用证据仍一致。
 
 任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
 

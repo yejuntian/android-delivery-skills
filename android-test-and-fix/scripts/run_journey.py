@@ -15,6 +15,7 @@ Journey -> 归因失败 -> 输出 JSON/Markdown 报告。壳项目与目标项�
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import glob
 import hashlib
 import json
@@ -42,6 +43,7 @@ JOURNEY_BUILD_ROOT_ENV = "ANDROID_DELIVERY_JOURNEY_BUILD_ROOT"
 if str(SUITE_ROOT) not in sys.path:
     sys.path.insert(0, str(SUITE_ROOT))
 from scripts.config_paths import baseline_path_for_config, resolve_config_paths  # noqa: E402
+from scripts.git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
 
 PASS = "PASS"
 PREFLIGHT_PASS = "PREFLIGHT_PASS"
@@ -53,6 +55,7 @@ HARNESS_UNAVAILABLE = "HARNESS_UNAVAILABLE"
 HARNESS_FAILED = "HARNESS_FAILED"
 MALFORMED_JOURNEY = "MALFORMED_JOURNEY"
 NO_JOURNEY_FOUND = "NO_JOURNEY_FOUND"
+INITIALIZATION_REQUIRED = "INITIALIZATION_REQUIRED"
 
 ADB_TIMEOUT_SECONDS = 120
 GRADLE_TIMEOUT_SECONDS = 1800
@@ -123,6 +126,14 @@ class JourneyResult:
     screenshots: list[str] = field(default_factory=list)
     result_files: list[str] = field(default_factory=list)
     commands: list[list[str]] = field(default_factory=list)
+    applicability: str | None = None
+    covered_then_ids: list[str] = field(default_factory=list)
+    uncovered_then_ids: list[str] = field(default_factory=list)
+    baseline_id: str | None = None
+    requirement_file_sha256: str | None = None
+    snapshot_sha256: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
 @dataclass
@@ -610,17 +621,69 @@ def discover_journey_task(
     )
     if result.returncode != 0:
         return None, result
+    candidates = journey_task_candidates(result.output)
+    return (candidates[0], result) if len(candidates) == 1 else (None, result)
+
+
+def journey_task_candidates(output: str) -> list[str]:
+    """从 Gradle task 文本提取真实 Journey 测试任务，排除生成或准备类任务。"""
     tasks: list[str] = []
-    for line in result.output.splitlines():
+    for line in output.splitlines():
         task = line.strip().split(" ", 1)[0]
         if re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", task) and "journey" in task.lower():
             tasks.append(f":harness-app:{task}")
     # 只接受名称同时表达 test 和 journey 的任务；生成/准备类任务不能作为执行门禁。
-    candidates = [
+    return [
         task for task in tasks
         if re.search(r"test.*journey|journey.*test", task, re.IGNORECASE)
     ]
-    return (candidates[0], result) if len(candidates) == 1 else (None, result)
+
+
+def missing_task_status(discovery: CommandResult | None) -> tuple[str, str]:
+    """区分壳尚未初始化与任务发现异常，给用户明确且不误导的下一步。"""
+    if discovery and discovery.returncode == 0 and not journey_task_candidates(discovery.output):
+        return (
+            INITIALIZATION_REQUIRED,
+            "Journey 壳尚未初始化：请在当前 Android Studio 中执行一次 New > Journey Test，"
+            "并保留官方生成的 DSL、依赖、XML schema 和 Gradle task",
+        )
+    return (
+        HARNESS_UNAVAILABLE,
+        "无法唯一识别 Journey task；请检查官方模板生成结果或在配置中填写唯一 task",
+    )
+
+
+def delivery_context(config_path: Path, config: dict[str, Any]) -> dict[str, str]:
+    """读取需求文件、Git 基线和最终代码摘要，失败时保留其他 Journey 证据。"""
+    context: dict[str, str] = {}
+    paths = resolve_config_paths(config, config_path)
+    if paths.requirement_path and paths.requirement_path.is_file():
+        try:
+            context["requirement_file_sha256"] = hashlib.sha256(
+                paths.requirement_path.read_bytes()
+            ).hexdigest()
+        except OSError:
+            pass
+    if paths.project_path and paths.project_path.is_dir():
+        excluded: set[str] = set()
+        journey_result = resolve_result_path(config_path, config)
+        for report in (journey_result, journey_result.with_suffix(".md")):
+            try:
+                excluded.add(report.relative_to(paths.project_path.resolve()).as_posix())
+            except ValueError:
+                pass
+        try:
+            snapshot = current_delivery_snapshot(
+                paths.project_path,
+                baseline_path_for_config(config_path),
+                exclude_paths=excluded,
+            )
+        except GitInspectionError:
+            pass
+        else:
+            context["baseline_id"] = snapshot["baseline_id"]
+            context["snapshot_sha256"] = snapshot["snapshot_sha256"]
+    return context
 
 
 ENVIRONMENT_PATTERNS = (
@@ -845,6 +908,8 @@ def write_result(result: JourneyResult, path: Path) -> None:
     command_lines = "\n".join(
         f"- `{' '.join(command)}`" for command in result.commands
     ) or "- 无"
+    covered_lines = "\n".join(f"- `{item}`" for item in result.covered_then_ids) or "- 无"
+    uncovered_lines = "\n".join(f"- `{item}`" for item in result.uncovered_then_ids) or "- 无"
     report.write_text(
         "# Journey Harness 执行报告\n\n"
         f"- 状态：`{result.status}`\n"
@@ -856,7 +921,16 @@ def write_result(result: JourneyResult, path: Path) -> None:
         f"- Journey 文件数：`{len(result.journey_files)}`\n"
         f"- action/step 数：`{result.action_count}`\n"
         f"- 实际执行测试数：`{result.executed_tests}`\n"
-        f"- 执行轮次：`{result.attempts}`\n\n"
+        f"- 执行轮次：`{result.attempts}`\n"
+        f"- Journey 适用性：`{result.applicability or '未记录'}`\n"
+        f"- Git 基线：`{result.baseline_id or '未识别'}`\n"
+        f"- 最终代码摘要：`{result.snapshot_sha256 or '未识别'}`\n"
+        f"- 开始时间：`{result.started_at or '未记录'}`\n"
+        f"- 完成时间：`{result.finished_at or '未记录'}`\n\n"
+        "## Journey 覆盖的 BDD/Then\n\n"
+        f"{covered_lines}\n\n"
+        "## 未由 Journey 覆盖的 BDD/Then\n\n"
+        f"{uncovered_lines}\n\n"
         "## Journey 文件\n\n"
         f"{journey_lines}\n\n"
         "## 截图证据\n\n"
@@ -880,9 +954,13 @@ def finish(result: JourneyResult, result_path: Path) -> int:
         result.status = HARNESS_FAILED
         result.exit_code = 1
         result.message = f"{result.message}\n实际执行测试数为 0，拒绝判绿"
+    if not result.finished_at:
+        result.finished_at = datetime.now(timezone.utc).isoformat()
     write_result(result, result_path)
     if result.status == NO_JOURNEY_FOUND:
         print("👉 AI 指令：根据已确认需求和 BDD 自动生成当前 Journey 用例；仅在业务预期不明确时询问用户。")
+    elif result.status == INITIALIZATION_REQUIRED:
+        print("👉 Journey 壳需要一次性初始化：使用当前 Android Studio 的官方 New > Journey Test，不要手写预览 DSL。")
     elif result.status in {HARNESS_UNAVAILABLE, HARNESS_FAILED, MALFORMED_JOURNEY}:
         print("👉 壳 Journey 不可用：不要修改目标项目，改用现有仪器测试或人工测试路径。")
     elif result.status == APP_ASSERTION_FAILED:
@@ -919,6 +997,14 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Journey 适用性：无 UI、纯视觉或 UI 行为/状态流转",
     )
+    parser.add_argument(
+        "--applicability",
+        choices=("FULL", "PARTIAL", "NONE"),
+        default=None,
+        help="由 android-test-and-fix 终判的 Journey 适用性；行为型测试必须为 FULL 或 PARTIAL",
+    )
+    parser.add_argument("--covered-then", action="append", default=[], help="Journey 实际覆盖的 BDD/Then，可重复")
+    parser.add_argument("--uncovered-then", action="append", default=[], help="未由 Journey 覆盖的 BDD/Then，可重复")
     parser.add_argument("--retries", type=int, default=None)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--preflight-only", action="store_true")
@@ -926,23 +1012,49 @@ def main(argv: list[str] | None = None) -> int:
 
     harness = Path(args.harness_dir).expanduser().resolve()
     fallback_result_path = resolve_fallback_result_path(harness)
+    started_at = datetime.now(timezone.utc).isoformat()
+    applicability = args.applicability or ("NONE" if args.ui_impact != "behavior" else None)
+    coverage_error = None
+    if args.ui_impact == "behavior" and applicability not in {"FULL", "PARTIAL"}:
+        coverage_error = "行为型 Journey 必须通过 --applicability 明确记录 FULL 或 PARTIAL"
+    elif args.ui_impact == "behavior" and not args.covered_then:
+        coverage_error = "行为型 Journey 至少需要一个 --covered-then，禁止无追溯执行"
+    elif args.ui_impact != "behavior" and applicability != "NONE":
+        coverage_error = "无 UI 或纯视觉需求的 Journey 适用性必须为 NONE"
+
+    context: dict[str, str] = {}
+
+    def complete(result: JourneyResult, result_path: Path) -> int:
+        """为所有通过、跳过和失败结果统一附加覆盖关系与新鲜度上下文。"""
+        result.applicability = applicability
+        result.covered_then_ids = list(dict.fromkeys(args.covered_then))
+        result.uncovered_then_ids = list(dict.fromkeys(args.uncovered_then))
+        result.baseline_id = context.get("baseline_id")
+        result.requirement_file_sha256 = context.get("requirement_file_sha256")
+        result.snapshot_sha256 = context.get("snapshot_sha256")
+        result.started_at = started_at
+        return finish(result, result_path)
+
+    if coverage_error:
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, coverage_error, 1), fallback_result_path)
     config_path = Path(args.config).expanduser().resolve()
     try:
         config = load_config(config_path)
     except (OSError, RuntimeError) as exc:
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1), fallback_result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1), fallback_result_path)
 
+    context.update(delivery_context(config_path, config))
     result_path = resolve_result_path(config_path, config)
     skipped = skip_result(args.ui_impact)
     if skipped:
-        return finish(skipped, result_path)
+        return complete(skipped, result_path)
 
     testing = config.get("testing", {}) or {}
     if not isinstance(testing, dict):
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, "testing 必须是 YAML object", 1), result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, "testing 必须是 YAML object", 1), result_path)
     settings = testing.get("journey_harness", {}) or {}
     if not isinstance(settings, dict):
-        return finish(
+        return complete(
             JourneyResult(HARNESS_UNAVAILABLE, "testing.journey_harness 必须是 YAML object", 1),
             result_path,
         )
@@ -952,7 +1064,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         retries = args.retries if args.retries is not None else int(settings.get("retries", 2))
     except (TypeError, ValueError):
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, "retries 必须是整数", 1), result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, "retries 必须是整数", 1), result_path)
     configured_package = settings.get("app_package_name") or config.get("app_package_name")
     configured_device = args.device or settings.get("device")
     configured_task = args.journey_task or settings.get("task")
@@ -960,50 +1072,52 @@ def main(argv: list[str] | None = None) -> int:
 
     # 先校验当前需求用例；缺用例时直接给出隔离目录，不要求 SDK 或设备就绪。
     if retries < 2:
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, "retries 必须 >= 2", 1), result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, "retries 必须 >= 2", 1), result_path)
     files, action_count, journey_error = validate_journeys(journeys_dir)
     if journey_error:
         status = NO_JOURNEY_FOUND if not files else MALFORMED_JOURNEY
         message = f"{journey_error}\n用例目录: {journeys_dir}"
         if status == NO_JOURNEY_FOUND:
             message += "\n应由 android-test-and-fix 根据已确认需求和 BDD 自动生成，不要求用户编写 XML"
-        return finish(JourneyResult(status, message, 1, journey_files=[str(p) for p in files]), result_path)
+        return complete(JourneyResult(status, message, 1, journey_files=[str(p) for p in files]), result_path)
 
     # 用例就绪后再检查壳、SDK、设备和任务，不触碰目标项目源码。
     if not harness.is_dir():
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, f"壳项目不存在: {harness}", 1), result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, f"壳项目不存在: {harness}", 1), result_path)
     gradlew = harness / "gradlew"
     if not gradlew.is_file():
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, "壳项目缺少 Gradle wrapper", 1), result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, "壳项目缺少 Gradle wrapper", 1), result_path)
     sdk = resolve_android_sdk()
     if not sdk:
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, "无法定位 Android SDK", 1), result_path)
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, "无法定位 Android SDK", 1), result_path)
 
-    try:
-        stage_journeys(files, harness)
-    except OSError as exc:
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, f"同步 Journey 用例失败: {exc}", 1,
-                                    journey_files=[str(p) for p in files],
-                                    action_count=action_count), result_path)
-
-    device, device_error = choose_device(configured_device)
-    if device_error:
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, device_error, 1,
-                                    journey_files=[str(p) for p in files], action_count=action_count), result_path)
-
+    # 官方 Journey task 是壳能否运行的先决条件，必须在设备检查前给出明确初始化状态。
     task, discovery = discover_journey_task(harness, configured_task, sdk)
     commands = [discovery.command] if discovery else []
     if not task:
         output = discovery.output[-2000:] if discovery else ""
-        message = "无法唯一识别 Journey task；请用官方模板生成后在配置中填写 task"
+        status, message = missing_task_status(discovery)
         if output:
             message += f"\n{output}"
-        return finish(JourneyResult(HARNESS_UNAVAILABLE, message, 1, device=device,
+        return complete(JourneyResult(status, message, 1,
+                                    journey_files=[str(p) for p in files], action_count=action_count,
+                                    commands=commands), result_path)
+
+    try:
+        stage_journeys(files, harness)
+    except OSError as exc:
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, f"同步 Journey 用例失败: {exc}", 1,
+                                    journey_files=[str(p) for p in files],
+                                    action_count=action_count, commands=commands), result_path)
+
+    device, device_error = choose_device(configured_device)
+    if device_error:
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, device_error, 1,
                                     journey_files=[str(p) for p in files], action_count=action_count,
                                     commands=commands), result_path)
 
     if args.preflight_only:
-        return finish(JourneyResult(PREFLIGHT_PASS, "壳 Journey 预检通过，尚未执行测试", 0, device=device, task=task,
+        return complete(JourneyResult(PREFLIGHT_PASS, "壳 Journey 预检通过，尚未执行测试", 0, device=device, task=task,
                                     journey_files=[str(p) for p in files], action_count=action_count,
                                     commands=commands), result_path)
 
@@ -1012,32 +1126,32 @@ def main(argv: list[str] | None = None) -> int:
     package = configured_package
     if args.skip_build:
         if not package:
-            return finish(JourneyResult(HARNESS_UNAVAILABLE,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE,
                                         "--skip-build 必须配置 app_package_name", 1,
                                         device=device, task=task, journey_files=[str(p) for p in files],
                                         action_count=action_count, commands=commands), result_path)
         installed, command = verify_installed(package, device)
         commands.append(command)
         if not installed:
-            return finish(JourneyResult(HARNESS_UNAVAILABLE,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE,
                                         f"目标包未安装到设备: {package}", 1,
                                         device=device, package=package, task=task,
                                         journey_files=[str(p) for p in files], action_count=action_count,
                                         commands=commands), result_path)
     else:
         if not project or not project.is_dir():
-            return finish(JourneyResult(HARNESS_UNAVAILABLE, f"老项目路径无效: {project}", 1,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE, f"老项目路径无效: {project}", 1,
                                         device=device, task=task, journey_files=[str(p) for p in files],
                                         action_count=action_count, commands=commands), result_path)
         try:
             apk, build = build_target_apk(project, module, variant)
         except ValueError as exc:
-            return finish(JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1, device=device,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1, device=device,
                                         task=task, journey_files=[str(p) for p in files],
                                         action_count=action_count, commands=commands), result_path)
         commands.append(build.command)
         if build.returncode != 0 or not apk:
-            return finish(JourneyResult(HARNESS_UNAVAILABLE,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE,
                                         f"老项目构建失败或未找到 APK\n{build.output[-2000:]}", 1,
                                         device=device, task=task, journey_files=[str(p) for p in files],
                                         action_count=action_count, commands=commands), result_path)
@@ -1046,7 +1160,7 @@ def main(argv: list[str] | None = None) -> int:
         commands.extend(package_commands)
         package = detected_package or configured_package
         if not package:
-            return finish(JourneyResult(HARNESS_UNAVAILABLE,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE,
                                         "无法从 APK 读取 applicationId；请配置 app_package_name", 1,
                                         device=device, apk=str(apk), task=task,
                                         journey_files=[str(p) for p in files], action_count=action_count,
@@ -1054,7 +1168,7 @@ def main(argv: list[str] | None = None) -> int:
         installed, install_commands, install_output = install_and_verify(apk, package, device)
         commands.extend(install_commands)
         if not installed:
-            return finish(JourneyResult(HARNESS_UNAVAILABLE,
+            return complete(JourneyResult(HARNESS_UNAVAILABLE,
                                         f"APK 安装或包名校验失败\n{install_output[-2000:]}", 1,
                                         device=device, package=package, apk=str(apk), task=task,
                                         journey_files=[str(p) for p in files], action_count=action_count,
@@ -1076,7 +1190,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         message = f"壳 Journey 环境或运行器失败\n{harness_result.output[-3000:]}"
         exit_code = 1
-    return finish(JourneyResult(
+    return complete(JourneyResult(
         harness_result.status, message, exit_code, device=device, package=package,
         apk=str(apk) if apk else None, task=task,
         journey_files=[str(p) for p in files], action_count=action_count,

@@ -8,7 +8,8 @@
 1. 配置中的绝对/相对路径解析。
 2. Word、Markdown、TXT 需求正文读取及明确失败行为。
 3. 七类工程影响、第二轮条件能力候选和 route 输出，不把模糊子串当成业务结论。
-4. 当前需求 Git 基线、四类变化收集、脏工作区门禁和独立 JSON 输出。
+4. 当前需求 Git 基线、需求快照、中途需求差异和重复 init 安全性。
+5. 四类 Git 变化、增删改状态、真实片段、最终代码摘要和独立 JSON 输出。
 
 测试原则：
 - 所有文件和 Git 仓库均创建在临时目录，不读取或修改真实项目状态。
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 import io
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -44,17 +46,31 @@ from ..delivery import (  # noqa: E402
     classify_route_files,
     classify_route_impacts,
     cmd_check_env,
+    cmd_init,
     cmd_route,
     load_config,
     read_requirement,
     resolve_config_paths,
 )
+from ..config_paths import (  # noqa: E402
+    baseline_path_for_config,
+    requirement_snapshot_path_for_config,
+)
 from ..git_changes import (  # noqa: E402
+    GitChange,
+    collect_changed_entries,
     collect_changed_files,
+    current_delivery_snapshot,
     current_branch,
     load_baseline,
     write_baseline,
     working_tree_status,
+)
+from ..requirement_snapshot import (  # noqa: E402
+    RequirementSnapshotError,
+    load_requirement_snapshot,
+    render_requirement_diff,
+    write_requirement_snapshot,
 )
 
 
@@ -101,6 +117,17 @@ class RequirementPathTests(unittest.TestCase):
 
         self.assertEqual(resolved_project, project.resolve())
         self.assertEqual(resolved_requirement, requirement.resolve())
+
+    def test_external_state_keeps_existing_baseline_name_and_separates_snapshot(self) -> None:
+        """验证新增需求快照不会改名或覆盖旧版本已经建立的 Git 基线文件。"""
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.root / "state")}):
+            baseline = baseline_path_for_config(self.config_path)
+            snapshot = requirement_snapshot_path_for_config(self.config_path)
+
+        self.assertTrue(baseline.name.endswith(".json"))
+        self.assertNotIn("-baseline.json", baseline.name)
+        self.assertTrue(snapshot.name.endswith("-requirement.json"))
+        self.assertNotEqual(baseline, snapshot)
 
 
 class RequirementReaderTests(unittest.TestCase):
@@ -157,6 +184,67 @@ class RequirementReaderTests(unittest.TestCase):
         corrupt.write_bytes(b"not-a-docx")
         with self.assertRaisesRegex(DeliveryError, "DOCX 文件损坏"):
             read_requirement(corrupt)
+
+
+class RequirementSnapshotTests(unittest.TestCase):
+    """验证已确认需求可以安全保存、比较，重复 init 不会破坏 Git 基线。"""
+
+    def setUp(self) -> None:
+        """创建需求、追溯表和外部状态文件，所有内容在测试结束后自动清理。"""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+        self.requirement_dir = self.root / "requirement"
+        self.requirement_dir.mkdir()
+        self.requirement = self.requirement_dir / "requirement.md"
+        self.requirement.write_text("登录失败显示错误\n", encoding="utf-8")
+        self.snapshot = self.root / "requirement-snapshot.json"
+        self.baseline = self.root / "delivery-baseline.json"
+
+    def test_snapshot_round_trip_and_diff(self) -> None:
+        """验证快照摘要可校验，并为中途新增内容生成稳定差异。"""
+        write_requirement_snapshot(self.snapshot, self.requirement, "登录失败显示错误")
+        payload = load_requirement_snapshot(self.snapshot)
+        diff = render_requirement_diff(
+            str(payload["content"]),
+            "登录失败显示错误\n允许点击重试",
+        )
+
+        self.assertEqual(self.requirement.resolve(), Path(payload["requirement_path"]))
+        self.assertIn("+允许点击重试", diff)
+        self.assertEqual(0o600, stat.S_IMODE(self.snapshot.stat().st_mode))
+
+    def test_repeated_init_reports_change_without_deleting_baseline(self) -> None:
+        """验证编码中重复读取需求会输出增量上下文，并完整保留原 Git 基线。"""
+        write_requirement_snapshot(self.snapshot, self.requirement, "登录失败显示错误")
+        self.requirement.write_text("登录失败显示错误\n允许点击重试\n", encoding="utf-8")
+        traceability = self.requirement_dir / "test-cases" / "traceability.md"
+        traceability.parent.mkdir()
+        traceability.write_text("BDD-001/T1 | COVERED_AUTOMATED\n", encoding="utf-8")
+        self.baseline.write_text('{"id":"keep-me"}\n', encoding="utf-8")
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        output = io.StringIO()
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(output),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        self.assertEqual('{"id":"keep-me"}\n', self.baseline.read_text(encoding="utf-8"))
+        text = output.getvalue()
+        self.assertIn("需求变化候选", text)
+        self.assertIn("+允许点击重试", text)
+        self.assertIn("BDD-001/T1", text)
+        self.assertIn("ADDED/CHANGED/REMOVED/UNCHANGED", text)
 
 
 class ConfigReaderTests(unittest.TestCase):
@@ -320,13 +408,28 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.git("config", "user.email", "delivery-test@example.invalid")
 
         self.write("baseline.txt", "baseline\n")
+        self.write(
+            "app/src/main/java/example/Client.kt",
+            '@GET("users")\nfun users(): String\n',
+        )
+        self.write("app/src/main/java/example/LegacyWorker.kt", "class LegacyWorker\n")
         self.git("add", "baseline.txt")
+        self.git("add", "app/src/main/java/example/Client.kt")
+        self.git("add", "app/src/main/java/example/LegacyWorker.kt")
         self.git("commit", "-q", "-m", "baseline")
         self.git("checkout", "-q", "-b", "feature")
 
         # 需求基线建立在编码前，后续 commit 和工作区变化都应归入本次范围。
         self.baseline = Path(self.temp_dir.name) / "delivery-baseline.json"
         write_baseline(self.repo, self.baseline)
+
+        # 删除和重命名必须保留旧片段/旧路径，不能因当前文件不存在而漏掉路由。
+        (self.repo / "app/src/main/java/example/Client.kt").unlink()
+        self.git(
+            "mv",
+            "app/src/main/java/example/LegacyWorker.kt",
+            "app/src/main/java/example/RenamedWorker.kt",
+        )
 
         # feature commit 用于验证相对 main 的 committed 差异。
         self.write("app/src/main/java/example/Committed.kt", "class Committed\n")
@@ -377,6 +480,38 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.assertNotIn("baseline.txt", files)
         self.assertEqual(self.repo.resolve(), Path(load_baseline(self.repo, self.baseline)["repo"]))
 
+    def test_collects_delete_rename_patch_and_updates_snapshot(self) -> None:
+        """验证删除/重命名状态与旧代码片段可供路由使用，代码变化使摘要失效。"""
+        before = current_delivery_snapshot(self.repo, self.baseline)["snapshot_sha256"]
+        changes, warnings = collect_changed_entries(self.repo, self.baseline)
+        by_path = {change.path: change for change in changes}
+
+        self.assertEqual([], warnings)
+        deleted = by_path["app/src/main/java/example/Client.kt"]
+        renamed = by_path["app/src/main/java/example/RenamedWorker.kt"]
+        self.assertEqual("D", deleted.status)
+        self.assertIn('@GET("users")', deleted.patch)
+        self.assertEqual("R", renamed.status)
+        self.assertEqual("app/src/main/java/example/LegacyWorker.kt", renamed.old_path)
+        impacts = classify_route_impacts(
+            list(by_path),
+            project_root=self.repo,
+            route_signals={path: change.patch for path, change in by_path.items()},
+        )
+        self.assertIn("app/src/main/java/example/Client.kt", impacts["api"])
+
+        self.write("delivery-result.json", "self report\n")
+        excluded = current_delivery_snapshot(
+            self.repo,
+            self.baseline,
+            exclude_paths={"delivery-result.json"},
+        )["snapshot_sha256"]
+        self.assertEqual(before, excluded)
+
+        self.write("another.txt", "changes snapshot\n")
+        after = current_delivery_snapshot(self.repo, self.baseline)["snapshot_sha256"]
+        self.assertNotEqual(before, after)
+
     def test_reports_branch_and_working_tree_without_modifying_them(self) -> None:
         """验证只读 Git 辅助方法能报告分支和脏状态且不改变仓库。"""
         self.assertEqual(current_branch(self.repo), "feature")
@@ -425,24 +560,70 @@ class GitDiffCollectionTests(unittest.TestCase):
     def test_check_env_rejects_dirty_start_and_writes_clean_baseline(self) -> None:
         """验证脏工作区阻断新需求，清洁后才允许建立需求基线。"""
         args = SimpleNamespace(config=str(Path(self.temp_dir.name) / "local.yaml"))
+        requirement = Path(self.temp_dir.name) / "requirement.md"
+        requirement.write_text("已确认需求\n", encoding="utf-8")
+        snapshot = Path(self.temp_dir.name) / "requirement-snapshot.json"
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement.parent,
+        )
         patches = (
             mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
-            mock.patch("scripts.delivery.resolve_config_paths", return_value=(self.repo, None)),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
             mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.baseline),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=snapshot,
+            ),
         )
         old_cwd = Path.cwd()
         try:
-            with patches[0], patches[1], patches[2], redirect_stdout(io.StringIO()):
+            with patches[0], patches[1], patches[2], patches[3], redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(DeliveryError, "无法建立不串需求的基线"):
                     cmd_check_env(args)
 
             self.git("add", ".")
             self.git("commit", "-q", "-m", "current requirement prepared")
-            with patches[0], patches[1], patches[2], redirect_stdout(io.StringIO()):
+            with patches[0], patches[1], patches[2], patches[3], redirect_stdout(io.StringIO()):
                 cmd_check_env(args)
             self.assertEqual(current_branch(self.repo), load_baseline(self.repo, self.baseline)["branch"])
+            self.assertEqual("已确认需求", load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
+
+    def test_check_env_restores_previous_baseline_when_snapshot_fails(self) -> None:
+        """验证需求快照写入失败时恢复旧基线，不能让一次环境故障破坏当前起点。"""
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "prepare clean tree")
+        previous = b'{"id":"previous-baseline"}\n'
+        self.baseline.write_bytes(previous)
+        requirement = Path(self.temp_dir.name) / "requirement.md"
+        requirement.write_text("已确认需求\n", encoding="utf-8")
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement.parent,
+        )
+        args = SimpleNamespace(config=str(Path(self.temp_dir.name) / "local.yaml"))
+        old_cwd = Path.cwd()
+        try:
+            with (
+                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.baseline),
+                mock.patch(
+                    "scripts.delivery.write_requirement_snapshot",
+                    side_effect=RequirementSnapshotError("snapshot failed"),
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                with self.assertRaisesRegex(DeliveryError, "snapshot failed"):
+                    cmd_check_env(args)
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertEqual(previous, self.baseline.read_bytes())
 
 
 class RouteCommandTests(unittest.TestCase):
@@ -470,7 +651,10 @@ class RouteCommandTests(unittest.TestCase):
                 mock.patch("scripts.delivery.load_config", return_value={}),
                 mock.patch("scripts.delivery.resolve_config_paths", return_value=(self.root, None)),
                 mock.patch("scripts.delivery.current_branch", return_value="feature"),
-                mock.patch("scripts.delivery.get_diff_files", return_value=(files, [])),
+                mock.patch(
+                    "scripts.delivery.get_diff_changes",
+                    return_value=([GitChange("M", path) for path in files], []),
+                ),
                 redirect_stdout(output),
             ):
                 cmd_route(args)

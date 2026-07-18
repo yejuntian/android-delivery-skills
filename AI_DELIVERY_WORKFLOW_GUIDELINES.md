@@ -11,29 +11,36 @@
 5. `references/open-source-design-rationale.md`：维护流程时使用的设计依据，记录开源参考、采用/拒绝原因和长期不变量。
 6. `android-implement-and-verify/references/delivery-eval-scenarios.md`：修改 Skill、路由或门禁后的行为评测集，不是日常需求步骤。
 7. `android-implement-and-verify/references/conditional-capability-gates.md`：第二轮六类条件能力和无真机降级的详细边界，仅在候选触发时读取。
+8. `android-test-and-fix/references/adaptive-test-routing.md`：原子 Then、风险分层、混合需求测试路由和 Journey `FULL/PARTIAL/NONE` 的权威边界。
+9. `android-implement-and-verify/references/delivery-result.schema.json`：最终一次性交付结果契约，不是流程状态机。
 
 规则冲突时按以下顺序处理：目标项目 `AGENTS.md` / `CONTRIBUTING.md` 等更严格规则 → `_shared/android-global-rules.md` → 当前 Skill。无法确定时暂停说明，不自行选择宽松规则。
 
-## 三阶段入口
+## 三阶段入口与最终门禁
 
 ```text
 delivery.py init
   -> 读取当前需求
+  -> 中途重读时对比已确认快照和追溯表
   -> 输出需求理解、BDD 和最小修改预览
   -> 等待用户确认
 
 delivery.py check-env
   -> 校验项目、分支和干净工作区
-  -> 记录当前需求 Git 基线
+  -> 记录当前需求 Git 基线与已确认需求快照
   -> 允许编码
 
 delivery.py route
   -> 仅收集当前需求基线后的变化
-  -> 按真实 diff 路由专项 Skill
+  -> 按 A/M/D/R 状态与真实修改片段路由专项 Skill
   -> 测试、构建、lint 和问题修复形成闭环
+
+delivery_gate.py validate
+  -> 核对需求、Git 基线、最终代码摘要、原子 Then、专项门禁和证据
+  -> 只有当前证据完整时允许通过结论
 ```
 
-这三个命令是轻量流程编排器，不是通用状态机。除当前需求 Git 基线外，不维护额外 phase、MVU 或恢复状态。
+这些命令是轻量编排与最终校验，不是通用状态机。只保存外部 Git 基线、已确认需求快照和一次性最终结果，不维护额外 phase、MVU 或恢复状态。
 
 ## 不可覆盖的安全边界
 

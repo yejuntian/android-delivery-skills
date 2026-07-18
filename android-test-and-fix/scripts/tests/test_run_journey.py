@@ -11,6 +11,7 @@
 4. 重试前置、skip-build、截图过滤、超时和敏感命令脱敏。
 5. 同步当前需求用例时清理壳暂存 XML，避免串用缓存。
 6. Gradle 用户缓存、项目缓存、壳构建输出和兜底报告位于 Skill 目录外，并支持显式环境变量覆盖。
+7. Journey 初始化缺失、FULL/PARTIAL 适用性和原子 BDD/Then 证据不会被静默忽略。
 
 隔离说明：所有目录和文件均位于临时目录；测试不连接设备、不运行 Gradle、
 不安装 APK，也不修改真实 Android 项目。
@@ -174,12 +175,74 @@ class RunJourneyTest(unittest.TestCase):
             journey_files=["home.xml"],
             action_count=2,
             executed_tests=2,
+            applicability="PARTIAL",
+            covered_then_ids=["BDD-001/T1"],
+            uncovered_then_ids=["BDD-001/T2"],
+            baseline_id="baseline-1",
+            snapshot_sha256="a" * 64,
         )
         run_journey.write_result(result, output)
-        self.assertEqual("PASS", json.loads(output.read_text(encoding="utf-8"))["status"])
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual("PASS", payload["status"])
+        self.assertEqual(["BDD-001/T1"], payload["covered_then_ids"])
         report = output.with_suffix(".md").read_text(encoding="utf-8")
         self.assertIn("Journey Harness 执行报告", report)
         self.assertIn("device-1", report)
+        self.assertIn("BDD-001/T2", report)
+
+    def test_distinguishes_uninitialized_harness_from_task_ambiguity(self):
+        """验证任务列表没有 Journey 时明确要求一次性初始化，多个任务仍归发现异常。"""
+        empty = run_journey.CommandResult(["gradlew", "tasks"], 0, "assembleDebug - build")
+        ambiguous = run_journey.CommandResult(
+            ["gradlew", "tasks"],
+            0,
+            "journeyTest - first\ntestJourneyDebug - second",
+        )
+
+        self.assertEqual(run_journey.INITIALIZATION_REQUIRED, run_journey.missing_task_status(empty)[0])
+        self.assertEqual(run_journey.HARNESS_UNAVAILABLE, run_journey.missing_task_status(ambiguous)[0])
+
+    def test_reports_initialization_before_requiring_device(self):
+        """验证共享壳未初始化时不先要求设备，避免真正根因被环境提示遮蔽。"""
+        root = Path(tempfile.mkdtemp())
+        harness = root / "harness"
+        harness.mkdir()
+        (harness / "gradlew").write_text("", encoding="utf-8")
+        journeys = root / "journeys"
+        journeys.mkdir()
+        (journeys / "home.xml").write_text(
+            "<journey><step>打开首页并看到标题</step></journey>",
+            encoding="utf-8",
+        )
+        result_path = root / "result.json"
+        discovery = run_journey.CommandResult(["gradlew", "tasks"], 0, "assembleDebug - build")
+        with (
+            mock.patch.object(run_journey, "load_config", return_value={}),
+            mock.patch.object(run_journey, "resolve_result_path", return_value=result_path),
+            mock.patch.object(run_journey, "resolve_journeys_dir", return_value=journeys),
+            mock.patch.object(run_journey, "resolve_android_sdk", return_value="/sdk"),
+            mock.patch.object(
+                run_journey,
+                "discover_journey_task",
+                return_value=(None, discovery),
+            ),
+            mock.patch.object(run_journey, "choose_device") as choose_device,
+        ):
+            exit_code = run_journey.main([
+                "--config", str(root / "local.yaml"),
+                "--harness-dir", str(harness),
+                "--journeys-dir", str(journeys),
+                "--ui-impact", "behavior",
+                "--applicability", "FULL",
+                "--covered-then", "BDD-001/T1",
+            ])
+
+        self.assertEqual(1, exit_code)
+        self.assertEqual(
+            run_journey.INITIALIZATION_REQUIRED,
+            json.loads(result_path.read_text(encoding="utf-8"))["status"],
+        )
+        choose_device.assert_not_called()
 
     def test_resolves_cases_under_requirement_directory(self):
         """验证默认 Journey 用例位于当前需求目录而非共享壳源码。"""
@@ -355,11 +418,16 @@ class RunJourneyTest(unittest.TestCase):
                 "--harness-dir", str(harness),
                 "--journeys-dir", str(journeys),
                 "--ui-impact", "behavior",
+                "--applicability", "FULL",
+                "--covered-then", "BDD-001/T1",
                 "--skip-build",
             ])
 
         self.assertEqual(0, exit_code)
-        self.assertEqual(run_journey.PASS, json.loads(result_path.read_text(encoding="utf-8"))["status"])
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        self.assertEqual(run_journey.PASS, payload["status"])
+        self.assertEqual("FULL", payload["applicability"])
+        self.assertEqual(["BDD-001/T1"], payload["covered_then_ids"])
 
     def test_redacts_deep_links_and_returns_timeout_as_environment_failure(self):
         """验证超时返回环境失败码，且命令与输出都不会泄漏 DeepLink 参数。"""

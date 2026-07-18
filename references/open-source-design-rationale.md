@@ -193,6 +193,16 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **证据边界**：生成代码、反射、AIDL、JNI、闭源 SDK 或 release 行为无法确认时标未验证；静态零告警只能写“未发现明确静态问题”，不能宣称无泄漏、线程安全或实机通过。
 - **原因**：项目配置变化只影响能力发现与证据，不要求修改路由脚本或强制迁移语言、AGP、Gradle、JDK 和测试框架。
 
+### M17 自适应分层自动化测试
+
+- **调研日期**：2026-07-19。
+- **来源**：[Android 官方测试策略](https://developer.android.com/training/testing/fundamentals/strategies) 的单元、组件、功能、应用和候选版本分层，[Android 测试基础](https://developer.android.com/training/testing/fundamentals) 的可测试架构与解耦，[UIAutomator](https://developer.android.com/training/testing/other-components/ui-automator)、[Espresso](https://developer.android.com/training/testing/espresso) 和 [Compose UI Test](https://developer.android.com/develop/ui/compose/testing) 的能力边界；Maestro、Robolectric、Kaspresso、Paparazzi、Kotest 属性测试和 PIT Mutation Testing 作为补充对照。
+- **决策**：把每个 BDD 的复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，按 `L1/L2/L3/BLOCKED` 做需求初判和最终 diff 终判，再为每项选择最低且足够的测试层。Journey 只做少量关键黑盒旅程，并根据原子 Then 分配用 `FULL/PARTIAL/NONE` 表达整条 BDD 的适用性；Journey 通过只覆盖它实际断言的 Then。
+- **老项目边界**：低 AGP 项目继续使用自身 wrapper 构建 APK，独立壳优先处理 Journey；项目已有 Compose/Espresso/UIAutomator 时复用。需要外部 UIAutomator 时另行设计独立能力，不把职责塞入 `run_journey.py`，也不升级目标项目。
+- **工具边界**：不自动安装 Maestro、Appium、Kaspresso、属性测试或 Mutation 工具。只有场景仍适合黑盒 UI、Journey 引擎能力不足且项目已有或用户允许时才考虑 Maestro；业务上不适合 Journey 的场景不能通过换黑盒引擎解决。
+- **原因**：成熟方案不是万能 E2E 兜底，而是大量快速确定的小测试加少量高保真流程。原子证据可以补齐 UI 与业务混合需求、Journey 部分覆盖和无设备降级，同时避免每个小改动机械执行完整测试矩阵。
+- **拒绝**：不按代码行数判断风险，不把 Journey/截图/Unit/静态扫描越权写成整条业务通过，不把计划人工测试写成已覆盖，不建立跨需求持久化状态机。
+
 ## 明确不照搬
 
 - 不为每个小需求自动生成并提交多份设计、计划和任务文档。
@@ -211,13 +221,14 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 3. 当前项目事实优先，不脑补接口、字段、设计、架构或测试结果。
 4. 当前需求 Git 基线隔离串行需求；工作区不干净时停止，不自动处理用户改动。
 5. 最小修改和单一职责是全局默认，不需要用户重复提醒。
-6. `android-verify-ui` 保持手动独立；Journey 测试归 `android-test-and-fix` 且只在适用时运行。
+6. `android-verify-ui` 保持手动独立；Journey 测试归 `android-test-and-fix`，只覆盖 `FULL/PARTIAL` 中实际分配给它的关键用户旅程。
 7. Git 提交和推送必须获得用户明确授权。
 8. 没有新鲜执行证据时不能声明完成；没有动态证据时不能宣称无泄漏、无性能问题或实机通过。
 9. 缺少真机不停止其他可执行门禁；只限制对应动态能力和完整交付结论。
 10. 第二轮条件能力复用现有 Skill 和项目工具，不自动安装依赖或扩张为六个新 Skill。
 11. Kotlin/Java/Android 静态审查以六条不变量、语言边界和必要调用链为核心；工具零告警不能改写成无泄漏或线程安全。
 12. 老项目历史债务与本次新增问题必须分离；不更新 baseline 造绿，也不扩大需求清理无关旧问题。
+13. 每个已确认 BDD 的必需原子 Then 必须有新鲜自动证据、实际人工证据或明确阻塞；任一工具的通过不得覆盖它没有断言的风险。
 
 ## 维护规则
 

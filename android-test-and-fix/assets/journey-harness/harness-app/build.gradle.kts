@@ -5,6 +5,12 @@ plugins {
     id("com.android.application")
 }
 
+// 构建输出默认放到 Skill 目录外，避免 Android Studio 或脚本运行后触发 Skill 体积限制。
+// 脚本会显式传入同名环境变量；手动打开壳时使用用户缓存目录作为安全默认值。
+val journeyBuildRoot = System.getenv("ANDROID_DELIVERY_JOURNEY_BUILD_ROOT")
+    ?: file("${System.getProperty("user.home")}/.cache/android-delivery-skills/journey-build/${rootProject.projectDir.absolutePath.hashCode().toUInt().toString(16)}/harness-app").absolutePath
+layout.buildDirectory.set(file(journeyBuildRoot))
+
 android {
     namespace = "com.harness.journey"
     compileSdk = 36

@@ -10,6 +10,7 @@
 3. 用结构化结果区分环境故障与真实 UI 断言，拒绝零测试假绿。
 4. 重试前置、skip-build、截图过滤、超时和敏感命令脱敏。
 5. 同步当前需求用例时清理壳暂存 XML，避免串用缓存。
+6. Gradle 用户缓存、项目缓存、壳构建输出和兜底报告位于 Skill 目录外，并支持显式环境变量覆盖。
 
 隔离说明：所有目录和文件均位于临时目录；测试不连接设备、不运行 Gradle、
 不安装 APK，也不修改真实 Android 项目。
@@ -79,6 +80,40 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual("DemoDebug", run_journey.variant_task_suffix("demoDebug"))
         with self.assertRaises(ValueError):
             run_journey.variant_task_suffix("demo-debug")
+
+    def test_harness_runtime_paths_stay_outside_skill_and_support_override(self):
+        """验证依赖/项目缓存、构建和兜底报告不写入 Skill，并允许私有覆盖。"""
+        root = Path(tempfile.mkdtemp())
+        harness = root / "skill" / "assets" / "journey-harness"
+        cache_root = root / "cache"
+        with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": str(cache_root)}, clear=True):
+            default_home = run_journey.resolve_harness_gradle_user_home(harness)
+            default_build = run_journey.resolve_harness_build_root(harness)
+            project_cache = run_journey.resolve_harness_project_cache(harness)
+            fallback_report = run_journey.resolve_fallback_result_path(harness)
+
+        resolved_cache_root = cache_root.resolve()
+        self.assertTrue(default_home.is_relative_to(resolved_cache_root))
+        self.assertTrue(default_build.is_relative_to(resolved_cache_root))
+        self.assertTrue(project_cache.is_relative_to(resolved_cache_root))
+        self.assertTrue(fallback_report.is_relative_to(resolved_cache_root))
+        self.assertFalse(default_home.is_relative_to(harness))
+        self.assertFalse(default_build.is_relative_to(harness))
+        self.assertFalse(project_cache.is_relative_to(harness))
+        self.assertFalse(fallback_report.is_relative_to(harness))
+
+        explicit_home = root / "private-gradle-home"
+        explicit_build = root / "private-build-root"
+        with mock.patch.dict(
+            os.environ,
+            {
+                run_journey.JOURNEY_GRADLE_HOME_ENV: str(explicit_home),
+                run_journey.JOURNEY_BUILD_ROOT_ENV: str(explicit_build),
+            },
+            clear=True,
+        ):
+            self.assertEqual(explicit_home.resolve(), run_journey.resolve_harness_gradle_user_home(harness))
+            self.assertEqual(explicit_build.resolve(), run_journey.resolve_harness_build_root(harness))
 
     def test_environment_errors_never_trigger_app_repair(self):
         """验证只有明确 UI 断言才可进入应用分析，环境故障始终归壳失败。"""
@@ -203,18 +238,24 @@ class RunJourneyTest(unittest.TestCase):
     def test_collects_only_structured_results_and_journey_screenshots(self):
         """验证只收集本轮结构化结果和 Journey 证据目录，排除普通资源。"""
         harness = Path(tempfile.mkdtemp())
-        result = harness / "harness-app" / "build" / "test-results" / "journey" / "TEST-home.xml"
+        build_root = Path(tempfile.mkdtemp())
+        result = build_root / "test-results" / "journey" / "TEST-home.xml"
         result.parent.mkdir(parents=True)
         result.write_text('<testsuite tests="2" failures="0" errors="0"/>', encoding="utf-8")
-        icon = harness / "harness-app" / "build" / "intermediates" / "res" / "icon.png"
-        screenshot = harness / "harness-app" / "build" / "reports" / "journey" / "screenshots" / "home.png"
+        icon = build_root / "intermediates" / "res" / "icon.png"
+        screenshot = build_root / "reports" / "journey" / "screenshots" / "home.png"
         icon.parent.mkdir(parents=True)
         screenshot.parent.mkdir(parents=True)
         icon.write_bytes(b"icon")
         screenshot.write_bytes(b"screen")
 
-        summary = run_journey.collect_structured_results(harness, time.time())
-        screenshots = run_journey.collect_screenshots(harness, time.time())
+        with mock.patch.dict(
+            os.environ,
+            {run_journey.JOURNEY_BUILD_ROOT_ENV: str(build_root)},
+            clear=False,
+        ):
+            summary = run_journey.collect_structured_results(harness, time.time())
+            screenshots = run_journey.collect_screenshots(harness, time.time())
 
         self.assertEqual(2, summary.executed)
         self.assertEqual([str(result.resolve())], summary.files)
@@ -247,6 +288,9 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(run_journey.APP_ASSERTION_FAILED, result.status)
         self.assertEqual(2, result.attempts)
         self.assertEqual(2, prepare.call_count)
+        gradle_commands = [command for command in result.commands if "gradlew" in command[0]]
+        self.assertTrue(gradle_commands)
+        self.assertTrue(all("--project-cache-dir" in command for command in gradle_commands))
 
     def test_success_exit_without_structured_result_is_not_pass(self):
         """验证 Gradle 零退出但缺少本轮 JUnit 证据时仍拒绝判绿。"""

@@ -2,7 +2,7 @@
 
 本文说明 `android-test-and-fix` 何时应该使用 Journey、何时必须跳过、如何从业务需求生成用例，以及独立 AGP 9 壳如何测试低 AGP 老项目。
 
-Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试。它擅长模拟用户在真实设备上的可见操作，但不能替代 Unit、API 契约、Espresso、Compose UI Test、UIAutomator、截图测试、性能测试或安全测试。
+Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试，定位是已安装 APK 的少量关键用户旅程冒烟。它擅长模拟用户在真实设备上的可见操作，但不能替代 Unit、API 契约、Espresso、Compose UI Test、UIAutomator、截图测试、性能测试或安全测试。
 
 ## 先看结论
 
@@ -10,13 +10,13 @@ Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试。它擅长�
 
 > 像真实用户一样在设备上点击、输入和跳转，并检查页面上是否出现预期结果。
 
-用户不需要决定是否使用 Journey。`android-test-and-fix` 会在需求确认后初判、编码完成后结合实际 diff 终判，只有终判适用才自动生成用例并执行。
+用户不需要决定是否使用 Journey。`android-test-and-fix` 会把每个 BDD 的复合 Then 拆成原子验证义务，逐项分配证据并聚合 Journey 的 `FULL/PARTIAL/NONE`；在需求确认后初判、编码完成后结合实际 diff 终判，只为 Journey 能稳定覆盖的部分自动生成用例并执行。
 
 | 需求情况 | Journey 是否执行 | 应使用的主要验证方式 |
 | --- | --- | --- |
 | 没有 UI 变化 | 否 | Unit、参数化、Repository、构建和 lint |
 | 只有颜色、字号、间距、图片等视觉变化 | 否 | 截图测试和 `android-verify-ui` |
-| 有点击、输入、导航或可见状态流转 | 可能 | 满足稳定前置和可见断言时使用 Journey |
+| 有点击、输入、导航或可见状态流转 | `FULL` / `PARTIAL` / `NONE` | 只为满足稳定前置、可表达操作和可见断言的部分使用 Journey |
 | 依赖验证码、真实支付或第三方页面 | 否 | Mock、UIAutomator 或人工测试 |
 | 要验证内部计算、API、数据库、性能或安全 | 否 | 对应专项测试 |
 
@@ -33,8 +33,9 @@ Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试。它擅长�
    ├─ 结果能从页面直接看到吗？
    ├─ 不依赖验证码、真实支付或不可控第三方吗？
    └─ 不要求像素、复杂手势、精确时序或内部数据吗？
-       ├─ 全部是 → 自动生成并执行 Journey
-       └─ 任一否 → 选择其他测试方式
+       ├─ 全部验证义务都满足 → FULL：生成并执行完整 Journey
+       ├─ 只有部分验证义务满足 → PARTIAL：Journey 覆盖可执行部分，其余分流
+       └─ 没有验证义务满足 → NONE：选择其他测试方式
 ```
 
 最适合的例子：
@@ -98,10 +99,22 @@ Journey 不能证明：
 - 性能、内存、安全和并发满足要求。
 - 所有 Android 版本和设备组合均已通过。
 
+同一需求可以由多个测试层共同覆盖。Journey `PASS` 只证明它实际执行的操作和可见断言，不得把同一 BDD 中没有分配给 Journey 的业务计算、接口、数据、视觉或非功能结果一并写成通过。
+
+### `FULL/PARTIAL/NONE` 适用性
+
+| 级别 | 判定 | 处理 |
+| --- | --- | --- |
+| `FULL` | BDD 中全部用户可见操作和可见断言都能稳定表达 | 执行完整 Journey；非 UI/不可见 Then 仍由其他测试层证明 |
+| `PARTIAL` | 只有部分用户可见操作或可见结果能稳定表达 | 只执行可覆盖部分，其余验证义务路由到其他测试层 |
+| `NONE` | 无 UI 行为、纯视觉，或前置/操作/结果无法可靠表达 | 不启动壳，选择其他证据 |
+
+这三个值只是适用性，不是执行结果，也不新增跨需求状态机。
+
 ## 谁负责判断和执行
 
 - 用户负责确认业务需求、前置条件和预期结果。
-- `android-test-and-fix` 根据需求、BDD 和实际 diff 自动判断 Journey 是否适用。
+- `android-test-and-fix` 根据需求、BDD 和实际 diff 分配每个原子 Then 的证据，聚合整条 BDD 的 Journey `FULL/PARTIAL/NONE` 和完整需求证据。
 - 用户不需要选择 Journey，也不需要编写 XML、action/step、文件名或 Gradle task。
 - `run_journey.py` 只负责校验、暂存、构建、安装、执行、失败分类和报告。
 - `android-verify-ui` 只负责设计稿、截图、布局和视觉还原验收，不生成或执行 Journey。
@@ -117,7 +130,7 @@ Journey 不能证明：
 - 前置条件是否可以准备。
 - 是否可能受验证码、支付或第三方系统阻塞。
 
-此时只记录 `候选适用` 或 `初判不适用`，可以生成测试用例草稿，但不得启动设备和壳项目。
+此时只按原子 Then 分配聚合整条 BDD 的候选 `FULL/PARTIAL/NONE`，可以为候选可覆盖部分生成测试用例草稿，但不得启动设备和壳项目。
 
 ### 第二次：编码完成后终判
 
@@ -128,17 +141,17 @@ Journey 不能证明：
 - 是否已有更确定的 Espresso、Compose UI Test 或 UIAutomator 测试。
 - 前置数据和设备环境是否可执行。
 
-需求初判与实际 diff 不一致时，以编码后的终判为准，并在测试报告中说明变化原因。
+需求初判与实际 diff 不一致时，以编码后的终判为准，并在测试报告中说明变化原因。Journey 能力缩小时拆成 `PARTIAL` 并分流，不得因为一部分做不到而丢弃其他必需验证义务。
 
 ### 只执行一次
 
-只有终判适用，才生成最终 Journey XML，并使用：
+只要终判仍有验证义务分配给 Journey，才为这些义务生成最终 Journey XML，并使用：
 
 ```text
 --ui-impact behavior
 ```
 
-调用 Journey。终判不适用时选择其他测试，不启动壳项目。
+调用 Journey。终判为 `NONE` 时选择其他测试，不启动壳项目。`PARTIAL` 的非 Journey 验证义务必须独立执行和记录。
 
 ## 适合 Journey 的场景
 
@@ -410,9 +423,11 @@ Given 必须变成可复现的前置条件，例如：
 
 ### Then
 
+- 先把复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，再决定哪些分配给 Journey。
 - 每个预期结果写成独立 verify/check。
 - 断言页面上可见的文本、控件、选中态或导航结果。
 - 不使用 Journey 断言数据库、API 字段或像素值。
+- 在用例和汇总报告中记录 Journey 实际覆盖的 `BDD/Then`；没有分配给 Journey 的 Then 保持独立证据和状态。
 
 示例：
 
@@ -444,7 +459,7 @@ adb 安装并通过 pm path 校验
 安全要求：
 
 - 不修改目标项目的 AGP、Gradle 或 Kotlin 版本。
-- 壳项目使用独立 `GRADLE_USER_HOME`，避免旧 `~/.gradle/init.d` 和缓存污染。
+- 壳项目把独立 `GRADLE_USER_HOME`、Gradle 项目缓存和构建输出都放在 Skill 目录外，避免旧 `~/.gradle/init.d` 污染，也避免运行产物撑大 Skill；默认位于用户缓存目录，可用 `ANDROID_DELIVERY_JOURNEY_GRADLE_HOME` 和 `ANDROID_DELIVERY_JOURNEY_BUILD_ROOT` 覆盖主要目录。
 - 目标包名以 APK 为准，不依赖源码正则。
 - 壳、设备和认证失败不能触发目标代码修复。
 
@@ -456,7 +471,7 @@ Journey 是 Studio Labs 预览能力。第一次使用共享壳时：
 2. 确认 Studio Labs/Gemini 已启用并登录。
 3. 执行 `New > Journey Test`。
 4. 让 Android Studio 生成匹配当前版本的 XML schema、testSuites、依赖、Run Configuration 和 Gradle task。
-5. 确认官方任务会在 `harness-app/build` 下生成 JUnit XML 或等价的结构化测试结果；没有实际测试数量时执行器会拒绝判绿。
+5. 确认官方任务会在壳配置的外部 build 目录生成 JUnit XML 或等价的结构化测试结果；没有实际测试数量时执行器会拒绝判绿。
 6. 保留官方生成的结构，不手写猜测预览 DSL，也不通过放宽判绿条件绕过缺失结果。
 
 这一步只初始化共享壳一次，不要求每个目标项目重复执行。
@@ -564,6 +579,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 报告包含：
 
 - 状态和退出码。
+- Journey 适用性 `FULL/PARTIAL`、实际覆盖的 `BDD/Then` 和未由 Journey 覆盖的验证义务；`NONE` 不启动壳。
 - 设备、applicationId、APK 和 Gradle task。
 - Journey 文件和 action/step 数量。
 - 本轮实际执行测试数和结构化 JUnit XML 路径。
@@ -577,9 +593,9 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 ### 没有 Journey 用例
 
-- 先确认终判是否真的适用。
-- 不适用：选择其他测试，不生成 Journey。
-- 适用：由 `android-test-and-fix` 根据 BDD 自动生成，不能要求用户写 XML。
+- 先确认终判是否仍有原子验证义务分配给 Journey。
+- `NONE`：选择其他测试，不生成 Journey。
+- `FULL/PARTIAL`：由 `android-test-and-fix` 根据对应 `BDD/Then` 自动生成，不能要求用户写 XML；非 Journey 验证义务不受影响。
 
 ### 无法识别 Journey task
 
@@ -600,7 +616,8 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 ### 壳构建被全局 Gradle 配置污染
 
-- 必须使用壳自己的 `.gradle-user-home`。
+- 必须使用执行器解析出的 Skill 外专用 `GRADLE_USER_HOME`、Gradle 项目缓存和构建目录；不要把缓存或 build 重新放回壳目录。
+- 本机需要自定义位置时设置 `ANDROID_DELIVERY_JOURNEY_GRADLE_HOME` / `ANDROID_DELIVERY_JOURNEY_BUILD_ROOT`，不得把路径写死进 Skill。
 - 不使用目标项目或用户全局缓存替代隔离目录。
 
 ### Gemini、认证或网络不可用
@@ -618,9 +635,9 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 ## 最终检查清单
 
-调用 Journey 前必须全部回答“是”：
+把原子验证义务分配给 Journey 前必须全部回答“是”：
 
-- [ ] 需求确认后的 BDD 包含用户 UI 操作和可见结果。
+- [ ] 当前 `BDD/Then` 包含用户 UI 操作和可见结果。
 - [ ] 编码后的实际 diff 确实改变 UI 行为或状态流转。
 - [ ] 前置条件可以稳定准备。
 - [ ] 预期结果可以从页面可见内容判断。
@@ -631,4 +648,4 @@ python3 android-test-and-fix/scripts/run_journey.py \
 - [ ] 设备、SDK、壳、认证和目标 APK 环境可用。
 - [ ] 测试不会操作生产数据或产生未授权破坏性影响。
 
-任一项为“否”，不要启动 Journey，选择更合适的测试路径并在测试报告中说明原因。
+任一项为“否”，不要把该验证义务分配给 Journey，选择更合适的测试路径并在测试报告中说明原因。其他全部满足条件的验证义务仍可按 `PARTIAL` 执行 Journey。

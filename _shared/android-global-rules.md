@@ -38,6 +38,14 @@
 - 老项目告警必须区分本次新增、直接受影响、无关历史和来源不明；不得更新 baseline 或批量 suppress 掩盖新增问题，也不得顺手清理无关历史债务。
 - 反射、生成代码、AIDL、JNI、闭源 SDK、release/R8、JDK/AGP/desugaring 只在需求或 diff 触发时验证；证据不足时标未验证，不猜内部行为或关闭混淆造绿。
 
+### 需求验证与证据完整性
+
+- 把每条已确认 BDD 的复合 Then 拆成可独立证明的验证义务；每项必须映射到自动测试、实际人工证据、未验证或阻塞，不得被单一工具的笼统通过静默覆盖。
+- 需求确认后初判影响面和 `L1/L2/L3/BLOCKED` 风险，编码后根据最终 diff 终判；风险按业务后果、边界和调用链判断，不按代码行数判断。
+- 选择能够证明行为的最低且足够测试层。UI 与业务混合需求必须拆层验证，Journey、截图、Unit、静态扫描均不得越过各自证据边界。
+- 测试能力优先复用项目已有框架和任务；缺少设备或工具时继续其他可执行门禁，能力损失标未验证，不自动安装依赖或用较弱证据冒充等价通过。
+- 只有所有必需验证义务都有最终代码上的新鲜证据，才允许声明整体全绿；计划人工执行但尚未实际执行时仍为未验证。
+
 ### Python 脚本简介与核心注释
 
 - 以后任何任务只要新增、修改、调用或验证 `.py` 文件，AI 都必须主动检查本次涉及的全部 Python 脚本并补齐中文文件级简介，用户不需要重复提醒。
@@ -215,7 +223,7 @@
 - `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段、OpenAPI 和契约兼容审查。
 - `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态、可见轻交互和人工/设备 A11y 表现验证；可以复用测试产出的截图与 A11y 结果，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
 - `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器/迁移/A11y 测试物化、条件能力命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
-- Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`，只有 UI 行为或可见状态流转变化才生成 Journey；`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
+- Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`；每条 BDD 用户旅程按 `FULL/PARTIAL/NONE` 路由，只为 Journey 可稳定覆盖的原子 Then 生成用例，`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
 - `android-audit-stability`：只负责崩溃、生命周期、协程、动态泄漏、ANR、性能、运行时安全隐私、资源释放和 Android 版本兼容风险。
 - `android-review-code-quality`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
 

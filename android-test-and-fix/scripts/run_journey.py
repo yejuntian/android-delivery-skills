@@ -5,7 +5,8 @@
 
 主流程：预检 Journey -> 构建并安装目标 APK -> 从 APK 注入真实包名 -> 执行
 Journey -> 归因失败 -> 输出 JSON/Markdown 报告。壳项目与目标项目相互隔离，因此
-无需升级旧项目的 Gradle 或 AGP。
+无需升级旧项目的 Gradle 或 AGP；Gradle 用户缓存、项目缓存和构建输出均写入 Skill
+目录外，避免运行产物导致 Skill 超出体积限制。
 
 退出码是自动修复的安全边界：0 表示真实通过、明确跳过或仅预检，必须结合状态读取；
 1 表示壳、设备、结构化证据或环境不可用，只能降级，不得修改目标应用；2 表示连续
@@ -34,6 +35,8 @@ SKILL_DIR = SCRIPT_DIR.parent
 SUITE_ROOT = SKILL_DIR.parent
 DEFAULT_HARNESS = SKILL_DIR / "assets" / "journey-harness"
 DEFAULT_CONFIG = SUITE_ROOT / "profiles" / "local.yaml"
+JOURNEY_GRADLE_HOME_ENV = "ANDROID_DELIVERY_JOURNEY_GRADLE_HOME"
+JOURNEY_BUILD_ROOT_ENV = "ANDROID_DELIVERY_JOURNEY_BUILD_ROOT"
 
 # Journey 与总入口必须使用完全相同的配置路径语义。
 if str(SUITE_ROOT) not in sys.path:
@@ -53,6 +56,44 @@ NO_JOURNEY_FOUND = "NO_JOURNEY_FOUND"
 
 ADB_TIMEOUT_SECONDS = 120
 GRADLE_TIMEOUT_SECONDS = 1800
+
+
+def _default_harness_runtime_root(harness: Path) -> Path:
+    """按壳路径生成稳定的本机运行目录，使不同 Skill 副本互不污染。"""
+    cache_root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    harness_key = hashlib.sha256(str(harness.resolve()).encode("utf-8")).hexdigest()[:12]
+    return (cache_root.expanduser() / "android-delivery-skills" / "journey-runtime" / harness_key).resolve()
+
+
+def resolve_harness_gradle_user_home(harness: Path) -> Path:
+    """返回 Skill 目录外的独立 Gradle 用户缓存，避免依赖缓存撑大 Skill。"""
+    explicit = os.environ.get(JOURNEY_GRADLE_HOME_ENV)
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    return (_default_harness_runtime_root(harness) / "gradle-user-home").resolve()
+
+
+def resolve_harness_build_root(harness: Path) -> Path:
+    """返回 Skill 目录外的壳构建目录，供 Gradle、结果和截图读取共用。"""
+    explicit = os.environ.get(JOURNEY_BUILD_ROOT_ENV)
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    return (_default_harness_runtime_root(harness) / "harness-app-build").resolve()
+
+
+def resolve_harness_project_cache(harness: Path) -> Path:
+    """返回 Skill 目录外的 Gradle 项目缓存，避免壳根目录重新生成 .gradle。"""
+    return (_default_harness_runtime_root(harness) / "project-cache").resolve()
+
+
+def resolve_fallback_result_path(harness: Path) -> Path:
+    """返回外部兜底报告路径，配置读取失败时也不在 Skill 内生成 build 目录。"""
+    return (
+        _default_harness_runtime_root(harness)
+        / "reports"
+        / "journey-harness"
+        / "result.json"
+    ).resolve()
 
 
 @dataclass
@@ -550,11 +591,19 @@ def discover_journey_task(
         return configured, None
     gradlew = harness / "gradlew"
     env = os.environ.copy()
-    env["GRADLE_USER_HOME"] = str(harness / ".gradle-user-home")
+    env["GRADLE_USER_HOME"] = str(resolve_harness_gradle_user_home(harness))
+    env[JOURNEY_BUILD_ROOT_ENV] = str(resolve_harness_build_root(harness))
     env["ANDROID_HOME"] = sdk
     env["ANDROID_SDK_ROOT"] = sdk
     result = run(
-        [str(gradlew), ":harness-app:tasks", "--all", "--console=plain"],
+        [
+            str(gradlew),
+            "--project-cache-dir",
+            str(resolve_harness_project_cache(harness)),
+            ":harness-app:tasks",
+            "--all",
+            "--console=plain",
+        ],
         cwd=harness,
         env=env,
         timeout=GRADLE_TIMEOUT_SECONDS,
@@ -601,7 +650,7 @@ def classify_failure(output: str) -> str:
 def collect_structured_results(harness: Path, started_at: float) -> StructuredTestResult:
     """读取本轮生成的 JUnit XML；没有结构化执行数量时拒绝判绿。"""
     summary = StructuredTestResult()
-    build_root = harness / "harness-app" / "build"
+    build_root = resolve_harness_build_root(harness)
     if not build_root.is_dir():
         return summary
     for path in build_root.rglob("*.xml"):
@@ -640,10 +689,11 @@ def collect_structured_results(harness: Path, started_at: float) -> StructuredTe
 def collect_screenshots(harness: Path, started_at: float) -> list[str]:
     """只收集 Journey/capture/screenshot 结果目录，排除普通构建图片资源。"""
     paths = []
+    build_root = resolve_harness_build_root(harness)
     for pattern in ("**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.webp"):
-        for raw in glob.glob(str(harness / "harness-app" / "build" / pattern), recursive=True):
+        for raw in glob.glob(str(build_root / pattern), recursive=True):
             path = Path(raw)
-            relative = str(path.relative_to(harness / "harness-app" / "build")).lower()
+            relative = str(path.relative_to(build_root)).lower()
             is_evidence_dir = any(word in relative for word in ("journey", "screenshot", "capture"))
             if path.is_file() and is_evidence_dir and path.stat().st_mtime >= started_at - 1:
                 paths.append(str(path.resolve()))
@@ -664,8 +714,9 @@ def run_harness(
     env["JOURNEYS_CUSTOM_APP_ID"] = package
     env["ANDROID_SERIAL"] = device
     env["ORG_GRADLE_PROJECT_org.gradle.configuration-cache"] = "false"
-    # 隔离 Gradle 用户目录，避免旧 ~/.gradle/init.d 脚本和缓存污染 AGP 9 壳项目。
-    env["GRADLE_USER_HOME"] = str(harness / ".gradle-user-home")
+    # 使用 Skill 外的专用缓存，既隔离旧 ~/.gradle/init.d，也避免生成物撑大 Skill 目录。
+    env["GRADLE_USER_HOME"] = str(resolve_harness_gradle_user_home(harness))
+    env[JOURNEY_BUILD_ROOT_ENV] = str(resolve_harness_build_root(harness))
     env["ANDROID_HOME"] = sdk
     env["ANDROID_SDK_ROOT"] = sdk
     commands: list[list[str]] = []
@@ -708,7 +759,14 @@ def run_harness(
         attempt_started_at = time.time()
         # 强制重跑，且拒绝 NO-SOURCE/0 tests，避免复用缓存或空任务形成假绿。
         result = run(
-            [str(harness / "gradlew"), task, "--rerun-tasks", "--console=plain"],
+            [
+                str(harness / "gradlew"),
+                "--project-cache-dir",
+                str(resolve_harness_project_cache(harness)),
+                task,
+                "--rerun-tasks",
+                "--console=plain",
+            ],
             cwd=harness,
             env=env,
             stream=True,
@@ -867,7 +925,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     harness = Path(args.harness_dir).expanduser().resolve()
-    fallback_result_path = harness / "build" / "reports" / "journey-harness" / "result.json"
+    fallback_result_path = resolve_fallback_result_path(harness)
     config_path = Path(args.config).expanduser().resolve()
     try:
         config = load_config(config_path)

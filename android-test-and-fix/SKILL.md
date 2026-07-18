@@ -23,6 +23,7 @@ description: Android 测试驱动交付与自修复闭环。适用于 Android �
 
 ## 内置资源
 
+- `references/adaptive-test-routing.md`：原子验证义务、`L1`、`L2`、`L3` 风险、分层测试、Journey `FULL`、`PARTIAL`、`NONE`、能力降级和统一证据门禁；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时必须读取。
 - `scripts/run_journey.py`：Journey 预检、目标 APK 构建安装、重试、错误分类和测试报告生成。
 - `scripts/detect_package.py`：仅作源码阶段 applicationId 诊断；正式执行从 APK 读取真实包名。
 - `scripts/tests/`：Journey 执行器回归测试。
@@ -31,11 +32,11 @@ description: Android 测试驱动交付与自修复闭环。适用于 Android �
 
 ## 闭环执行顺序
 
-1. 从当前需求追溯表读取稳定 `REQ-###` / `BDD-###`，建立 `BDD -> TEST-### -> 测试方法 -> 断言 -> 执行命令` 映射，确保每条 Then 有落点。单独调用且没有追溯表时，先在本次报告中建立同结构的最小映射；只有 `requirement_dir` 已确认时才创建文件。
+1. 从当前需求追溯表读取稳定 `REQ-###` / `BDD-###`，把复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，建立 `BDD/Then -> TEST-### -> 测试方法 -> 断言 -> 执行命令` 映射。单独调用且没有追溯表时，先在本次报告中建立同结构的最小映射；只有 `requirement_dir` 已确认时才创建文件。
 2. 检索现有测试目录、依赖、基类、fixture、命名和 Gradle task；沿用项目范式。
 3. 对 Bug 或可观察行为变化，优先先运行能复现目标行为的测试并保留 Red 证据，再做最小修改使其转 Green。测试在实现前就通过时，必须检查断言是否无效、前置是否错误或测试未覆盖变化。
 4. 为本次行为新增或补强测试。优先黑盒状态/输出断言，不测试实现细节。
-5. 先运行新增/受影响测试，再运行相关模块测试、构建和 lint；按业务需求、BDD 和实际 diff 选择测试类型。只有 Journey 适用性门禁通过时才调用 `run_journey.py`。
+5. 先运行新增/受影响测试，再运行相关模块测试、构建和 lint；按业务需求、BDD、风险和实际 diff 选择能够证明行为的最低且足够测试层。混合影响或能力边界按 `references/adaptive-test-routing.md` 路由，只有分配给 Journey 的验证义务通过适用性门禁时才调用 `run_journey.py`。
 6. 失败时保留原始命令、退出码和首个根因，修改最小范围代码后重跑。生产缺陷修生产代码；测试本身错误才修测试。
 7. 每轮修复后重跑失败项和受影响回归集。连续 3 轮同一根因仍失败才暂停。
 8. 最后一次修复完成后重新执行全部必需命令，把最终结果写回追溯表；旧轮次通过结果不得作为最终证据。
@@ -77,9 +78,9 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 1. **Kotlin/Java 编译**：读取项目模块、variant 和 Gradle task，优先执行受影响模块已有的 Kotlin/Java compile task；无法可靠确定独立 compile task 时，使用项目已有最小 assemble/test task 覆盖编译，不猜任务名造结果。
 2. **Android Lint**：存在 Android 模块和对应 lint task 时执行受影响范围的现有 lint；保存文本输出及项目生成的 SARIF、XML 或 HTML 报告路径。
 3. **语言专项**：Kotlin 仅执行项目已配置的 detekt；Java 仅执行项目已配置的 Error Prone、NullAway、SpotBugs 或 Infer。遵守现有版本、task、config 和扫描范围，不临时生成规则集。
-4. **质量任务**：PMD、Checkstyle、ktlint 等只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
+4. **质量任务**：PMD、Checkstyle 等格式或风格任务只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
 5. **跨语言扫描**：Semgrep 只有本机/项目已有 binary 且仓库已有明确 config/rules 时执行；CodeQL 只有仓库、脚本或 CI 已配置 Kotlin/Java 流程时复用。不得自动下载未知规则、创建数据库或设计新查询套件。
-6. **公开契约**：公共 Java/Kotlin API 变化且项目已有 Metalava、ABI/API validator 或兼容任务时执行；没有既有能力时做人工兼容审查并记录机器校验未验证。
+6. **公开契约**：公共 Java/Kotlin API 变化且项目已有 ABI/API validator 或兼容任务时执行；没有既有能力时做人工兼容审查并记录机器校验未验证。
 
 发现与结论规则：
 
@@ -160,7 +161,7 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 - 构建兼容：反射、生成代码、R8/ProGuard、Java language level 或 desugaring 变化时覆盖项目已有 release/minify/目标 variant。
 - 回归影响：相关入口、详情页、搜索、筛选、推送、DeepLink。
 
-每条用例标注：用例名、前置条件、步骤、预期结果、自动化类型、是否本次必须执行。
+每条用例标注：对应 `BDD/Then`、用例名、前置条件、步骤、预期结果、自动化类型、风险等级、是否本次必须执行。
 
 ### 黑盒状态驱动底线
 
@@ -181,7 +182,7 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 
 - Unit：ViewModel、UseCase、Repository、mapper、工具函数。
 - UI：Compose UI Test、Espresso、UIAutomator。
-- Screenshot：Paparazzi、Roborazzi、Shot 或项目已有截图方案。
+- Screenshot：Paparazzi、Shot 或项目已有截图方案。
 - CLI：Gradle 构建、lint、adb 安装、截图、logcat。
 - Manual：需要人工确认的设计稿、复杂交互、第三方环境、真实后端数据。
 
@@ -212,36 +213,44 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 
 ## Journey UI 测试
 
-Journey 属于 UI 功能测试用例，由本 Skill 根据已确认 BDD 生成和执行；`android-verify-ui` 只消费截图或结果做设计还原验收，不管理 Journey 用例。
+Journey 属于已安装 APK 的关键用户旅程冒烟测试，由本 Skill 根据已确认 BDD 生成和执行；它不是全部业务测试入口。`android-verify-ui` 只消费截图或结果做设计还原验收，不管理 Journey 用例。
 
 不得要求用户编写或提供 Journey XML、action/step、文件名或 Gradle task。必须先从已确认需求、BDD、实际 diff、现有测试和页面入口自动生成当前需求的测试用例；只有无法确定业务前置条件或预期结果时，才询问缺失的业务含义。`NO_JOURNEY_FOUND` 是本 Skill 需要补齐测试物化的内部门禁，不是把技术工作转交给用户的提示。
 
 ### 适用性门禁
 
-生成 Journey 前先同时检查需求和实际 diff，不得因为项目有界面就默认运行：
+生成 Journey 前先同时检查需求和实际 diff，不得因为项目有界面就默认运行。先判断 UI 影响：
 
 | UI 影响 | Journey 处理 | 状态 |
 | --- | --- | --- |
 | 无 UI 文件、可见状态或用户交互变化 | 不生成用例，不启动 SDK、设备或壳 | `SKIPPED_NO_UI` |
 | 只有布局、颜色、字号、间距、图片等视觉变化 | 不运行 Journey；按需运行截图测试，并提示单独视觉验收 | `SKIPPED_VISUAL_ONLY` |
-| 用户操作、导航、输入、可见状态流转或系统交互变化 | 自动从 BDD 生成 Journey 并执行 | `PASS` / `NO_JOURNEY_FOUND` / 失败状态 |
+| 用户操作、导航、输入、可见状态流转或系统交互变化 | 进入 `FULL/PARTIAL/NONE` 适用性判断 | 候选，不等于必须执行 |
 
-`NO_JOURNEY_FOUND` 只允许出现在已经判定为“UI 行为/状态流转需要 Journey”之后。无 UI 或纯视觉需求使用对应 `SKIPPED_*`，不算测试失败，也不得要求用户补 Journey 场景。
+再按每个原子 Then 的能力分配，聚合出整条 BDD 用户旅程的三级适用性：
 
-Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、实际 diff、前置条件和预期结果自动判断，不得要求用户选择 `none`、`visual` 或 `behavior`。调用前在测试矩阵中记录“Journey：适用/不适用 + 原因”。只有同时满足以下条件才调用 Journey：
+| 适用性 | 判定 | Journey 处理 |
+| --- | --- | --- |
+| `FULL` | BDD 中全部用户可见操作和可见断言都能由 Journey 稳定完成 | 生成并执行完整 Journey；非 UI/不可见 Then 仍由其他测试层证明 |
+| `PARTIAL` | Journey 只能稳定完成其中部分用户可见操作或可见断言 | 只生成可覆盖部分；其余 Then 路由到 Unit、Integration、Compose/Espresso、UIAutomator、截图或实际人工路径 |
+| `NONE` | 前置、操作或结果无法可靠表达，或其他测试层更合适 | 不启动壳，使用其他证据 |
+
+`FULL/PARTIAL/NONE` 只是适用性，不是测试结果。Journey `PASS` 只允许把它实际断言的 Then 标为自动覆盖，不能替代同一 BDD 中的业务计算、接口、数据库、视觉、性能、泄漏或安全验证。`NO_JOURNEY_FOUND` 只允许出现在已有验证义务最终分配给 Journey、但用例未成功物化之后。无 UI 或纯视觉需求使用对应 `SKIPPED_*`，不算测试失败，也不得要求用户补 Journey 场景。
+
+Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、实际 diff、前置条件和预期结果自动判断，不得要求用户选择 `none`、`visual` 或 `behavior`。调用前按每条 BDD 记录 `FULL/PARTIAL/NONE + 原因`，并逐个 Then 记录是否分配给 Journey。只有分配给 Journey 的验证义务同时满足以下条件才调用：
 
 1. 本次需求改变用户操作、导航、输入或可见状态流转。
 2. Given 前置条件可以稳定准备，不依赖验证码、真实支付或不可控第三方环境。
 3. Then 可以通过页面上可见的文本、控件或状态判断。
 4. 不要求像素级精度、复杂手势、精确时序或内部数据证明。
 
-任一条件不满足时，自动选择 Unit、Espresso、Compose UI Test、UIAutomator、截图测试或人工路径，不得启动 Journey 壳。
+任一条件不满足时，只把对应验证义务路由到 Unit、Integration、Espresso、Compose UI Test、UIAutomator、截图测试或实际人工路径；其他满足条件的验证义务仍可作为 `PARTIAL` Journey 执行。
 
 采用“两次判断、一次执行”：
 
-1. **需求确认后初判**：根据已确认 BDD 标记 `候选适用 / 初判不适用`，用于提前设计测试。候选适用时可以生成 Journey 用例草稿，但不得启动设备或壳。
-2. **编码完成后终判**：读取实际 diff、最终页面入口和可执行前置条件，重新判断并记录最终原因。
-3. **只执行一次**：只有终判为适用时才物化最终 XML，并以 `--ui-impact behavior` 调用脚本；终判不适用时选择其他测试，不调用 Journey。
+1. **需求确认后初判**：根据已确认 BDD 和原子 Then 分配，标记整条 Journey 候选 `FULL/PARTIAL/NONE`，用于提前设计测试。候选可覆盖时可以生成 Journey 用例草稿，但不得启动设备或壳。
+2. **编码完成后终判**：读取实际 diff、最终页面入口和可执行前置条件，重新判断并记录最终原因；能力缩小则拆分路由，影响扩大则补充其他测试层。
+3. **只执行一次**：只要终判仍有验证义务分配给 Journey，就物化这些义务的最终 XML，并以 `--ui-impact behavior` 调用脚本；没有分配项时选择其他测试，不调用 Journey。
 
 需求初判与实际 diff 不一致时，以编码后的终判为准，并在测试报告中说明变化原因。
 
@@ -250,6 +259,7 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 - 把 `Given` 转成可复现前置条件：启动入口、DeepLink、登录/数据、权限、语言、主题、字体和方向。壳只负责启动应用，不能隐式满足前置条件。
 - 把每个 `When` 拆成独立 action，避免一个 action 包含多个操作。
 - 把每个 `Then` 写成独立 verify/check action，不得只隐含在操作描述中。
+- XML 和最终报告必须标明覆盖的 `BDD/Then`；同一 BDD 中未分配给 Journey 的 Then 保持自己的测试与状态，不因 Journey 通过而改变。
 - 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线和需求正文哈希，单独调用时来自需求正文哈希。也可用 `testing.journey_harness.cases_dir` 或 `--journeys-dir` 显式指定。至少包含一个有效 action/step，拒绝零测试假绿。
 - 不把需求用例长期保存在共享壳源码中。执行器每次只把当前用例集同步到壳的暂存目录，并清除上一次运行残留的 XML，防止跨项目串用测试。
 - 多指、长按、双击、旋转/折叠、精确计数或复杂条件不稳定时，改用项目已有 Compose/Espresso/UIAutomator，或明确列为人工测试。
@@ -273,7 +283,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 1. 拒绝零 Journey、空 action/step、成功日志中的 `NO-SOURCE`/`0 tests`，以及没有本轮结构化 JUnit XML 的成功退出；只有实际测试数大于 0 且失败数为 0 才判绿。
 2. 使用目标项目自己的 Gradle wrapper 构建指定 module/variant，不改变其 AGP。
 3. 从最终 APK 读取 applicationId，安装后通过 `pm path` 校验实际包名。
-4. 通过独立 AGP 9 壳注入 `JOURNEYS_CUSTOM_APP_ID`，并隔离 `GRADLE_USER_HOME`。
+4. 通过独立 AGP 9 壳注入 `JOURNEYS_CUSTOM_APP_ID`，并把隔离的 `GRADLE_USER_HOME`、Gradle 项目缓存与 build 输出放在 Skill 目录外的用户缓存位置。
 5. 每轮先 force-stop 并重新应用配置中明确的 Given 前置条件；优先用结构化失败结果归类。只有连续两次真实 UI 断言失败才返回 `APP_ASSERTION_FAILED`，且不证明生产代码必然有错。
 6. 只从 Journey/screenshot/capture 结果目录收集截图，禁止把普通构建资源当成证据。
 7. 按需求作用域输出 `<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json` 和 `result.md`，记录实际测试数、结构化结果、命令、设备、包名、APK、task、轮次和截图。
@@ -300,9 +310,10 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 ## 全绿门禁
 
 - 必需：新增/受影响测试、相关模块测试、assemble、lint 0 Error。
-- 条件必需：按业务影响选择仪器或截图测试；Journey 仅在适用性门禁通过且设备可用时执行。
-- 所有 BDD Then 均已覆盖；无法自动化的项有可复现人工步骤和原因。
-- 当前需求追溯表中全部已确认 `REQ-ID` 都映射到 `BDD-ID`、实现、`TEST-ID`/人工验收、命令和最终证据，需求映射率为 100%。
+- 条件必需：按业务影响选择仪器或截图测试；Journey 只执行 `FULL` 或 `PARTIAL` 中实际分配给它的验证义务。
+- 每个原子 Then 使用 `COVERED_AUTOMATED`、`COVERED_MANUAL`、`UNVERIFIED`、`BLOCKED` 或 `NOT_APPLICABLE`；`COVERED_MANUAL` 必须已经实际执行并有证据，不能用于尚未执行的计划。
+- 当前需求追溯表中全部已确认 `REQ-ID` 都映射到 `BDD-ID/Then`、实现、`TEST-ID`/实际人工验收、必需性、命令和最终证据，需求映射率为 100%。
+- 所有必需 Then 均为 `COVERED_AUTOMATED` 或有证据的 `COVERED_MANUAL`；Journey、截图、Unit 或静态扫描不得越过自身证据边界。
 - 失败数为 0，P0/P1 测试缺口为 0。未执行项不得计为通过。
 - 必需测试不得存在未关闭的 `FLAKY`，最终证据必须在最后一次修复后重新执行。
 
@@ -342,12 +353,12 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 ## 输出格式
 
 1. 测试范围
-2. 追溯覆盖率：`REQ-ID -> BDD-ID -> TEST-ID/人工验收 -> 最终证据`
+2. 追溯覆盖率：`REQ-ID -> BDD-ID/Then -> TEST-ID/实际人工验收 -> 覆盖状态 -> 最终证据`
 3. 项目已有静态门禁：Kotlin/Java 编译、Lint、语言专项、跨语言扫描和 API/ABI 任务的发现依据、命令、退出码、报告和能力损失
 4. 历史债务：`NEW` / `AFFECTED` / `PRE_EXISTING` / `UNKNOWN_ORIGIN` 数量、处置和证据
 5. release/R8/Java 兼容：适用性、variant、命令、结论与未验证项
 6. 条件能力矩阵：OpenAPI / 迁移 / 泄漏 / 性能 / UI-A11y / 安全隐私的适用性、设备类型和结论
-7. 测试用例矩阵：主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
+7. 测试用例矩阵：原子 Then、风险等级、必需性、主/备用执行器、主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
 8. Red-Green 证据：首次 Red、最小修改和最终 Green；不适用时说明原因
 9. 自动化可执行项和需要人工验证项
 10. 最终新鲜证据：命令、退出码、测试数、关键输出和报告/产物路径

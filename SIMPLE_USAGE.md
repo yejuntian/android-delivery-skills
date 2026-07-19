@@ -56,6 +56,8 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 
 `requirement-revision.json` 由 AI 根据已经确认的 BDD 自动生成，用户不需要手写 JSON、修订号或 Then 摘要；用户只确认业务变化和删除处置。文件结构以 `android-implement-and-verify/references/requirement-revision.schema.json` 为准。
 
+英文枚举只属于 `requirement-revision.json` 的机器协议。AI 给用户展示需求修订时必须转换为中文，例如“修改 / 已确认”“新增 / 已确认”“未变化 / 已确认”；待确认、冲突、撤回和删除处置也必须使用中文，不能要求用户理解英文状态。
+
 ### 需求文件读取失败时
 
 读取逻辑保持单一职责，不自行搜索其他文件或推测需求：

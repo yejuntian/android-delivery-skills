@@ -748,7 +748,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("需求变化候选", text)
         self.assertIn("+允许点击重试", text)
         self.assertIn("BDD-001/T1", text)
-        self.assertIn("ADDED/CHANGED/REMOVED/UNCHANGED", text)
+        self.assertIn("新增、修改、删除、未变化、已被新要求替代", text)
+        self.assertIn("英文枚举只写入 requirement-revision.json", text)
+        self.assertNotIn("ADDED/CHANGED/REMOVED/UNCHANGED", text)
 
     def test_confirm_command_never_changes_git_baseline(self) -> None:
         """验证独立需求确认只更新修订快照，不覆盖当前需求 Git 起点。"""

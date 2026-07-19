@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 import re
 import sys
@@ -65,36 +64,20 @@ from .route_impact import (  # noqa: E402
     build_route_impact,
     write_route_impact,
 )
+from .user_facing_labels import (  # noqa: E402
+    CHANGE_TYPE_LABELS,
+    DECISION_LABELS,
+    GIT_CHANGE_LABELS,
+    REMOVAL_DISPOSITION_LABELS,
+    SNAPSHOT_STATUS_LABELS,
+    ChineseArgumentParser,
+    localize_machine_terms,
+)
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = SKILL_ROOT / "profiles/local.yaml"
 REQUIREMENTS_PATH = SKILL_ROOT / "requirements.txt"
-CHANGE_TYPE_LABELS = {
-    "ADDED": "新增",
-    "CHANGED": "修改",
-    "REMOVED": "删除",
-    "UNCHANGED": "未变化",
-    "SUPERSEDED": "已被新要求替代",
-}
-DECISION_LABELS = {
-    "CONFIRMED": "已确认",
-    "PENDING": "待确认",
-    "REJECTED": "已撤回/拒绝",
-    "CONFLICT": "存在冲突",
-}
-SNAPSHOT_STATUS_LABELS = {
-    "AWAITING_OBLIGATIONS": "等待生成验收清单",
-    "PENDING_CONFIRMATION": "存在待确认变化",
-    "CONFIRMED": "已确认",
-}
-REMOVAL_DISPOSITION_LABELS = {
-    "REMOVE_IMPLEMENTATION": "整个功能彻底删除",
-    "KEEP_COMPATIBILITY": "只删除当前入口，保留兼容能力",
-    "STOP_UNFINISHED_WORK": "取消本轮尚未完成的开发",
-}
-
-
 class DeliveryError(RuntimeError):
     """表示已有明确原因、不能继续猜测的流程错误。"""
 
@@ -118,7 +101,7 @@ def parse_args(argv=None):
     """
     解析命令行参数，定义三大生命周期命令和独立需求修订确认命令。
     """
-    parser = argparse.ArgumentParser(description="Android Delivery Workflow CLI")
+    parser = ChineseArgumentParser(description="Android 需求交付流程命令")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 阶段一：init (需求分析阶段)
@@ -137,7 +120,7 @@ def parse_args(argv=None):
     # 需求确认：只推进需求修订，不改变编码起点 Git 基线。
     parser_confirm = subparsers.add_parser(
         "confirm-requirement-update",
-        help="确认需求修订清单并更新当前有效 BDD/Then",
+        help="确认需求修订清单并更新当前有效原子验收项",
     )
     parser_confirm.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
     parser_confirm.add_argument(
@@ -147,7 +130,7 @@ def parse_args(argv=None):
     )
 
     # 阶段三：route (动态路由审查阶段)
-    parser_route = subparsers.add_parser("route", help="分析 diff 并路由到对应的审查 Skill")
+    parser_route = subparsers.add_parser("route", help="分析代码改动并调用对应审查能力")
     parser_route.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
 
     return parser.parse_args(argv)
@@ -225,14 +208,11 @@ def read_requirement(path):
 
 
 def print_bdd_instruction():
-    """打印 BDD 输出指令，要求 AI 用 Given/When/Then 结构写验收标准。"""
+    """打印中文需求验收指令，机器编号保留但不要求用户理解英文术语。"""
     print("👉 AI 指令：先输出【当前需求理解】及 UI/API/业务/存储/系统能力影响，再输出 BDD 验收标准。")
     print("为需求、场景分配稳定 REQ-### / BDD-###；检查主流程、备选、异常、恢复和非功能场景。")
-    print("BDD 使用 Given/When/Then 格式，缺失类别标记待确认或不适用及原因，不得为凑数量脑补。")
-    print("  - Given：给定 / 前置条件")
-    print("  - When：当 / 操作发生")
-    print("  - Then：那么 / 期望结果")
-    print("把复合 Then 拆成 BDD-001/T1 形式的原子验证义务，并初判 L1/L2/L3/BLOCKED 风险。")
+    print("BDD 面向用户使用【前提 / 操作 / 预期结果】，缺失类别标记待确认或不适用及原因，不得为凑数量脑补。")
+    print("把复合预期结果拆成 BDD-001/T1 形式的原子验收项，并用中文说明一级、二级、三级或信息不足的风险结论。")
     print("检测到变化时，面向用户只用中文展示：新增、修改、删除、未变化、已被新要求替代。")
     print("确认决策只展示：已确认、待确认、已撤回/拒绝、存在冲突；删除项使用中文说明实现处置。")
     print("英文枚举只写入 requirement-revision.json 机器字段，不得原样展示给用户。")
@@ -253,7 +233,7 @@ def print_environment_rules():
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
     print("  3. 局部迭代：编码后的完善、修改、删除或修复只运行受影响测试和必要编译，不自动 route 或全量审查。")
     print("  4. 需求变化：只有业务行为、边界或验收结果变化时才修订需求；确认后仍回到局部迭代。")
-    print("  5. 测试左移：按 REQ/BDD 分配 TEST-###；Bug 或可观察行为变化优先先保留 Red，再最小修改转 Green。")
+    print("  5. 测试左移：按 REQ/BDD 分配 TEST-###；缺陷或可观察行为变化优先保留能复现失败的测试，再最小修改至通过。")
     print("  6. 最终交付：仅在用户当前或最初明确要求最终检查、完整交付或准备提交时执行 route、assemble、lint 和完整门禁。")
     print("  7. 真实任务：根据实际模块、variant 和项目已有任务选择命令，不得写死 assembleDebug 或 lintDebug。")
     print("  8. 追溯与证据：局部结果只证明本轮范围；最终代码必须重新执行全部必需命令，需求映射率为 100%。")
@@ -314,7 +294,8 @@ def _reuse_existing_requirement_start(
 
     print("✅ 检测到当前需求已有起点，本次复用且不重建基线。")
     print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
-    print(f"✅ 当前需求修订: r{snapshot['revision']} ({snapshot['status']})")
+    snapshot_status = SNAPSHOT_STATUS_LABELS.get(snapshot["status"], "状态暂时无法识别")
+    print(f"✅ 当前需求修订: 第 {snapshot['revision']} 版（{snapshot_status}）")
     content_matches = snapshot["sha256"] == requirement_digest(requirement_content)
     if content_matches:
         print("✅ 当前需求正文与最近确认修订一致。")
@@ -552,11 +533,11 @@ def cmd_init(args):
     if snapshot and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve():
         print(
             f"\n📚 当前确认修订: {snapshot['requirement_id']} "
-            f"r{snapshot['revision']} "
+            f"第 {snapshot['revision']} 版 "
             f"({SNAPSHOT_STATUS_LABELS.get(snapshot['status'], '状态未知')})"
         )
         if snapshot["obligations"]:
-            print("=== 当前有效原子义务 ===")
+            print("=== 当前有效原子验收项 ===")
             for obligation in snapshot["obligations"]:
                 required = "必需" if obligation["required"] else "可选"
                 print(f"  - {obligation['id']} [{required}] {obligation['text']}")
@@ -664,7 +645,7 @@ def cmd_check_env(args):
     print(f"✅ 需求起点快照: {requirement_snapshot['sha256'][:12]}")
     print(f"✅ 当前需求集合: {requirement_snapshot['requirement_id']} r0")
     revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
-    print("👉 AI 指令：先把用户已确认的全部原子 Then 写入需求修订清单，再确认修订。")
+    print("👉 AI 指令：先把用户已确认的全部原子验收项写入需求修订清单，再确认修订。")
     print(f"修订清单: {revision_file}")
     print("未成功执行 confirm-requirement-update 前不得开始编码。")
 
@@ -699,9 +680,9 @@ def cmd_confirm_requirement_update(args):
 
     print(
         f"✅ 需求修订已确认: {snapshot['requirement_id']} "
-        f"r{snapshot['revision']} ({snapshot['sha256'][:12]})"
+        f"第 {snapshot['revision']} 版（内容摘要 {snapshot['sha256'][:12]}）"
     )
-    print("✅ 当前有效原子义务:")
+    print("✅ 当前有效原子验收项:")
     for obligation in snapshot["obligations"]:
         required = "必需" if obligation["required"] else "可选"
         print(f"  - {obligation['id']} [{required}] {obligation['text']}")
@@ -804,7 +785,8 @@ def cmd_route(args):
     print("📜 变更文件列表:")
     for change in changes:
         rename = f" <- {change.old_path}" if change.old_path else ""
-        print(f"  - [{change.status}] {change.path}{rename}")
+        change_status = GIT_CHANGE_LABELS.get(change.status, "文件状态暂时无法识别")
+        print(f"  - [{change_status}] {change.path}{rename}")
 
     print("\n🧭 语义影响候选(不是业务结论):")
     impact_labels = {
@@ -868,13 +850,13 @@ def cmd_route(args):
     skills_to_run.extend(["android-review-code-quality", "android-audit-stability", "android-test-and-fix"])
     print("  3. android-review-code-quality (默认:代码质量和架构一致性)")
     print("  4. android-audit-stability (默认:稳定性和兼容性风险)")
-    print("  5. android-test-and-fix (必跑:测试、自修复和全绿门禁；Journey 仅适用时执行)")
+    print("  5. android-test-and-fix (必跑:测试、自修复和全绿门禁；界面流程自动化测试仅适用时执行)")
 
     # UI 验收依赖设备和设计基准，保持为独立手动闭环。
     print("\n【独立·UI 验收(不进自动队列)】")
     if ui_files:
         print("  6. [建议单独执行] android-verify-ui (检测到 UI 候选，需结合 diff 复核)")
-        print("     └─ 只做截图与设计还原；Journey 功能测试由 android-test-and-fix 负责。")
+        print("     └─ 只做截图与设计还原；界面流程功能测试由 android-test-and-fix 负责。")
     else:
         print("  6. android-verify-ui (跳过:无 UI 候选)")
 
@@ -894,7 +876,7 @@ def main(argv=None):
         elif args.command == "route":
             cmd_route(args)
     except (DeliveryError, GitInspectionError, RequirementSnapshotError) as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
     return 0
 

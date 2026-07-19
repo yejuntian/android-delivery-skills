@@ -96,14 +96,20 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 
 你说“业务要求改成……”时，AI 只确认受影响的需求修订，再进入同一个局部测试循环。你说“最终检查”“完整交付”或“准备提交”时，AI 才基于最终代码完整执行一次 route 和门禁。已生成最终报告后代码再次变化，旧报告会失效，但完善期间不需要每次立即重跑完整流程。
 
+## 你会看到什么
+
+需求、变更、阶段提示、测试结果、失败原因、授权请求和最终报告全部使用自然中文。需求场景显示“前提 / 操作 / 预期结果”，不会要求你理解机器内部英文状态；失败时会同时说明原因、已完成范围、未完成范围、解除条件和你下一步需要做什么。
+
+`REQ-001`、`BDD-001/T1`、文件路径、Gradle 命令、类名和接口路径属于稳定技术标识，可以保留并附中文说明。`requirement-revision.json`、`delivery-result.json` 等机器附件继续使用英文枚举供脚本解析，但最终回复只优先展示中文摘要，不会把机器 JSON 正文直接交给你阅读。
+
 ## 整体流程顺序(一图看懂)
 
 ```text
-① delivery.py init    读需求 → 输出 BDD(Given/When/Then)
+① delivery.py init    读需求 → 输出 BDD（前提/操作/预期结果）
    └─ 停,等你确认「理解正确,继续」
                           ↓
 ② delivery.py check-env   查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
-③ delivery.py confirm-requirement-update   确认最新总需求和全部 Then → 开始编码
+③ delivery.py confirm-requirement-update   确认最新总需求和全部原子验收项 → 开始编码
    └─ 首次编码
                           ↓
 ④ 编码后局部迭代（可以重复多次）

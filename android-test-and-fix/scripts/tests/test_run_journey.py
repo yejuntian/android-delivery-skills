@@ -177,7 +177,7 @@ class RunJourneyTest(unittest.TestCase):
         output = Path(tempfile.mkdtemp()) / "result.json"
         result = run_journey.JourneyResult(
             run_journey.PASS,
-            "verified",
+            "已验证",
             0,
             device="device-1",
             journey_files=["home.xml"],
@@ -188,15 +188,19 @@ class RunJourneyTest(unittest.TestCase):
             uncovered_then_ids=["BDD-001/T2"],
             baseline_id="baseline-1",
             snapshot_sha256="a" * 64,
+            requirement_status="CONFIRMED",
         )
         run_journey.write_result(result, output)
         payload = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("PASS", payload["status"])
         self.assertEqual(["BDD-001/T1"], payload["covered_then_ids"])
         report = output.with_suffix(".md").read_text(encoding="utf-8")
-        self.assertIn("Journey Harness 执行报告", report)
+        self.assertIn("界面流程自动化测试报告", report)
         self.assertIn("device-1", report)
         self.assertIn("BDD-001/T2", report)
+        self.assertNotIn("`PASS`", report)
+        self.assertNotIn("`PARTIAL`", report)
+        self.assertNotIn("`CONFIRMED`", report)
 
     def test_distinguishes_uninitialized_harness_from_task_ambiguity(self):
         """验证可选壳缺任务时建议默认 Agent，多个任务仍归发现异常。"""

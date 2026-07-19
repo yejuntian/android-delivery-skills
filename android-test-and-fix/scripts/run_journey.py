@@ -15,7 +15,6 @@ Android CLI/adb 执行，本脚本不会启动或模拟不存在的 AI Agent CLI
 """
 from __future__ import annotations
 
-import argparse
 from datetime import datetime, timezone
 import glob
 import hashlib
@@ -56,6 +55,14 @@ from scripts.requirement_snapshot import (  # noqa: E402
     requirement_digest,
 )
 from scripts.requirement_inputs import requirement_inputs_digest  # noqa: E402
+from scripts.user_facing_labels import (  # noqa: E402
+    ChineseArgumentParser,
+    JOURNEY_APPLICABILITY_LABELS,
+    JOURNEY_STATUS_LABELS,
+    SNAPSHOT_STATUS_LABELS,
+    localize_machine_terms,
+    user_label,
+)
 
 PASS = "PASS"
 PREFLIGHT_PASS = "PREFLIGHT_PASS"
@@ -962,32 +969,40 @@ def write_result(result: JourneyResult, path: Path) -> None:
     ) or "- 无"
     covered_lines = "\n".join(f"- `{item}`" for item in result.covered_then_ids) or "- 无"
     uncovered_lines = "\n".join(f"- `{item}`" for item in result.uncovered_then_ids) or "- 无"
+    status_label = user_label(result.status, JOURNEY_STATUS_LABELS)
+    applicability_label = (
+        user_label(result.applicability, JOURNEY_APPLICABILITY_LABELS)
+        if result.applicability
+        else "未记录"
+    )
+    requirement_status_label = (
+        user_label(result.requirement_status, SNAPSHOT_STATUS_LABELS)
+        if result.requirement_status
+        else "未识别"
+    )
     report.write_text(
-        "# Journey Harness 执行报告\n\n"
-        f"- 状态：`{result.status}`\n"
+        "# 界面流程自动化测试报告\n\n"
+        f"- 当前结果：{status_label}\n"
         f"- 退出码：`{result.exit_code}`\n"
         f"- 设备：`{result.device or '未选择'}`\n"
-        f"- applicationId：`{result.package or '未识别'}`\n"
+        f"- 应用包名：`{result.package or '未识别'}`\n"
         f"- APK：`{result.apk or '未构建'}`\n"
-        f"- Journey task：`{result.task or '未识别'}`\n"
-        f"- Journey 文件数：`{len(result.journey_files)}`\n"
-        f"- action/step 数：`{result.action_count}`\n"
+        f"- 测试任务：`{result.task or '未识别'}`\n"
+        f"- 界面流程用例数：`{len(result.journey_files)}`\n"
+        f"- 实际操作步骤数：`{result.action_count}`\n"
         f"- 实际执行测试数：`{result.executed_tests}`\n"
         f"- 执行轮次：`{result.attempts}`\n"
-        f"- Journey 适用性：`{result.applicability or '未记录'}`\n"
+        f"- 界面流程适用范围：{applicability_label}\n"
         f"- 需求集合：`{result.requirement_id or '未识别'}`\n"
         f"- 需求修订：`{result.requirement_revision if result.requirement_revision is not None else '未识别'}`\n"
-        f"- 需求状态：`{result.requirement_status or '未识别'}`\n"
-        f"- Git 基线：`{result.baseline_id or '未识别'}`\n"
-        f"- 最终代码摘要：`{result.snapshot_sha256 or '未识别'}`\n"
-        f"- 完整需求输入摘要：`{result.requirement_inputs_sha256 or '未识别'}`\n"
+        f"- 需求状态：{requirement_status_label}\n"
         f"- 开始时间：`{result.started_at or '未记录'}`\n"
         f"- 完成时间：`{result.finished_at or '未记录'}`\n\n"
-        "## Journey 覆盖的 BDD/Then\n\n"
+        "## 已由界面流程验证的原子验收项\n\n"
         f"{covered_lines}\n\n"
-        "## 未由 Journey 覆盖的 BDD/Then\n\n"
+        "## 未由界面流程验证的原子验收项\n\n"
         f"{uncovered_lines}\n\n"
-        "## Journey 文件\n\n"
+        "## 界面流程用例文件\n\n"
         f"{journey_lines}\n\n"
         "## 截图证据\n\n"
         f"{screenshot_lines}\n\n"
@@ -996,12 +1011,13 @@ def write_result(result: JourneyResult, path: Path) -> None:
         "## 执行命令\n\n"
         f"{command_lines}\n\n"
         "## 说明\n\n"
-        f"{result.message}\n",
+        f"{localize_machine_terms(result.message)}\n\n"
+        "机器关联标识和内容摘要保存在同名 JSON 文件中，供脚本校验。\n",
         encoding="utf-8",
     )
-    print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
-    print(f"结果文件: {path.resolve()}")
-    print(f"机器报告: {report.resolve()}")
+    print(f"界面流程测试结果: {status_label}")
+    print(f"机器结果文件: {path.resolve()}")
+    print(f"中文测试报告: {report.resolve()}")
 
 
 def finish(result: JourneyResult, result_path: Path) -> int:
@@ -1014,11 +1030,11 @@ def finish(result: JourneyResult, result_path: Path) -> int:
         result.finished_at = datetime.now(timezone.utc).isoformat()
     write_result(result, result_path)
     if result.status == NO_JOURNEY_FOUND:
-        print("👉 AI 指令：根据已确认需求和 BDD 自动生成当前 Journey 用例；仅在业务预期不明确时询问用户。")
+        print("👉 AI 指令：根据已确认需求和验收场景自动生成当前界面流程用例；仅在业务预期不明确时询问用户。")
     elif result.status == INITIALIZATION_REQUIRED:
-        print("👉 可选 Journey 壳未初始化：优先改用默认 Android CLI Agent 或项目已有 UI 测试；只有明确选择壳时才用 Android Studio 初始化。")
+        print("👉 可选界面测试壳未初始化：优先改用默认 Android 命令行智能体或项目已有界面测试；只有明确选择测试壳时才用 Android Studio 初始化。")
     elif result.status in {HARNESS_UNAVAILABLE, HARNESS_FAILED, MALFORMED_JOURNEY}:
-        print("👉 壳 Journey 不可用：不要修改目标项目，改用现有仪器测试或人工测试路径。")
+        print("👉 界面流程测试壳不可用：不要修改目标项目，改用现有仪器测试或人工测试路径。")
     elif result.status == APP_ASSERTION_FAILED:
         print("👉 连续两次真实 UI 断言失败：先判断生产缺陷还是用例问题；修正对应一方后重跑。")
     return result.exit_code
@@ -1027,11 +1043,11 @@ def finish(result: JourneyResult, result_path: Path) -> int:
 def skip_result(ui_impact: str) -> JourneyResult | None:
     """在接触 SDK、设备和壳项目之前结束不适用的 Journey 测试。"""
     if ui_impact == "none":
-        return JourneyResult(SKIPPED_NO_UI, "需求和实际 diff 均无 UI 影响，Journey 不适用", 0)
+        return JourneyResult(SKIPPED_NO_UI, "需求和实际改动均无界面影响，无需执行界面流程测试", 0)
     if ui_impact == "visual":
         return JourneyResult(
             SKIPPED_VISUAL_ONLY,
-            "仅涉及布局、样式或资源等视觉变化；改用截图测试或独立 UI 视觉验收",
+            "仅涉及布局、样式或资源等视觉变化；改用截图测试或独立界面视觉验收",
             0,
         )
     return None
@@ -1039,7 +1055,7 @@ def skip_result(ui_impact: str) -> JourneyResult | None:
 
 def main(argv: list[str] | None = None) -> int:
     """按“适用性判断 → 壳预检 → 目标应用准备 → Journey”顺序执行。"""
-    parser = argparse.ArgumentParser(description="通过独立 AGP 9 壳执行 Journey UI 测试")
+    parser = ChineseArgumentParser(description="通过独立 AGP 9 测试壳执行界面流程自动化测试")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG))
     parser.add_argument("--harness-dir", default=str(DEFAULT_HARNESS))
     parser.add_argument("--module", default=None)
@@ -1051,16 +1067,16 @@ def main(argv: list[str] | None = None) -> int:
         "--ui-impact",
         choices=("none", "visual", "behavior"),
         required=True,
-        help="Journey 适用性：无 UI、纯视觉或 UI 行为/状态流转",
+        help="界面流程适用范围：无界面影响、纯视觉变化或界面行为/状态流转",
     )
     parser.add_argument(
         "--applicability",
         choices=("FULL", "PARTIAL", "NONE"),
         default=None,
-        help="由 android-test-and-fix 终判的 Journey 适用性；行为型测试必须为 FULL 或 PARTIAL",
+        help="由测试流程终判的界面流程适用范围；行为型测试必须为全部适用或部分适用",
     )
-    parser.add_argument("--covered-then", action="append", default=[], help="Journey 实际覆盖的 BDD/Then，可重复")
-    parser.add_argument("--uncovered-then", action="append", default=[], help="未由 Journey 覆盖的 BDD/Then，可重复")
+    parser.add_argument("--covered-then", action="append", default=[], help="界面流程实际覆盖的原子验收项，可重复")
+    parser.add_argument("--uncovered-then", action="append", default=[], help="未由界面流程覆盖的原子验收项，可重复")
     parser.add_argument("--retries", type=int, default=None)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--preflight-only", action="store_true")
@@ -1072,11 +1088,11 @@ def main(argv: list[str] | None = None) -> int:
     applicability = args.applicability or ("NONE" if args.ui_impact != "behavior" else None)
     coverage_error = None
     if args.ui_impact == "behavior" and applicability not in {"FULL", "PARTIAL"}:
-        coverage_error = "行为型 Journey 必须通过 --applicability 明确记录 FULL 或 PARTIAL"
+        coverage_error = "行为型界面流程必须明确记录全部适用或部分适用"
     elif args.ui_impact == "behavior" and not args.covered_then:
         coverage_error = "行为型 Journey 至少需要一个 --covered-then，禁止无追溯执行"
     elif args.ui_impact != "behavior" and applicability != "NONE":
-        coverage_error = "无 UI 或纯视觉需求的 Journey 适用性必须为 NONE"
+        coverage_error = "无界面影响或纯视觉需求的界面流程适用范围必须标记为不适用"
 
     context: dict[str, str] = {}
 
@@ -1112,7 +1128,7 @@ def main(argv: list[str] | None = None) -> int:
         return complete(
             JourneyResult(
                 HARNESS_UNAVAILABLE,
-                "当前需求修订尚未全部确认，拒绝生成或执行可能过期的 Journey",
+                "当前需求修订尚未全部确认，拒绝生成或执行可能过期的界面流程测试",
                 1,
             ),
             fallback_result_path,
@@ -1151,7 +1167,7 @@ def main(argv: list[str] | None = None) -> int:
         status = NO_JOURNEY_FOUND if not files else MALFORMED_JOURNEY
         message = f"{journey_error}\n用例目录: {journeys_dir}"
         if status == NO_JOURNEY_FOUND:
-            message += "\n应由 android-test-and-fix 根据已确认需求和 BDD 自动生成，不要求用户编写 XML"
+            message += "\n应由测试流程根据已确认需求和验收场景自动生成，不要求用户编写 XML"
         return complete(JourneyResult(status, message, 1, journey_files=[str(p) for p in files]), result_path)
 
     # 用例就绪后再检查壳、SDK、设备和任务，不触碰目标项目源码。
@@ -1190,7 +1206,7 @@ def main(argv: list[str] | None = None) -> int:
                                     commands=commands), result_path)
 
     if args.preflight_only:
-        return complete(JourneyResult(PREFLIGHT_PASS, "壳 Journey 预检通过，尚未执行测试", 0, device=device, task=task,
+        return complete(JourneyResult(PREFLIGHT_PASS, "界面流程测试壳预检通过，尚未执行测试", 0, device=device, task=task,
                                     journey_files=[str(p) for p in files], action_count=action_count,
                                     commands=commands), result_path)
 
@@ -1253,15 +1269,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     commands.extend(harness_result.commands)
     if harness_result.status == PASS:
-        message, exit_code = "Journey 已真实执行并通过", 0
+        message, exit_code = "界面流程测试已真实执行并通过", 0
     elif harness_result.status == APP_ASSERTION_FAILED:
         message = (
-            f"Journey 连续 {harness_result.attempts} 次 UI 断言失败\n"
+            f"界面流程测试连续 {harness_result.attempts} 次界面断言失败\n"
             f"{harness_result.output[-3000:]}"
         )
         exit_code = 2
     else:
-        message = f"壳 Journey 环境或运行器失败\n{harness_result.output[-3000:]}"
+        message = f"界面流程测试壳环境或运行器失败\n{harness_result.output[-3000:]}"
         exit_code = 1
     return complete(JourneyResult(
         harness_result.status, message, exit_code, device=device, package=package,

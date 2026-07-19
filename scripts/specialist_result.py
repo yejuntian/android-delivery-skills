@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 import re
@@ -27,6 +26,7 @@ if __package__ in {None, ""}:
 
 from .config_paths import specialist_directory_for_config  # noqa: E402
 from .execution_evidence import redact_command, sha256_file  # noqa: E402
+from .user_facing_labels import ChineseArgumentParser, localize_machine_terms  # noqa: E402
 
 
 SPECIALIST_PRODUCER = "android-delivery-specialist-result"
@@ -390,7 +390,7 @@ def validate_specialist_evidence(
 
 def main(argv: list[str] | None = None) -> int:
     """输出外部结果目录，或独立校验一个专项结果及其证据摘要。"""
-    parser = argparse.ArgumentParser(description="管理 Android 专项统一结果")
+    parser = ChineseArgumentParser(description="管理 Android 专项统一结果")
     subparsers = parser.add_subparsers(dest="command", required=True)
     path_parser = subparsers.add_parser("path", help="输出当前配置的外部专项结果目录")
     path_parser.add_argument("--config", default=None, help="配置文件路径")
@@ -416,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             directory.mkdir(parents=True, exist_ok=True)
         except (DeliveryError, DeliveryGateError, OSError) as exc:
-            print(f"❌ {exc}", file=sys.stderr)
+            print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
             return 1
         print(directory)
         return 0
@@ -424,12 +424,12 @@ def main(argv: list[str] | None = None) -> int:
         payload = load_specialist_result(args.result)
         errors = validate_specialist_result(payload)
     except SpecialistResultError as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
     if errors:
         print("❌ 专项结果无效:", file=sys.stderr)
         for error in errors:
-            print(f"- {error}", file=sys.stderr)
+            print(f"- {localize_machine_terms(error)}", file=sys.stderr)
         return 1
     print("✅ 专项结果结构、阻断发现和证据文件有效。")
     return 0

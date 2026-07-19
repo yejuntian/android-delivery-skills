@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import argparse
 from datetime import datetime
 import json
 from pathlib import Path
@@ -47,6 +46,15 @@ from .specialist_result import (  # noqa: E402
     JOURNEY_AGENT_SKILL,
     conditional_gates_from_confirmed_impacts,
     validate_specialist_evidence,
+)
+from .user_facing_labels import (  # noqa: E402
+    DELIVERY_CONCLUSION_LABELS,
+    GATE_STATUS_LABELS,
+    OBLIGATION_STATUS_LABELS,
+    ChineseArgumentParser,
+    gate_label,
+    localize_machine_terms,
+    user_label,
 )
 
 
@@ -99,43 +107,6 @@ MANUAL_GATE_PROOFS = {
     "android-dynamic-leak",
     "android-performance",
 }
-CONCLUSION_LABELS = {
-    "FULL_PASS": "全部验证通过",
-    "LOCAL_PASS_DEVICE_PENDING": "本地验证通过，设备专项待完成",
-    "INCOMPLETE": "尚未完成",
-    "BLOCKED": "交付受阻",
-}
-OBLIGATION_STATUS_LABELS = {
-    "COVERED_AUTOMATED": "自动测试通过",
-    "COVERED_MANUAL": "人工验证通过",
-    "UNVERIFIED": "尚未验证",
-    "BLOCKED": "受阻",
-    "NOT_APPLICABLE": "不适用",
-}
-GATE_STATUS_LABELS = {
-    "PASS": "通过",
-    "FAIL": "失败",
-    "SKIPPED": "不适用",
-    "UNVERIFIED": "尚未验证",
-    "BLOCKED": "受阻",
-}
-GATE_LABELS = {
-    "android-review-diff": "改动范围与回归审查",
-    "android-review-code-quality": "代码质量与架构审查",
-    "android-audit-stability": "稳定性审查",
-    "android-test-and-fix": "自动化测试与修复",
-    "android-build": "项目构建",
-    "android-lint": "Android Lint",
-    "android-verify-api-contract": "API 契约",
-    "android-data-migration": "数据迁移",
-    "android-ui-a11y": "UI 与无障碍",
-    "android-security-privacy": "安全与隐私",
-    "android-dynamic-leak": "动态内存泄漏",
-    "android-performance": "性能",
-    "behavior-journey": "用户行为 Journey",
-}
-
-
 class DeliveryGateError(RuntimeError):
     """表示最终报告、配置或当前交付上下文无法可靠校验。"""
 
@@ -711,9 +682,9 @@ def render_delivery_summary(
         "",
         "## 最终结论",
         "",
-        f"**{CONCLUSION_LABELS.get(conclusion, '状态未知')}**",
+        f"**{user_label(conclusion, DELIVERY_CONCLUSION_LABELS)}**",
         "",
-        f"- 需求修订：R{payload.get('requirement_revision', '未知')}",
+        f"- 需求修订：第 {payload.get('requirement_revision', '未知')} 版",
         f"- 验收项：共 {len(obligations)} 项，已验证 {len(covered)} 项，"
         f"尚未验证或受阻 {len(remaining)} 项，不适用 {len(not_applicable)} 项",
         "",
@@ -722,11 +693,11 @@ def render_delivery_summary(
     ]
     for item in gates:
         status = item.get("status", "")
-        reason = _single_line(item.get("reason"))
+        reason = localize_machine_terms(_single_line(item.get("reason")))
         suffix = f" - {reason}" if reason else ""
         lines.append(
-            f"- {GATE_LABELS.get(item.get('id'), item.get('id', '未知门禁'))}："
-            f"{GATE_STATUS_LABELS.get(status, '状态未知')}{suffix}"
+            f"- {gate_label(item.get('id'))}："
+            f"{user_label(status, GATE_STATUS_LABELS)}{suffix}"
         )
 
     lines.extend(["", f"## 已验证的需求（{len(covered)} 项）", ""])
@@ -734,7 +705,7 @@ def render_delivery_summary(
         for item in covered:
             identifier = item.get("id", "未知义务")
             text = _single_line(expected.get(identifier, {}).get("text")) or identifier
-            status = OBLIGATION_STATUS_LABELS.get(item.get("status"), "已验证")
+            status = user_label(item.get("status"), OBLIGATION_STATUS_LABELS)
             lines.append(f"- `{identifier}` {text}（{status}）")
     else:
         lines.append("- 暂无已验证的需求验收项。")
@@ -744,8 +715,10 @@ def render_delivery_summary(
         for item in remaining:
             identifier = item.get("id", "未知义务")
             text = _single_line(expected.get(identifier, {}).get("text")) or identifier
-            reason = _single_line(item.get("reason")) or "机器报告未提供具体原因"
-            status = OBLIGATION_STATUS_LABELS.get(item.get("status"), "尚未完成")
+            reason = localize_machine_terms(
+                _single_line(item.get("reason")) or "机器报告未提供具体原因"
+            )
+            status = user_label(item.get("status"), OBLIGATION_STATUS_LABELS)
             lines.append(f"- `{identifier}` {text}（{status}）- {reason}")
     else:
         lines.append("- 无。")
@@ -753,8 +726,10 @@ def render_delivery_summary(
     lines.extend(["", "## 下一步", ""])
     if pending:
         for item in pending:
-            name = GATE_LABELS.get(item.get("id"), item.get("id", "待验证能力"))
-            reason = _single_line(item.get("reason")) or "等待补充验证证据"
+            name = gate_label(item.get("id"))
+            reason = localize_machine_terms(
+                _single_line(item.get("reason")) or "等待补充验证证据"
+            )
             lines.append(f"- {name}：{reason}")
     elif remaining:
         lines.append("- 完成尚未验证或受阻的必需验收项，并在最终代码上重新生成证据。")
@@ -787,7 +762,7 @@ def write_delivery_summary(
 
 def main(argv: list[str] | None = None) -> int:
     """输出当前摘要或校验最终报告；返回 0 仅表示最终通过结论真实有效。"""
-    parser = argparse.ArgumentParser(description="校验 Android Delivery 最终证据")
+    parser = ChineseArgumentParser(description="校验 Android 需求交付的最终证据")
     parser.add_argument("command", choices=("snapshot", "validate"))
     parser.add_argument("--config", default=None, help="配置文件路径")
     parser.add_argument("--result", default=None, help="delivery-result.json 路径")
@@ -806,23 +781,24 @@ def main(argv: list[str] | None = None) -> int:
         payload = load_result(result_path)
         errors = validate_delivery_result(payload, context)
     except (DeliveryError, DeliveryGateError) as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
 
     if errors:
         print("❌ 最终交付门禁未通过:", file=sys.stderr)
         for error in errors:
-            print(f"- {error}", file=sys.stderr)
+            print(f"- {localize_machine_terms(error)}", file=sys.stderr)
         return 1
     summary_path = result_path.with_name("delivery-summary.md")
     try:
         write_delivery_summary(summary_path, payload, context, result_path.name)
     except DeliveryGateError as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
     print(f"📝 中文交付摘要: {summary_path}")
     if payload["conclusion"] not in PASSING_CONCLUSIONS:
-        print(f"❌ 报告结论为 {payload['conclusion']}，当前交付未完成", file=sys.stderr)
+        conclusion = user_label(payload["conclusion"], DELIVERY_CONCLUSION_LABELS)
+        print(f"❌ 报告结论：{conclusion}", file=sys.stderr)
         return 2
     print("✅ 最终交付证据与当前需求、Git 基线和代码摘要一致。")
     return 0

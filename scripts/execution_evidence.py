@@ -41,6 +41,11 @@ from .config_paths import (  # noqa: E402
 )
 from .delivery import DeliveryError, load_config  # noqa: E402
 from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from .user_facing_labels import (  # noqa: E402
+    ChineseArgumentParser,
+    gate_label,
+    localize_machine_terms,
+)
 
 
 RECEIPT_PRODUCER = "android-delivery-execution-evidence"
@@ -755,14 +760,14 @@ def run_and_record(
 
 def main(argv: list[str] | None = None) -> int:
     """解析命令、校验当前交付上下文并输出收据位置与最终状态。"""
-    parser = argparse.ArgumentParser(description="执行 Android 交付命令并生成机器收据")
+    parser = ChineseArgumentParser(description="执行 Android 交付命令并生成机器收据")
     parser.add_argument("--config", default=None, help="配置文件路径")
     parser.add_argument("--id", required=True, help="最终报告引用的自动证据 id")
     parser.add_argument(
         "--gate",
         required=True,
         choices=sorted(KNOWN_EVIDENCE_GATES),
-        help="该命令唯一负责的交付 gate，禁止一份收据跨用途复用",
+        help="该命令唯一负责的交付检查项，禁止一份收据跨用途复用",
     )
     parser.add_argument("--cwd", default=None, help="命令目录，默认 Android 项目根目录")
     parser.add_argument("--timeout", type=int, default=1800, help="命令超时秒数")
@@ -801,11 +806,12 @@ def main(argv: list[str] | None = None) -> int:
             receipt_dir=evidence_directory_for_config(config_path),
         )
     except (DeliveryError, ExecutionEvidenceError) as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
 
     print(f"$ {shlex.join(receipt['command'])}")
-    print(f"证据用途: {receipt['gate_id']}，attempt: {receipt['attempt']}")
+    print(f"证据用途: {gate_label(receipt['gate_id'])}")
+    print(f"执行轮次: 第 {receipt['attempt']} 次")
     print(f"执行收据: {receipt_path}")
     print(f"收据 SHA-256: {sha256_file(receipt_path)}")
     print(f"命令退出码: {receipt['exit_code']}")
@@ -814,7 +820,7 @@ def main(argv: list[str] | None = None) -> int:
     if exit_code == 3:
         print("❌ 显式报告缺失、过期、失败或零测试，不能作为最终证据", file=sys.stderr)
     elif exit_code == 4:
-        print("❌ 命令执行期间代码摘要发生变化，请重新 route 并重跑", file=sys.stderr)
+        print("❌ 命令执行期间代码发生变化，请重新分析最终影响并执行验证", file=sys.stderr)
     elif exit_code == 124:
         print("❌ 命令执行超时", file=sys.stderr)
     return exit_code

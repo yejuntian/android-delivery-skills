@@ -25,6 +25,7 @@
 - Kotlin 作为现代 Android 优先方向，Java 老项目作为一等支持对象，混合项目不复制第二套流程。
 - 用真实命令、日志、报告和设备结果支撑结论；未验证项不得写成通过。
 - 失败时先找根因，再做单变量最小修复；不得用删测试、弱化断言或重复碰运气造绿。
+- 首次编码前保证需求和测试准备完整，编码后用局部快速反馈迭代，最终交付再做一次完整兜底。
 - 不承诺数学意义上的“零 Bug”，而是保证缺少必需证据时阻断完成声明。
 
 ## 筛选方法
@@ -227,6 +228,14 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **决策**：Journey 适用时，由执行当前 Skill 的 AI 会话优先读取 XML，使用 Android CLI/adb 逐个 action 操作和验证；统一专项结果保存 Journey 数、action 数、命令及布局/截图摘要。AGP 9 Studio Labs 壳保留为已经初始化后的可选 JUnit 回退。
 - **边界**：当前 Android CLI 没有可由 Python 调用的 `android journey` 或 `android agent` 子命令，不创建伪命令；没有 Agent 会话、设备或等价 UI 引擎时保持未验证。壳未初始化不再阻断默认路线，也不自动要求用户打开 Android Studio。
 
+### M21 编码后局部迭代与最终门禁分层
+
+- **调研日期**：2026-07-19。
+- **来源**：[AndroidX Presubmits](https://github.com/androidx/androidx/blob/androidx-main/.github/workflows/presubmit.yml) 按变更文件处理格式并按项目拆分构建，[detekt Pre Merge](https://github.com/detekt/detekt/blob/main/.github/workflows/pre-merge.yaml) 在非主干启用预测式测试选择，[Now in Android Build](https://github.com/android/nowinandroid/blob/main/.github/workflows/Build.yaml) 在 PR 执行测试、构建、Lint 和设备任务并把 [Baseline Profile](https://github.com/android/nowinandroid/blob/main/.github/workflows/NightlyBaselineProfiles.yaml) 放入夜间任务，[LeakCanary Main](https://github.com/square/leakcanary/blob/main/.github/workflows/main.yml) 把普通构建与相关模块的多 API 设备测试拆分。
+- **决策**：首次编码前继续完整确认需求、BDD、测试设计和 Git 基线；首次实现后的完善、修改、删除或修复只执行受影响测试和必要编译，验收语义变化时只修订受影响义务；用户当前或最初明确要求最终检查、完整交付或准备提交时，才基于最终代码执行一次完整 route、专项、构建、Lint 和交付报告。
+- **证据边界**：局部结果只证明本轮受影响范围。最终结果生成后代码、测试、资源或构建配置变化会使其失效，但完善期间不要求每次立即重跑完整门禁；再次准备交付时统一生成最终新鲜证据。
+- **拒绝**：不新增通用阶段状态机、Python 子命令或外部预测测试服务，不把高成本设备矩阵和全部 Reviewer 放进每次小改动，也不以“局部测试通过”冒充整体交付通过。
+
 ## 明确不照搬
 
 - 不为每个小需求自动生成并提交多份设计、计划和任务文档。
@@ -255,6 +264,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 13. 每个已确认 BDD 的必需原子 Then 必须有新鲜自动证据、实际人工证据或明确阻塞；任一工具的通过不得覆盖它没有断言的风险。
 14. `init` 永不删除需求 Git 基线；中途需求变化保留未变化 ID，最终通过必须绑定当前需求、基线和工作树摘要。
 15. 新增 Kotlin/Java 核心代码必须落实职责分层、依赖方向、可测试构造和必要 KDoc/核心注释；代码质量专项不得用自然语言摘要省略这四项检查。
+16. 首次编码前完整准备一次，编码后普通变化走局部迭代，最终 route 和完整门禁只在明确交付意图下执行；局部结果不得冒充整体通过。
 
 ## 维护规则
 

@@ -29,6 +29,14 @@
 - 每个 Skill 只执行自己的专业检查或交付职责。发现跨职责问题时记录证据并路由到对应 Skill，不得静默越权处理。
 - 最终报告必须能说明“为什么这些文件属于本次范围”和“每个新增组件负责什么”；无法说明时视为职责或范围未收敛。
 
+### 三阶段执行边界
+
+- **首次编码前准备**：新需求仍完整执行需求理解、用户确认、BDD/原子 Then、测试设计、最小修改预览、环境检查和 Git 基线建立；这套准备只为当前需求建立一次，不因后续实现完善而重复。
+- **编码后局部迭代**：首次实现后，用户提出“完善、修改、删除、修复这个点”等后续变化时，先判断验收语义是否改变。语义不变则不重新执行 `init`、需求确认、`route`、全部专项 Reviewer 或最终报告，只做最小代码修改、受影响测试和必要的最小编译；删除生产代码时还必须检查调用方。
+- **需求语义变化**：新增、删除或改变业务行为、边界和验收结果时，只对受影响义务执行需求修订与确认，然后回到局部迭代；不得因此把整个编码前流程或全部交付门禁重跑一遍。
+- **最终交付**：只有用户当前或最初请求已明确包含“最终检查、完整交付、准备提交”等意图时，才执行最终 `route`、专项审查、完整必需测试、构建、Lint 和交付报告。局部迭代结果只证明本轮受影响范围，不得宣称整体交付完成。
+- 已生成最终结果后代码、测试、资源或构建配置再次变化时，旧最终结果立即失效；后续完善期间仍先走局部迭代，用户再次进入最终交付时只基于最终代码完整验证一次。
+
 ### Kotlin、Java 与老项目兼容
 
 - Kotlin 是现代 Android 优先方向，Java 是老项目的一等支持语言；混合项目共用同一交付流程，不新增重复 Java Skill，也不强制迁移语言。
@@ -59,7 +67,7 @@
 - 选择能够证明行为的最低且足够测试层。UI 与业务混合需求必须拆层验证，Journey、截图、Unit、静态扫描均不得越过各自证据边界。
 - 测试能力优先复用项目已有框架和任务；缺少设备或工具时继续其他可执行门禁，能力损失标未验证，不自动安装依赖或用较弱证据冒充等价通过。
 - 只有所有必需验证义务都有最终代码上的新鲜证据，才允许声明整体全绿；计划人工执行但尚未实际执行时仍为未验证。
-- 最终通过结论必须绑定当前需求文件摘要、需求 Git 基线和最终工作树摘要；测试或审查后代码再次变化时，旧证据自动失效并重新执行受影响门禁。
+- 最终通过结论必须绑定当前需求文件摘要、需求 Git 基线和最终工作树摘要；测试或审查后代码再次变化时，旧证据自动失效。局部迭代只重跑受影响测试和必要编译，重新进入最终交付时再执行全部必需门禁。
 
 ### Python 脚本简介与核心注释
 
@@ -74,7 +82,7 @@
 
 ### 统一机器证据
 
-- `delivery.py route` 必须在目标项目外生成绑定当前需求修订、UI/API 输入、Git 基线和代码摘要的影响快照；需求资料、最终代码、测试或资源变化后重新 route。条件候选不能从最终报告中省略，终判不适用时也必须提供理由和复核证据。
+- 进入最终交付时，`delivery.py route` 必须在目标项目外生成绑定当前需求修订、UI/API 输入、Git 基线和代码摘要的影响快照；最终交付执行期间需求资料、代码、测试或资源变化后重新 route。局部迭代不生成 route 快照；条件候选不能从最终报告中省略，终判不适用时也必须提供理由和复核证据。
 - 最终交付使用的命令必须通过 `scripts/execution_evidence.py --gate <gate-id>` 生成单一用途、不可覆盖的 attempt 收据；一份测试收据不得兼任 build、lint 或迁移。自动覆盖原子 Then 时必须把 `BDD/Then` 映射到收据中真实通过的 JUnit testcase。
 - `android-test-and-fix` 和 `android-data-migration` 的自动收据必须包含本轮实际执行数大于零且无失败的 JUnit；普通自动收据只能直接证明测试、构建、Lint 和迁移 gate。接口、UI/A11y、安全、泄漏和性能 gate 必须由对应专项 capability 或允许的完整人工证据证明，不能只填写同名 `gate_id`。
 - 由总入口编排的 `android-review-diff`、`android-review-code-quality`、`android-audit-stability`、条件触发的 `android-verify-api-contract`，以及 Agent Journey 必须按 `android-implement-and-verify/references/specialist-result.schema.json` 输出最小机器信封。
@@ -251,7 +259,7 @@
 - `android-review-diff`：只负责实际 diff、业务逻辑、变更范围、架构边界、回归和上线风险审查。
 - `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段、OpenAPI 和契约兼容审查。
 - `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态、可见轻交互和人工/设备 A11y 表现验证；可以复用测试产出的截图与 A11y 结果，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
-- `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器/迁移/A11y 测试物化、条件能力命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
+- `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器/迁移/A11y 测试物化、条件能力命令、执行结果和测试失败自修复；局部迭代只执行受影响测试和必要编译，完整交付才驱动全绿门禁，单独只报告时不得改生产代码。
 - `figma-android-xml`：只在已确认使用 XML View 且存在 Figma 设计输入时承担 UI 生产，生成 XML、Drawable、Color、Dimen 和预览资源，不编写 Kotlin/Java 业务逻辑。交付 Skill 把它视为稳定黑盒，不复制或改写其内部生成阶段与规则。
 - 外部 UI 生产结果进入目标项目后必须服从本文件、目标项目规则和已确认需求；外部 Skill 的内部偏好不能覆盖交付侧 A11y、I18n、资源复用、技术栈和职责边界。只检查并修正本轮生成文件，不修改外部 Skill 本身。
 - Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`；每条 BDD 用户旅程按 `FULL/PARTIAL/NONE` 路由，只为 Journey 可稳定覆盖的原子 Then 生成用例，`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
@@ -281,12 +289,12 @@
 
 ## 外部智能体与工具规则
 
-- `android-implement-and-verify` 作为总入口；专项 Skill 默认放在编码后按实际改动调用，不要一开始无差别展开所有流程。
-- 编码后必须按实际 diff 轻量复核影响面：未修改 UI 相关文件时跳过 UI 还原验证；修改 UI 相关文件但没有设计稿、截图或可对比基准时跳过设计稿一致性验证，只做必要的 UI 基础检查；未修改接口、DTO、mapper、Repository 网络行为或缓存结构时跳过接口契约审查；如果 diff 与需求影响面不一致，必须重新标记并说明原因。
-- `android-review-diff` 默认用于编码后审查实际 diff；只有用户要求先分析或变更范围阻塞时才前置。
-- `android-verify-api-contract` 默认用于编码后审查接口实现；只有关键接口资料缺失导致无法安全编码时才前置。
+- `android-implement-and-verify` 作为总入口；局部迭代只调用测试和本轮风险直接需要的最小能力，完整专项 Skill 默认放在最终交付按实际改动调用，不要一开始或每次小改动后无差别展开所有流程。
+- 进入最终交付时必须按实际 diff 轻量复核影响面：未修改 UI 相关文件时跳过 UI 还原验证；修改 UI 相关文件但没有设计稿、截图或可对比基准时跳过设计稿一致性验证，只做必要的 UI 基础检查；未修改接口、DTO、mapper、Repository 网络行为或缓存结构时跳过接口契约审查；如果 diff 与需求影响面不一致，必须重新标记并说明原因。
+- `android-review-diff` 默认用于最终交付审查实际 diff；只有用户要求先分析或变更范围阻塞时才前置。
+- `android-verify-api-contract` 默认用于最终交付审查接口实现；只有关键接口资料缺失导致无法安全编码，或局部迭代直接改变接口契约时才前置。
 - `android-verify-ui` 是编码后手动独立 UI 验收闭环；总入口和 route 只能提示，不得自动调用。
-- `android-test-and-fix`、`android-audit-stability`、`android-review-code-quality` 默认用于编码后验证和审查。
+- `android-test-and-fix` 在局部迭代和最终交付均可使用；`android-audit-stability`、`android-review-code-quality` 默认用于最终交付，只有本轮局部变化直接触及对应高风险边界时才提前最小调用。
 - 涉及 Figma UI 还原时，编码前先输出一份精简 Design Spec Gate，至少包含 target screen、resource tokens、layout structure、component mapping、assets 和 risks/assumptions；这属于实现闸门，不等同于额外展开一轮完整分析报告。
 - 先根据目标项目真实实现确认 UI 技术：XML View 场景把 UI 生产委托给 `figma-android-xml`；Compose 场景沿用项目既有 Compose 结构，不调用 XML 生成 Skill；混合项目只委托明确属于 XML 的部分。不得因为提供了 Figma 链接就擅自切换技术栈。
 - `figma-android-xml` 完成后，由 `android-implement-and-verify` 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线；`android-test-and-fix` 验证行为，`android-verify-ui` 独立消费设计基准、生成结果和运行截图做验收，三者不得互相代替。

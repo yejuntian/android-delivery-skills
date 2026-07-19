@@ -66,6 +66,10 @@
 
 不自动切分支、stash、commit、push、reset、checkout 或 clean。清数据、卸载、真实支付、真实删除和生产环境操作也必须由用户明确授权。
 
+### 2.7 三阶段反馈
+
+首次编码前完整完成需求确认、BDD、测试设计和 Git 基线；编码后的完善、修改、删除或修复只运行受影响测试和必要编译；用户明确最终检查、完整交付或准备提交时，才基于最终代码执行一次完整路由和门禁。业务验收语义变化只修订受影响义务，不把整个流程推倒重来。
+
 ## 三、Skill 角色与职责
 
 | Skill | 角色 | 负责内容 | 不负责内容 |
@@ -74,7 +78,7 @@
 | `android-review-diff` | 变更范围 Reviewer | 检查需求覆盖、改动越界、误改旧逻辑、遗漏调用方和回归风险 | 不负责整体架构和测试执行 |
 | `android-review-code-quality` | 架构与质量 Reviewer | 检查职责边界、耦合、重复、可维护性和项目架构一致性 | 不负责需求确认和动态稳定性 |
 | `android-audit-stability` | 稳定性工程师 | 检查生命周期、资源释放、泄漏、并发、性能、安全隐私及动态能力适用性 | 不把静态未发现问题写成绝对无泄漏 |
-| `android-test-and-fix` | 测试工程师与修复门禁 | 分析测试场景、选择测试层、执行测试、分析失败、最小修复和回归 | 不负责设计稿视觉还原 |
+| `android-test-and-fix` | 测试工程师与修复门禁 | 局部迭代执行受影响测试和必要编译；最终交付执行完整测试、分析失败、最小修复和回归 | 不负责需求确认和设计稿视觉还原 |
 | `android-verify-api-contract` | API 契约检查员 | 检查 endpoint、Request/Response、DTO、mapper、错误码、缓存字段和兼容性 | 不负责普通架构和 UI 验收 |
 | `android-verify-ui` | 独立 UI 验收工程师 | 检查设计还原、截图、布局、动态 UI 和可访问性 | 不生成或管理业务测试用例，不由 route 自动执行 |
 | `figma-android-xml` | 外部 XML UI 生产 Skill | 在已确认的 Figma + XML View 场景生成 XML、Drawable、Color、Dimen 和预览资源 | 不写 Kotlin/Java 业务逻辑，不负责行为测试和最终 UI 验收 |
@@ -118,10 +122,12 @@ flowchart TD
     Y --> Z["Delivery 执行 UI 产物交接门禁"]
     X -- "否" --> I["按目标项目现状编码"]
     Z --> I
-    I --> J{"编码中需求是否变化"}
-    J -- "变化" --> K["生成增删改和删除处置清单"]
+    I --> J{"编码后下一步"}
+    J -- "实现完善，验收不变" --> W["局部修改 + 受影响测试 + 必要编译"]
+    W --> J
+    J -- "需求语义变化" --> K["只生成受影响项的增删改和删除处置清单"]
     K --> F
-    J -- "稳定" --> L["delivery.py route"]
+    J -- "最终检查 / 完整交付 / 准备提交" --> L["delivery.py route"]
     L --> M["Diff / 质量 / 稳定性 / API 专项"]
     M --> N["测试选择、执行和修复闭环"]
     N --> O["构建、Lint、JUnit、Journey 或人工证据"]
@@ -149,11 +155,11 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 
 ### 5.4 编码与路由
 
-编码遵守目标项目现状。Figma + XML View 场景先由 `figma-android-xml` 生成纯 UI 资源和 XML，总入口对本轮产物执行 I18n、A11y、资源复用和业务代码边界交接门禁，再接管 Kotlin/Java、ViewBinding/DataBinding、状态和业务连线；Compose 或非 Figma 场景不调用该 XML Skill。完成后执行 `route`，脚本候选与 Diff Reviewer 对七类影响的语义确认取并集，再选择专项和测试。
+编码遵守目标项目现状。Figma + XML View 场景先由 `figma-android-xml` 生成纯 UI 资源和 XML，总入口对本轮产物执行 I18n、A11y、资源复用和业务代码边界交接门禁，再接管 Kotlin/Java、ViewBinding/DataBinding、状态和业务连线；Compose 或非 Figma 场景不调用该 XML Skill。编码后的普通完善进入局部迭代，只做最小修改、受影响测试和必要编译；验收语义变化时先确认受影响修订，再回到同一局部循环。不得仅因代码写完就自动执行 `route`。
 
 ### 5.5 最终门禁
 
-所有必需命令和专项完成后，生成一次性 `delivery-result.json`。`delivery_gate.py validate` 校验证据并从可信结果生成面向用户的中文 `delivery-summary.md`，不运行测试、不修代码；退出码为 0 才允许使用通过结论。最终回复优先展示中文摘要，JSON 只作机器附件。
+用户当前或最初请求明确要求最终检查、完整交付或准备提交时，才执行 `route`，让脚本候选与 Diff Reviewer 的七类语义影响取并集并完成全部必需命令和专项。随后生成一次性 `delivery-result.json`；`delivery_gate.py validate` 校验证据并从可信结果生成面向用户的中文 `delivery-summary.md`，不运行测试、不修代码。退出码为 0 才允许使用通过结论。最终回复优先展示中文摘要，JSON 只作机器附件。
 
 ## 六、需求确认与中途变更
 
@@ -163,7 +169,7 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 
 ### 6.2 中途增加或修改需求
 
-编码中用户补充需求时，重新执行 `init`，把聊天补充同步到需求资料或修订清单，输出更新后的总需求。未确认内容不能进入实现和最终证据。
+编码中用户补充内容时先判断验收语义：只完善实现则不执行 `init`，直接进入局部测试循环；新增、删除或改变业务行为、边界和验收结果时，重新执行 `init`，把聊天补充同步到需求资料或修订清单，只确认受影响义务并输出更新后的总需求。未确认内容不能进入实现和最终证据。
 
 ### 6.3 删除需求
 

@@ -84,8 +84,15 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 3. 读取相关代码并复用现有链路。
 4. 直接实现需求，不再固定输出一轮前置分析报告。
 5. 只有遇到关键资料缺失、高风险改动或分支/工作区异常时才暂停询问。
-6. 编码后只对基线后的 diff 执行接口、测试、稳定性和代码质量检查；检测到 UI 变更时提示单独运行 UI 验收。
-7. 有 UI 基准但尚未完成独立 UI 验收时，只能报告“代码与自动测试完成，UI 验收待执行”。
+6. 首次编码后先运行受影响测试和必要编译；后续完善、修改、删除或修复继续使用同一局部循环，不自动执行完整 route。
+7. 只有你当前或最初明确要求最终检查、完整交付或准备提交时，才执行接口、测试、稳定性和代码质量完整门禁；检测到 UI 变更时提示单独运行 UI 验收。
+8. 有 UI 基准但尚未完成独立 UI 验收时，只能报告“代码与自动测试完成，UI 验收待执行”。
+
+## 编码后怎么说
+
+你说“这个点再完善一下”“修改这段逻辑”“删除这个实现”或“修复这个问题”时，AI 自动进入局部迭代：验收语义不变就不重读需求、不运行全部 Reviewer，只做最小修改、受影响测试和必要编译；删除生产代码时额外检查调用方。
+
+你说“业务要求改成……”时，AI 只确认受影响的需求修订，再进入同一个局部测试循环。你说“最终检查”“完整交付”或“准备提交”时，AI 才基于最终代码完整执行一次 route 和门禁。已生成最终报告后代码再次变化，旧报告会失效，但完善期间不需要每次立即重跑完整流程。
 
 ## 整体流程顺序(一图看懂)
 
@@ -95,9 +102,13 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
                           ↓
 ② delivery.py check-env   查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
 ③ delivery.py confirm-requirement-update   确认最新总需求和全部 Then → 开始编码
-   └─ 受影响测试 + assemble + lint;失败自动修复并重跑
+   └─ 首次编码
                           ↓
-④ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查并保存条件门禁快照
+④ 编码后局部迭代（可以重复多次）
+   ├─ 实现完善：最小修改 + 受影响测试 + 必要编译
+   └─ 需求语义变化：只确认受影响修订，再回到局部迭代
+                          ↓ 你要求最终检查 / 完整交付 / 准备提交
+⑤ delivery.py route   按当前需求基线后的最终 Git Diff 自动路由审查并保存条件门禁快照
 
    【核心·业务逻辑层】(route 自动逐个调用,必先过)
      1. android-review-diff        ← 必跑:diff 影响范围
@@ -108,7 +119,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
    【独立·UI 校验】(route 只提示,用户单独调用)
      6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
 
-⑤ delivery_gate.py validate
+⑥ delivery_gate.py validate
    └─ 核对确认修订、最终代码、route 条件门禁、执行收据和专项结果；退出码 0 才可声明通过
 ```
 

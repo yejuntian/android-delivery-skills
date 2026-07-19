@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 需求实现与闭环验证"
-  short_description: "从需求确认、BDD、编码、自修复到测试全绿和交付门禁的完整入口"
-  default_prompt: "使用 $android-implement-and-verify 完成这个 Android 需求，并持续修复和验证到通过交付门禁。"
+  short_description: "首次完整准备、编码后局部测试、最终交付全绿的 Android 总入口"
+  default_prompt: "使用 $android-implement-and-verify 完成这个 Android 需求：首次编码前完整准备，后续完善只做局部测试，准备交付时再执行完整门禁。"

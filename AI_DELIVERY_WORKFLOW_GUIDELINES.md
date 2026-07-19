@@ -153,7 +153,7 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 
 ### 5.5 最终门禁
 
-所有必需命令和专项完成后，生成一次性 `delivery-result.json`。`delivery_gate.py validate` 只校验证据，不运行测试、不修代码；退出码为 0 才允许使用通过结论。
+所有必需命令和专项完成后，生成一次性 `delivery-result.json`。`delivery_gate.py validate` 校验证据并从可信结果生成面向用户的中文 `delivery-summary.md`，不运行测试、不修代码；退出码为 0 才允许使用通过结论。最终回复优先展示中文摘要，JSON 只作机器附件。
 
 ## 六、需求确认与中途变更
 

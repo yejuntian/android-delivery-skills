@@ -303,7 +303,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 ```
 
-只有退出码为 0 才允许使用通过结论。`INCOMPLETE/BLOCKED` 可以作为诚实报告保存，但校验命令不会把它当成交付通过。该文件是一次性交付结果，不是 phase/state 状态机。
+校验命令在机器结果结构可信后同步生成 `<requirement_dir>/test-results/delivery-summary.md`；无论结论是通过、未完成还是受阻，最终回复都必须优先展示并链接这份中文摘要，`delivery-result.json` 只作为机器附件。只有退出码为 0 才允许使用通过结论。`INCOMPLETE/BLOCKED` 可以诚实保存并生成摘要，但不会被当成交付通过。机器文件是一次性交付结果，不是 phase/state 状态机。
 
 ### Definition of Done
 
@@ -321,7 +321,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 - 存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则结论只能是“代码与自动测试完成，UI 验收待执行”。
 - 最终报告包含变更、测试命令与结果、自修复记录、失败分类、专项能力/工具降级、AI 替代、能力损失、所需用户输入、未验证项和剩余风险。
 - 没有真机但不涉及真机必需验收时，结论只能是“代码与本地门禁完成，真机专项待验证”；真机是明确验收条件时保持“未完成/受阻”，但不否定其他已完成范围。
-- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、UI/API 输入摘要、Git 基线、最终代码摘要和所有引用证据仍一致。
+- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、UI/API 输入摘要、Git 基线、最终代码摘要和所有引用证据仍一致；同时已生成并向用户展示中文 `delivery-summary.md`。
 
 任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
 

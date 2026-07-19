@@ -118,19 +118,19 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 - `scripts/git_changes.py`：只读检查分支、工作区、四类 Git 变化、`A/M/D/R`、真实片段和最终摘要，不判断业务或路由。
 - `scripts/requirement_snapshot.py`：只校验和保存连续需求修订、有效义务及文本差异，不判断业务语义或修改 Git。
 - `scripts/requirement_inputs.py`：只对需求正文及配置声明的 UI/API 链接和本地资料生成输入摘要，不访问网络或判断业务。
-- `scripts/delivery_gate.py`：只校验最终报告和证据新鲜度，不运行测试、不修改代码。
+- `scripts/delivery_gate.py`：校验最终机器报告和证据新鲜度，并生成同目录中文摘要；不运行测试、不修改代码。
 - `scripts/android_project_capabilities.py`：首次处理项目、构建配置变化或 task 未知时，只读发现模块、variant 和 Gradle task；普通业务修改不必重复运行。
 - `scripts/execution_evidence.py`：只执行已经选择的单 gate 命令，按 attempt 保留日志、testcase 和报告摘要。
 - `scripts/specialist_result.py`：只校验专项统一结果、P0/P1 和证据文件摘要。
 
-最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。当前契约为 version 4，旧的跨 gate 收据、空人工说明和无待验项的设备待验结论不能继续通过。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
+最终机器报告写入 `<requirement_dir>/test-results/delivery-result.json`。当前契约为 version 4，旧的跨 gate 收据、空人工说明和无待验项的设备待验结论不能继续通过。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py snapshot
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 ```
 
-第二条命令退出码为 `0` 才表示最终通过证据仍与当前需求和代码一致；它不会自动提交 Git。
+第二条命令会同步生成 `<requirement_dir>/test-results/delivery-summary.md`。用户只需阅读中文摘要；JSON、哈希和证据路径属于机器附件。退出码为 `0` 才表示最终通过证据仍与当前需求和代码一致；未完成或受阻也会生成摘要，但不能写成通过。该命令不会自动提交 Git。
 
 `android-lint` 默认只执行目标项目自己的 Android Gradle Lint task。最终机器证据必须引用本轮 XML 或 SARIF；HTML 可保留给人查看。报告中的 Fatal/Error 即使因 `abortOnError=false` 得到零退出也会阻断。当前流程不安装或强制外部自定义 Lint，项目已有插件时保持原状。
 

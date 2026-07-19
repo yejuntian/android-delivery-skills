@@ -3,8 +3,8 @@
 
 用途：验证最终交付门禁只接受当前代码上的完整原子义务、专项门禁和真实证据。
 
-覆盖范围：通过报告、最新版义务、route 条件门禁、执行收据、专项/Agent 结果、过期
-需求语义和未完成结论。测试不运行 Android 构建、不修改真实仓库。
+覆盖范围：通过报告、中文摘要、最新版义务、route 条件门禁、执行收据、专项/Agent
+结果、过期需求语义和未完成结论。测试不运行 Android 构建、不修改真实仓库。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 
@@ -942,13 +942,14 @@ class DeliveryGateTests(unittest.TestCase):
                     current_context(root / "local.yaml", config)
 
     def test_cli_validate_accepts_fresh_report(self) -> None:
-        """验证 CLI 能读取结果文件并以退出码 0 表达机器门禁通过。"""
+        """验证 CLI 通过机器门禁后同步生成不含哈希的中文摘要。"""
         with tempfile.TemporaryDirectory() as raw_root:
             result = Path(raw_root) / "delivery-result.json"
             result.write_text(
                 json.dumps(self.payload, ensure_ascii=False),
                 encoding="utf-8",
             )
+            self.context["expected_obligations"]["BDD-001/T1"]["text"] = "点击重试后恢复"
             with (
                 mock.patch("scripts.delivery_gate.load_config", return_value={}),
                 mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
@@ -959,8 +960,42 @@ class DeliveryGateTests(unittest.TestCase):
                     "--config", str(Path(raw_root) / "local.yaml"),
                     "--result", str(result),
                 ])
+            summary = result.with_name("delivery-summary.md").read_text(encoding="utf-8")
 
         self.assertEqual(0, exit_code)
+        self.assertIn("全部验证通过", summary)
+        self.assertIn("点击重试后恢复", summary)
+        self.assertIn("自动测试通过", summary)
+        self.assertNotIn(self.snapshot, summary)
+
+    def test_cli_incomplete_still_writes_readable_summary(self) -> None:
+        """验证未完成结论返回退出码 2，但仍向用户提供中文待办报告。"""
+        self.payload["conclusion"] = "INCOMPLETE"
+        self.payload["obligations"][0].update({
+            "status": "UNVERIFIED",
+            "reason": "需要合适设备完成点击验证。",
+        })
+        self.context["expected_obligations"]["BDD-001/T1"]["text"] = "点击重试后恢复"
+        with tempfile.TemporaryDirectory() as raw_root:
+            result = Path(raw_root) / "delivery-result.json"
+            result.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
+            with (
+                mock.patch("scripts.delivery_gate.load_config", return_value={}),
+                mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()),
+            ):
+                exit_code = main([
+                    "validate",
+                    "--config", str(Path(raw_root) / "local.yaml"),
+                    "--result", str(result),
+                ])
+            summary = result.with_name("delivery-summary.md").read_text(encoding="utf-8")
+
+        self.assertEqual(2, exit_code)
+        self.assertIn("尚未完成", summary)
+        self.assertIn("点击重试后恢复", summary)
+        self.assertIn("需要合适设备完成点击验证", summary)
 
     def test_cli_snapshot_outputs_json_serializable_route_context(self) -> None:
         """验证 route 条件门禁上下文可以直接供 AI 读取并生成最终报告。"""

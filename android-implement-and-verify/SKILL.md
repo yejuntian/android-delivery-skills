@@ -264,7 +264,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 退出码 `0` 才表示最新版总需求已确认并允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。编码中途发生变化时重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update`，始终保留最初 Git 基线。修订确认后遵守以下规约：
 1. **先物化测试**：把每个已确认 `BDD/Then` 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动设备或 Journey 引擎；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
-3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成完成后，本 Skill 只接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线，并继续负责测试与交付闭环。
+3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。
 4. **首次验证**：首次处理该项目、route 检测到 Gradle/模块/variant 变化，或真实 task 未知时，运行 `scripts/android_project_capabilities.py --config <配置>`；普通业务代码修改复用最近能力事实并直接执行已确认 task。发现失败时允许结合 Gradle 文件人工确认，但不得猜任务名。
 5. **自修复**：任一项失败，按“统一故障处理与 AI 接管”保存证据并分类，确认根因后只修改对应的生产代码、测试或环境配置，再重跑失败项及相关回归集。禁止删测试、弱化断言、跳过任务或用假数据掩盖失败。
 6. **循环上限**：同一根因连续 3 轮未关闭才进入 `BLOCKED`；报告失败分类、原专项能力/工具、命令、退出码、关键日志、AI 替代与能力损失、已尝试修改和所需输入。
@@ -282,13 +282,14 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
+- `android-review-diff` 必须按 `specialist-result.schema.json` v3 对 UI、API、数据、系统、构建、架构和测试七类影响逐项输出 `confirmed_impacts`。适用项绑定项目相对路径和原因，不适用项也说明需求/diff 依据；该语义结果与脚本候选取并集，新增的条件能力必须继续执行，不能因文件名或正则漏检而省略。
 - P0/P1 发现后立即修复，并从受影响的最小测试集开始重跑；低风险 P2/P3 可修复时一并关闭。
 - 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
 - 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更时在报告中提示用户另行调用 `android-verify-ui`，不得在自动 route 中执行。
 - `android-test-and-fix` 在此阶段先根据最终 diff 终判风险和测试层，再根据原子 Then 分配聚合每条 BDD 的 Journey `FULL/PARTIAL/NONE`；需求阶段的候选结论不能直接触发 Journey 执行，Journey 通过也不能替代未分配给它的证据。
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
-- `route` 检出的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
+- `route` 或 Diff Reviewer 语义确认的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
 - 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；用于覆盖原子 Then 的证据还必须把 obligation 映射到真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
 - 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须分别记录动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
 - `android-lint` 只要求目标项目自己的 Android Gradle Lint task；最终证据必须包含本轮 XML 或 SARIF 机器报告，Fatal/Error 即使零退出也阻断。HTML 只作人类报告；本轮不新增、安装或强制外部自定义 Lint。
@@ -296,7 +297,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 
 所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前确认修订、有效义务、Git 基线和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
 
-通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/A11y 和安全隐私条件 gate 由最新 route 快照自动要求，不能由最终报告自行决定是否出现。
+通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/A11y 和安全隐私条件 gate 由最新 route 快照与 Diff Reviewer 的 `confirmed_impacts` 并集要求，不能由最终报告自行决定是否出现。
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate

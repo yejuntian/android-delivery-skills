@@ -100,4 +100,11 @@ description: Android Git diff 范围与业务回归审查。用于编码后根�
 5. 上线和回滚风险
 6. 是否建议继续修复、测试或提交
 
-由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` 只输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3 和未关闭项。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。
+由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` v3 输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3、未关闭项和 `confirmed_impacts`。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。
+
+`confirmed_impacts` 必须对 `ui/api/data/system/build/architecture/tests` 七类逐项输出且不得漏项：
+
+- `applicable=true`：列出至少一个本次 diff 中的项目相对路径，并说明需求、调用链或实际代码依据。
+- `applicable=false`：`basis_files` 为空，并说明为什么当前需求和最终 diff 均未涉及。
+- 只确认影响类别，不代替 API、迁移、UI/A11y、安全、稳定性或测试专项结论。
+- 文件名、目录名和脚本候选只是线索；Ktor、自研网络层、SharedPreferences、权限调用等普通命名文件仍须根据真实语义确认。

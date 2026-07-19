@@ -22,7 +22,7 @@
     "obligation_sha256s"
   ],
   "properties": {
-    "version": { "const": 2 },
+    "version": { "const": 3 },
     "producer": { "const": "android-delivery-specialist-result" },
     "id": { "type": "string", "minLength": 1 },
     "skill": { "type": "string", "minLength": 1 },
@@ -56,6 +56,36 @@
           "severity": { "enum": ["P0", "P1", "P2", "P3"] },
           "summary": { "type": "string", "minLength": 1 }
         }
+      }
+    },
+    "confirmed_impacts": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "applicable", "basis_files", "reason"],
+        "properties": {
+          "id": { "enum": ["ui", "api", "data", "system", "build", "architecture", "tests"] },
+          "applicable": { "type": "boolean" },
+          "basis_files": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "reason": { "type": "string", "minLength": 1 }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "applicable": { "const": true } },
+              "required": ["applicable"]
+            },
+            "then": { "properties": { "basis_files": { "minItems": 1 } } },
+            "else": { "properties": { "basis_files": { "maxItems": 0 } } }
+          }
+        ]
       }
     },
     "capabilities": {
@@ -114,6 +144,20 @@
     "finished_at": { "type": "string", "format": "date-time" }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "skill": { "const": "android-review-diff" }
+        },
+        "required": ["skill"]
+      },
+      "then": {
+        "required": ["confirmed_impacts"]
+      },
+      "else": {
+        "not": { "required": ["confirmed_impacts"] }
+      }
+    },
     {
       "if": {
         "properties": {

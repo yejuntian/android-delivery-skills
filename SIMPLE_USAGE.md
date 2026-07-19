@@ -192,7 +192,7 @@ Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默
 1. Figma MCP 读取 design context / metadata / variables / screenshot。
 2. 先确认目标项目使用 XML View、Compose 还是混合实现，并输出精简 Design Spec Gate；不能因为有 Figma 链接就切换技术栈。
 3. 只有 XML View 部分调用 `figma-android-xml`，由它生成 XML、Drawable、Color、Dimen 和预览资源；Delivery 不复制它的内部生成规则。
-4. UI 资源和 XML 生成完毕后，由主流程接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。Compose 部分直接沿用项目现有结构。
+4. UI 资源和 XML 生成完毕后，主流程先检查固定文案资源化、动态 `tools:text`、装饰/功能图片语义和项目资源复用，再接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。Compose 部分直接沿用项目现有结构。
 5. `android-test-and-fix` 验证业务行为；编码后如有 UI 变更，主流程提示用户单独调用 `android-verify-ui` 消费设计基准、生成结果和运行截图做视觉/A11y 验收。
 
 如果需要把 Figma 节点保存为本地视觉基准，使用当前真实入口：

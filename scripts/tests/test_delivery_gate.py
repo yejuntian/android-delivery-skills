@@ -40,7 +40,24 @@ from ..requirement_snapshot import (  # noqa: E402
 )
 from ..requirement_inputs import requirement_inputs_digest  # noqa: E402
 from ..route_impact import build_route_impact, write_route_impact  # noqa: E402
-from ..specialist_result import SPECIALIST_PRODUCER  # noqa: E402
+from ..specialist_result import (  # noqa: E402
+    IMPACT_CATEGORIES,
+    SPECIALIST_PRODUCER,
+    SPECIALIST_RESULT_VERSION,
+)
+
+
+def no_confirmed_impacts() -> list[dict]:
+    """生成默认无语义影响的 Diff Reviewer 机器结论。"""
+    return [
+        {
+            "id": impact_id,
+            "applicable": False,
+            "basis_files": [],
+            "reason": "需求与最终 diff 均未涉及。",
+        }
+        for impact_id in sorted(IMPACT_CATEGORIES)
+    ]
 
 
 class DeliveryGateTests(unittest.TestCase):
@@ -181,7 +198,7 @@ class DeliveryGateTests(unittest.TestCase):
             ("E-STABILITY", "android-audit-stability", "稳定性静态审查完成，未发现阻断项。"),
         ):
             specialist_result = {
-                "version": 2,
+                "version": SPECIALIST_RESULT_VERSION,
                 "producer": SPECIALIST_PRODUCER,
                 "id": evidence_id,
                 "skill": skill,
@@ -197,6 +214,8 @@ class DeliveryGateTests(unittest.TestCase):
                 "unresolved_findings": [],
                 "obligation_sha256s": {},
             }
+            if skill == "android-review-diff":
+                specialist_result["confirmed_impacts"] = no_confirmed_impacts()
             if skill == "android-audit-stability":
                 specialist_result["capabilities"] = [
                     {
@@ -480,7 +499,7 @@ class DeliveryGateTests(unittest.TestCase):
         """验证 route 检出的条件能力不能被最终报告直接省略。"""
         self.context["expected_conditional_gates"] = ["android-data-migration"]
         errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("缺少路由触发的条件 gate" in error for error in errors))
+        self.assertTrue(any("缺少路由或语义触发的条件 gate" in error for error in errors))
 
         self.payload["gates"].append({
             "id": "android-data-migration",
@@ -490,6 +509,32 @@ class DeliveryGateTests(unittest.TestCase):
             "reason": "实际仅修改内存缓存，没有持久化格式或旧数据迁移。",
         })
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_requires_diff_review_semantic_conditional_gates(self) -> None:
+        """验证正则漏检时，Diff Reviewer 的语义影响仍能强制补齐条件门禁。"""
+        evidence = next(item for item in self.payload["evidence"] if item["id"] == "E-DIFF")
+        result_path = Path(evidence["specialist_result_path"])
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        for item in result["confirmed_impacts"]:
+            if item["id"] == "api":
+                item.update({
+                    "applicable": True,
+                    "basis_files": ["app/src/main/example/Foo.kt"],
+                    "reason": "普通文件名中新增 Ktor client.get 请求。",
+                })
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        evidence["specialist_result_sha256"] = sha256_file(result_path)
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any(
+            "android-verify-api-contract" in error and "路由或语义触发" in error
+            for error in errors
+        ))
+        self.assertTrue(any(
+            "android-security-privacy" in error and "路由或语义触发" in error
+            for error in errors
+        ))
 
     def test_rejects_missing_or_changed_execution_receipt(self) -> None:
         """验证自动证据不能只填写命令和退出码，也不能引用被修改的收据。"""
@@ -556,7 +601,7 @@ class DeliveryGateTests(unittest.TestCase):
 
         summary = "静态 UI 检查完成，当前没有设备执行 TalkBack 动态验收。"
         specialist = {
-            "version": 2,
+            "version": SPECIALIST_RESULT_VERSION,
             "producer": SPECIALIST_PRODUCER,
             "id": "E-UI-PENDING",
             "skill": "android-verify-ui",
@@ -670,7 +715,7 @@ class DeliveryGateTests(unittest.TestCase):
         screenshot.write_bytes(b"fake-png-evidence")
         summary = "已执行首页 Journey，点击重试后首页标题可见。"
         agent_result = {
-            "version": 2,
+            "version": SPECIALIST_RESULT_VERSION,
             "producer": SPECIALIST_PRODUCER,
             "id": "E-JOURNEY",
             "skill": "android-test-and-fix/journey-agent",

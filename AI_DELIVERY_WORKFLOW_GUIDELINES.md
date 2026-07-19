@@ -81,7 +81,7 @@
 
 `android-verify-ui` 保持独立。Journey 可以证明用户操作和可见结果，UI 验收负责判断页面是否符合设计基准；二者可以复用截图，但不能互相代替。
 
-`figma-android-xml` 作为成熟黑盒单向接入：Delivery 只判断是否满足“Figma + XML View”，传入已确认设计，接收 UI 资源和 XML；不复制它的内部生成规则，也不修改它的脚本或配置。Compose 需求继续服从目标项目现有实现。
+`figma-android-xml` 作为成熟黑盒单向接入：Delivery 只判断是否满足“Figma + XML View”，传入已确认设计，接收 UI 资源和 XML；不复制它的内部生成规则，也不修改它的脚本或配置。产物进入项目后执行独立交接门禁，确保用户文案、图片语义、项目资源和业务代码边界服从 Delivery 全局规则。Compose 需求继续服从目标项目现有实现。
 
 ## 四、脚本职责划分
 
@@ -115,8 +115,9 @@ flowchart TD
     F -- "确认" --> H["confirm-requirement-update"]
     H --> X{"Figma UI 且使用 XML View"}
     X -- "是" --> Y["figma-android-xml 生成 XML 与资源"]
+    Y --> Z["Delivery 执行 UI 产物交接门禁"]
     X -- "否" --> I["按目标项目现状编码"]
-    Y --> I
+    Z --> I
     I --> J{"编码中需求是否变化"}
     J -- "变化" --> K["生成增删改和删除处置清单"]
     K --> F
@@ -148,7 +149,7 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 
 ### 5.4 编码与路由
 
-编码遵守目标项目现状。Figma + XML View 场景先由 `figma-android-xml` 生成纯 UI 资源和 XML，再由总入口接管 Kotlin/Java、ViewBinding/DataBinding、状态和业务连线；Compose 或非 Figma 场景不调用该 XML Skill。完成后执行 `route`，根据当前需求基线之后的真实 diff 选择专项和测试，而不是根据文件名或用户一句话直接判定完成。
+编码遵守目标项目现状。Figma + XML View 场景先由 `figma-android-xml` 生成纯 UI 资源和 XML，总入口对本轮产物执行 I18n、A11y、资源复用和业务代码边界交接门禁，再接管 Kotlin/Java、ViewBinding/DataBinding、状态和业务连线；Compose 或非 Figma 场景不调用该 XML Skill。完成后执行 `route`，脚本候选与 Diff Reviewer 对七类影响的语义确认取并集，再选择专项和测试。
 
 ### 5.5 最终门禁
 
@@ -214,6 +215,8 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 | 生命周期、资源、线程、Coroutine、Flow | 稳定性、并发和泄漏审查 |
 
 API 资料缺失且继续实现会脑补 endpoint 或字段时，API 专项可以前置阻断；通常仍在编码后根据真实实现做最终契约审查。
+
+脚本只负责快速发现候选，不维护所有框架关键词。`android-review-diff` 必须基于当前需求和真实 diff 逐项确认 UI、API、数据、系统、构建、架构和测试影响；即使普通文件名中的 Ktor、SharedPreferences 或权限调用未被正则识别，语义确认仍会进入最终机器门禁。
 
 ## 八、自动化测试策略
 

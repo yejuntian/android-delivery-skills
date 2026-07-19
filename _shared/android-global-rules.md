@@ -242,6 +242,7 @@
 - `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态、可见轻交互和人工/设备 A11y 表现验证；可以复用测试产出的截图与 A11y 结果，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
 - `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器/迁移/A11y 测试物化、条件能力命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
 - `figma-android-xml`：只在已确认使用 XML View 且存在 Figma 设计输入时承担 UI 生产，生成 XML、Drawable、Color、Dimen 和预览资源，不编写 Kotlin/Java 业务逻辑。交付 Skill 把它视为稳定黑盒，不复制或改写其内部生成阶段与规则。
+- 外部 UI 生产结果进入目标项目后必须服从本文件、目标项目规则和已确认需求；外部 Skill 的内部偏好不能覆盖交付侧 A11y、I18n、资源复用、技术栈和职责边界。只检查并修正本轮生成文件，不修改外部 Skill 本身。
 - Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`；每条 BDD 用户旅程按 `FULL/PARTIAL/NONE` 路由，只为 Journey 可稳定覆盖的原子 Then 生成用例，`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
 - `android-audit-stability`：只负责崩溃、生命周期、协程、动态泄漏、ANR、性能、运行时安全隐私、资源释放和 Android 版本兼容风险。
 - `android-review-code-quality`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
@@ -278,6 +279,7 @@
 - 涉及 Figma UI 还原时，编码前先输出一份精简 Design Spec Gate，至少包含 target screen、resource tokens、layout structure、component mapping、assets 和 risks/assumptions；这属于实现闸门，不等同于额外展开一轮完整分析报告。
 - 先根据目标项目真实实现确认 UI 技术：XML View 场景把 UI 生产委托给 `figma-android-xml`；Compose 场景沿用项目既有 Compose 结构，不调用 XML 生成 Skill；混合项目只委托明确属于 XML 的部分。不得因为提供了 Figma 链接就擅自切换技术栈。
 - `figma-android-xml` 完成后，由 `android-implement-and-verify` 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线；`android-test-and-fix` 验证行为，`android-verify-ui` 独立消费设计基准、生成结果和运行截图做验收，三者不得互相代替。
+- 接管前执行 Figma 产物交接门禁：用户可见的固定文案必须使用项目字符串资源，动态预览数据只能使用 `tools:text`；装饰图片使用空语义，功能或信息图片使用已确认业务语义的字符串资源，无法确认时暂停而不猜；资源命名和复用服从目标项目。外部 UI 生产阶段不得新增 Kotlin/Java 业务代码，发现越权输出时交回总入口按已确认需求处理。
 - Android CLI、Gradle、adb 只在需要真实构建、安装运行、自动测试、截图、抓日志、设备兼容验证时调用。
 - 需求理解阶段默认不调用 Android CLI；需求未确认前不得用构建或设备结果反推需求结论。
 - Firebase MCP 只在涉及 Firebase、Crashlytics、Remote Config、Analytics、AB 实验、线上崩溃或线上配置时调用。

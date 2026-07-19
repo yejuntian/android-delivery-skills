@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """脚本名称：specialist_result.py
 
-用途：校验 Android 专项审查的最小机器信封，以及按需附加的动态/Agent 证据。
+用途：校验 Android 专项审查的最小机器信封、Diff 语义影响，以及按需附加的动态/Agent 证据。
 
-核心流程：统一核对上下文、结论、P0-P3 和未关闭项；能力、命令、逐项检查、产物
-和执行数量仅在专项实际需要时扩展，避免普通 Review 填写无关字段。
+核心流程：统一核对上下文、结论、P0-P3 和未关闭项；Diff Reviewer 逐项确认七类
+工程影响，其他能力、命令、检查、产物和执行数量只在专项实际需要时扩展。
 
 职责边界：不执行专项 Skill、不生成审查结论、不运行工程命令、不修代码，只定位
 项目外结果目录并验证其他执行者已经产出的结构化结果及其证据文件。
@@ -29,11 +29,20 @@ from .execution_evidence import redact_command, sha256_file  # noqa: E402
 
 
 SPECIALIST_PRODUCER = "android-delivery-specialist-result"
+SPECIALIST_RESULT_VERSION = 3
 SPECIALIST_CONCLUSIONS = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 CAPABILITY_STATUSES = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 SEVERITIES = {"P0", "P1", "P2", "P3"}
 JOURNEY_AGENT_SKILL = "android-test-and-fix/journey-agent"
 STABILITY_SKILL = "android-audit-stability"
+DIFF_REVIEW_SKILL = "android-review-diff"
+IMPACT_CATEGORIES = {"ui", "api", "data", "system", "build", "architecture", "tests"}
+IMPACT_CONDITIONAL_GATES = {
+    "ui": {"android-ui-a11y"},
+    "api": {"android-verify-api-contract", "android-security-privacy"},
+    "data": {"android-data-migration", "android-security-privacy"},
+    "system": {"android-security-privacy"},
+}
 STABILITY_CAPABILITIES = {
     "android-dynamic-leak",
     "android-performance",
@@ -43,6 +52,17 @@ STABILITY_CAPABILITIES = {
 
 class SpecialistResultError(RuntimeError):
     """表示专项结果文件无法读取或不符合统一结果契约。"""
+
+
+def conditional_gates_from_confirmed_impacts(payload: dict[str, Any]) -> set[str]:
+    """把 Diff Reviewer 确认的语义影响映射为最终必须出现的条件门禁。"""
+    if payload.get("skill") != DIFF_REVIEW_SKILL:
+        return set()
+    required_gates: set[str] = set()
+    for item in payload.get("confirmed_impacts", []):
+        if isinstance(item, dict) and item.get("applicable") is True:
+            required_gates.update(IMPACT_CONDITIONAL_GATES.get(item.get("id"), set()))
+    return required_gates
 
 
 def load_specialist_result(path: str | Path) -> dict[str, Any]:
@@ -65,7 +85,10 @@ def validate_specialist_result(
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["专项结果根节点必须是 object"]
-    if payload.get("version") != 2 or payload.get("producer") != SPECIALIST_PRODUCER:
+    if (
+        payload.get("version") != SPECIALIST_RESULT_VERSION
+        or payload.get("producer") != SPECIALIST_PRODUCER
+    ):
         errors.append("专项结果版本或 producer 无效")
     for field in ("id", "skill", "summary"):
         if not isinstance(payload.get(field), str) or not payload[field].strip():
@@ -119,6 +142,58 @@ def validate_specialist_result(
             errors.append("专项结果存在 P0/P1 时不能标记 PASS")
         if any(item.get("severity") in {"P0", "P1"} for item in unresolved if isinstance(item, dict)):
             errors.append("专项结果仍有未关闭 P0/P1 时不能标记 PASS")
+
+    confirmed_impacts = payload.get("confirmed_impacts")
+    if payload.get("skill") == DIFF_REVIEW_SKILL:
+        if not isinstance(confirmed_impacts, list):
+            errors.append("Diff Reviewer 必须逐项输出 confirmed_impacts")
+            confirmed_impacts = []
+        seen_impacts: set[str] = set()
+        for index, item in enumerate(confirmed_impacts):
+            if not isinstance(item, dict):
+                errors.append(f"confirmed_impacts[{index}] 必须是 object")
+                continue
+            if set(item) != {"id", "applicable", "basis_files", "reason"}:
+                errors.append(
+                    f"confirmed_impacts[{index}] 必须只包含 id、applicable、basis_files、reason"
+                )
+                continue
+            impact_id = item.get("id")
+            if impact_id not in IMPACT_CATEGORIES:
+                errors.append(f"confirmed_impacts[{index}].id 无效")
+            elif impact_id in seen_impacts:
+                errors.append(f"confirmed_impacts 存在重复 id: {impact_id}")
+            else:
+                seen_impacts.add(impact_id)
+            applicable = item.get("applicable")
+            if not isinstance(applicable, bool):
+                errors.append(f"confirmed_impacts[{index}].applicable 必须是 boolean")
+            basis_files = item.get("basis_files")
+            if not isinstance(basis_files, list) or not all(
+                isinstance(path, str) and path.strip() for path in basis_files
+            ):
+                errors.append(f"confirmed_impacts[{index}].basis_files 必须是字符串数组")
+                basis_files = []
+            elif len(basis_files) != len(set(basis_files)):
+                errors.append(f"confirmed_impacts[{index}].basis_files 不得重复")
+            else:
+                for path in basis_files:
+                    candidate = Path(path)
+                    if candidate.is_absolute() or ".." in candidate.parts:
+                        errors.append(
+                            f"confirmed_impacts[{index}].basis_files 必须使用项目相对路径"
+                        )
+            if applicable is True and not basis_files:
+                errors.append(f"confirmed_impacts[{index}] 适用时必须提供依据文件")
+            if applicable is False and basis_files:
+                errors.append(f"confirmed_impacts[{index}] 不适用时 basis_files 必须为空")
+            if not isinstance(item.get("reason"), str) or not item["reason"].strip():
+                errors.append(f"confirmed_impacts[{index}] 必须说明 reason")
+        missing_impacts = sorted(IMPACT_CATEGORIES - seen_impacts)
+        if missing_impacts:
+            errors.append("confirmed_impacts 缺少影响类别: " + ", ".join(missing_impacts))
+    elif confirmed_impacts is not None:
+        errors.append("只有 android-review-diff 可以输出 confirmed_impacts")
 
     capabilities = payload.get("capabilities", [])
     seen_capabilities: set[str] = set()

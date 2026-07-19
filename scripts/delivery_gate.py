@@ -44,6 +44,7 @@ from .requirement_inputs import requirement_inputs_digest  # noqa: E402
 from .route_impact import RouteImpactError, load_route_impact  # noqa: E402
 from .specialist_result import (  # noqa: E402
     JOURNEY_AGENT_SKILL,
+    conditional_gates_from_confirmed_impacts,
     validate_specialist_evidence,
 )
 
@@ -586,16 +587,24 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         if missing_pending:
             errors.append("设备待验结论没有登记全部未验证项: " + ", ".join(missing_pending))
     if passing:
+        expected_conditional_gates = set(context.get("expected_conditional_gates", set()))
+        diff_gate = gates.get("android-review-diff", {})
+        for ref in diff_gate.get("evidence_ids", []):
+            result = specialist_results.get(ref, {})
+            if result.get("conclusion") == "PASS":
+                expected_conditional_gates.update(
+                    conditional_gates_from_confirmed_impacts(result)
+                )
         for gate_id in sorted(CORE_REQUIRED_GATES):
             gate = gates.get(gate_id)
             if not gate:
                 errors.append(f"通过结论缺少核心 gate: {gate_id}")
             elif gate.get("required") is not True or gate.get("status") != "PASS":
                 errors.append(f"核心 gate {gate_id} 必须 required=true 且状态为 PASS")
-        for gate_id in sorted(context.get("expected_conditional_gates", set())):
+        for gate_id in sorted(expected_conditional_gates):
             gate = gates.get(gate_id)
             if not gate:
-                errors.append(f"通过结论缺少路由触发的条件 gate: {gate_id}")
+                errors.append(f"通过结论缺少路由或语义触发的条件 gate: {gate_id}")
                 continue
             if gate.get("required") is True:
                 if gate.get("status") != "PASS":

@@ -7,7 +7,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 ## 共享规则
 
-执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用完整交付模式：本次需求范围内的问题默认自修复并重验，不采用专项 Skill 的 standalone report-only 默认值。
+执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用总入口自修复授权：本次需求范围内的问题默认最小修复并重验，不采用专项 Skill 的 standalone report-only 默认值；是否进入完整交付仍按三阶段规则判断。
 
 维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。物化中途需求增删改时遵守 `references/requirement-revision.schema.json`，生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
 
@@ -26,12 +26,12 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 专项 Skill 的默认位置：
 
-- `android-review-diff`：编码后审查实际 diff、影响范围、无关改动和回归风险；只有变更范围不清或用户要求先分析时才前置。
-- `android-verify-api-contract`：编码后审查接口实现和 OpenAPI 是否符合契约；只有关键接口资料缺失、继续写会脑补字段或 endpoint 时才前置。
+- `android-review-diff`：最终交付审查实际 diff、影响范围、无关改动和回归风险；局部迭代只有变更范围不清或用户明确要求时才调用。
+- `android-verify-api-contract`：最终交付按接口候选审查实现和 OpenAPI 是否符合契约；关键接口资料缺失、局部迭代直接改变契约或用户明确要求时可以提前调用。
 - `android-verify-ui`：独立手动收尾能力；总入口检测到 UI/A11y 变更时只提示用户单独调用，不自动执行视觉或人工验收。
 - `android-test-and-fix`：BDD 确认后物化自动测试；编码后局部迭代只执行受影响测试和必要编译，最终交付才执行完整测试矩阵、构建、lint、迁移、A11y、Journey、截图或仪器测试；失败时驱动自修复。
-- `android-audit-stability`：编码后检查崩溃、动态泄漏、性能、安全隐私、ANR、协程、生命周期和 Android 版本兼容。
-- `android-review-code-quality`：编码后检查架构一致性、最小修改、资源规范、重复逻辑和测试覆盖。
+- `android-audit-stability`：最终交付检查崩溃、动态泄漏、性能、安全隐私、ANR、协程、生命周期和 Android 版本兼容；局部迭代只在直接触及对应高风险时调用。
+- `android-review-code-quality`：最终交付检查架构一致性、最小修改、资源规范、重复逻辑和测试覆盖；局部迭代只在直接触及架构或职责边界时调用。
 
 外部 UI 生产 Skill 的位置：
 
@@ -157,7 +157,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 - `REMOVED + CONFIRMED` 必须明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`；`SUPERSEDED` 必须在同轮指向一个已确认的新增 Then。
 - 每轮必须分类全部既有有效 Then 和上轮待定项；未变化项保留 ID。只在聊天中确认的变化先同步到 `requirement_file`，不得让聊天成为唯一事实来源。
 - 只有用户确认正文语义完全不变时才允许 `format_only=true`，并要求全部 Then 为 `UNCHANGED`；该操作同步正文摘要但不推进语义修订号。
-- `confirm-requirement-update` 只更新最近确认正文、修订号、有效义务和修订历史，不读取或修改 Git。新的串行需求必须完成当前需求后，在干净工作区重新执行 `check-env`。
+- `confirm-requirement-update` 只更新最近确认正文、修订号、有效义务和修订历史，不读取或修改 Git。重复 `check-env` 只复用当前起点；新的串行需求必须完成当前需求并获得用户明确确认后，在干净工作区执行 `check-env --new-requirement`。
 
 ## 影响面识别与路由
 
@@ -257,7 +257,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 ```
 
-**AI 动作**：环境检查只在目标分支和工作区干净时一起建立当前需求 Git 基线与需求起点；任一失败都不进入编码。检测到已有改动时停止，不自动 stash、提交或清理。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
+**AI 动作**：环境检查只在目标分支和工作区干净时一起建立当前需求 Git 基线与需求起点；已有起点时安全复用，绝不覆盖。任一失败都不进入编码。检测到已有改动时停止，不自动 stash、提交或清理。只有用户明确开始新的串行需求时才使用 `check-env --new-requirement`。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update

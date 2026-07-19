@@ -2,12 +2,12 @@
 """
 ================================================================================
 脚本名称：delivery.py
-用    途：Android Delivery Workflow 的三阶段流程与需求修订确认 CLI 编排器。
+用    途：Android Delivery Workflow 的需求、基线、修订与最终路由 CLI 编排器。
 
 设计初衷：
 为了防止 AI 在长篇 Prompt 中出现“认知过载、幻觉乱改、超时卡死”等问题，
-本脚本将整个 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线
-与已确认需求快照：
+本脚本将 Android 交付工作流拆分为离散的 CLI 步骤，并只保存当前需求 Git 基线
+与已确认需求快照。首次准备、编码后局部迭代和最终交付的阶段选择由 Skill 负责：
 1. `init`: 负责首次需求提炼，或对比最近确认修订汇总中途需求变化并制定 BDD。
 2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求起点建立。
 3. `confirm-requirement-update`: 负责确认原子义务修订，不修改 Git 基线。
@@ -46,6 +46,7 @@ from .git_changes import (  # noqa: E402
     collect_changed_files,
     current_branch,
     current_delivery_snapshot,
+    load_baseline,
     write_baseline,
     working_tree_status,
 )
@@ -127,6 +128,11 @@ def parse_args(argv=None):
     # 阶段二：check-env (环境与编码准备阶段)
     parser_check = subparsers.add_parser("check-env", help="检查环境并记录需求起点")
     parser_check.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
+    parser_check.add_argument(
+        "--new-requirement",
+        action="store_true",
+        help="用户明确开始新的串行需求时，允许替换已有需求起点",
+    )
 
     # 需求确认：只推进需求修订，不改变编码起点 Git 基线。
     parser_confirm = subparsers.add_parser(
@@ -239,19 +245,20 @@ def print_bdd_instruction():
 
 
 def print_environment_rules():
-    """打印环境检查后的编码约束，提示 AI 开始编码前后的必须行为。"""
+    """打印通用编码约束，明确局部迭代与最终交付的执行边界。"""
     print("\n---")
     print("👉 AI 指令：环境检查完成。你已获准开始编码。")
     print("【强制规约】:")
     print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
-    print("  3. 编码后：根据实际模块、variant 和项目已有任务选择 assemble，不得写死 assembleDebug。")
-    print("  4. 编译后：根据实际模块、variant 和项目已有任务选择 lint，不得写死 lintDebug。")
+    print("  3. 局部迭代：编码后的完善、修改、删除或修复只运行受影响测试和必要编译，不自动 route 或全量审查。")
+    print("  4. 需求变化：只有业务行为、边界或验收结果变化时才修订需求；确认后仍回到局部迭代。")
     print("  5. 测试左移：按 REQ/BDD 分配 TEST-###；Bug 或可观察行为变化优先先保留 Red，再最小修改转 Green。")
-    print("  6. 追溯：同步实现文件、测试、命令和证据；全部已确认需求的映射率必须为 100%。")
-    print("  7. 闭环：任一测试、构建或 Lint 失败，定位根因并修改后重跑；同一根因连续 3 轮失败才暂停。")
-    print("  8. 新鲜证据：最后一次修复后重新执行全部必需命令，旧轮次通过结果不能作为最终门禁。")
-    print("  9. 不得自动提交 Git；只有用户明确要求时才提交。")
+    print("  6. 最终交付：仅在用户当前或最初明确要求最终检查、完整交付或准备提交时执行 route、assemble、lint 和完整门禁。")
+    print("  7. 真实任务：根据实际模块、variant 和项目已有任务选择命令，不得写死 assembleDebug 或 lintDebug。")
+    print("  8. 追溯与证据：局部结果只证明本轮范围；最终代码必须重新执行全部必需命令，需求映射率为 100%。")
+    print("  9. 闭环：失败时定位根因并重跑受影响项；同一根因连续 3 轮失败才暂停。")
+    print(" 10. 不得自动提交 Git；只有用户明确要求时才提交。")
 
 
 def _restore_local_state(path: Path, previous: bytes | None) -> None:
@@ -262,6 +269,70 @@ def _restore_local_state(path: Path, previous: bytes | None) -> None:
     temporary = path.with_suffix(path.suffix + ".rollback")
     temporary.write_bytes(previous)
     temporary.replace(path)
+
+
+def _reuse_existing_requirement_start(
+    project_path: Path,
+    requirement_path: Path,
+    requirement_content: str,
+    baseline_path: Path,
+    snapshot_path: Path,
+    *,
+    new_requirement: bool,
+) -> bool:
+    """复用同一需求起点；只有明确的新串行需求才允许覆盖已有状态。"""
+    baseline_exists = baseline_path.is_file()
+    snapshot_exists = snapshot_path.is_file()
+    if new_requirement or (not baseline_exists and not snapshot_exists):
+        return False
+    if baseline_exists != snapshot_exists:
+        raise DeliveryError(
+            "当前配置的 Git 基线与需求快照不完整，拒绝自动覆盖。"
+            "请先检查外部状态；脚本不会猜测哪一份可以删除。"
+        )
+    try:
+        baseline = load_baseline(project_path, baseline_path)
+        snapshot = load_requirement_snapshot(snapshot_path)
+    except (GitInspectionError, RequirementSnapshotError) as exc:
+        raise DeliveryError(
+            f"当前配置已有需求起点但无法安全复用: {exc}\n"
+            "确认开始新的串行需求后，才可使用 check-env --new-requirement。"
+        ) from exc
+    if snapshot is None:
+        raise DeliveryError("当前配置的需求快照缺失，拒绝覆盖已有 Git 基线")
+    if snapshot["requirement_id"] != baseline["id"]:
+        raise DeliveryError(
+            "当前配置的 Git 基线与需求快照不属于同一需求，拒绝复用或自动覆盖。"
+            "请先检查外部状态；确认开始新的串行需求后，才可使用 "
+            "check-env --new-requirement。"
+        )
+    if Path(str(snapshot["requirement_path"])).resolve() != requirement_path.resolve():
+        raise DeliveryError(
+            "当前配置仍绑定另一个需求文件，拒绝覆盖正在使用的 Git 基线。"
+            "确认上一需求结束后，使用 check-env --new-requirement 开始新的串行需求。"
+        )
+
+    print("✅ 检测到当前需求已有起点，本次复用且不重建基线。")
+    print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
+    print(f"✅ 当前需求修订: r{snapshot['revision']} ({snapshot['status']})")
+    content_matches = snapshot["sha256"] == requirement_digest(requirement_content)
+    if content_matches:
+        print("✅ 当前需求正文与最近确认修订一致。")
+    else:
+        print("⚠️ 当前需求正文存在变化；请执行 init 和 confirm-requirement-update，Git 基线保持不变。")
+    requirement_confirmed = (
+        snapshot["status"] == "CONFIRMED"
+        and not snapshot["pending_changes"]
+        and content_matches
+    )
+    if requirement_confirmed:
+        print("👉 AI 指令：继续当前需求的编码或局部迭代；不得重建需求起点或重复完整交付流程。")
+    else:
+        print(
+            "👉 AI 指令：继续完成当前需求确认；未成功执行 "
+            "confirm-requirement-update 前不得编码、route 或生成最终结果。"
+        )
+    return True
 
 
 def get_diff_files(baseline_path):
@@ -509,7 +580,7 @@ def cmd_init(args):
             print("\n👉 AI 指令：把差异与追溯表按业务语义汇总为增改删、替代和逐项确认决策。")
             print("同一需求保留未变化 ID；修改和新增项重新确认，删除项必须选择实现处置。")
             print("只在聊天中出现的变化必须同步到 requirement_file；不得把待定内容写成已确认。")
-            print("如果用户明确这是新的串行需求，不沿用旧 ID；确认后由干净工作区上的 check-env 覆盖旧起点。")
+            print("如果用户明确这是新的串行需求，不沿用旧 ID；确认上一需求结束后，在干净工作区执行 check-env --new-requirement 建立新起点。")
             print("Git 基线保持原需求起点不变；只使受影响映射和证据失效，最终门禁仍基于最终代码重跑。")
         revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
         print(f"📄 默认修订清单: {revision_file}")
@@ -555,6 +626,16 @@ def cmd_check_env(args):
     print("✅ 工作区干净。")
 
     baseline_path = baseline_path_for_config(args.config)
+    snapshot_path = requirement_snapshot_path_for_config(args.config)
+    if _reuse_existing_requirement_start(
+        project_path,
+        requirement_path,
+        requirement_content,
+        baseline_path,
+        snapshot_path,
+        new_requirement=getattr(args, "new_requirement", False),
+    ):
+        return
     try:
         previous_baseline = baseline_path.read_bytes() if baseline_path.is_file() else None
     except OSError as exc:
@@ -565,7 +646,7 @@ def cmd_check_env(args):
         raise DeliveryError(f"无法写入当前需求 Git 基线: {baseline_path}: {exc}") from exc
     try:
         requirement_snapshot = write_requirement_snapshot(
-            requirement_snapshot_path_for_config(args.config),
+            snapshot_path,
             requirement_path,
             requirement_content,
             requirement_id=baseline["id"],

@@ -67,7 +67,9 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 3. DOCX 使用 Python 标准库读取 OOXML 正文，不要求 IDE 额外安装文档解析库。
 4. 文件为空、损坏或格式不支持时，脚本会说明原因并停止；修正路径、重新导出 Word 或转换格式后重试。
 
-完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD 和需求起点；需求修订确认不会更新 Git 基线。`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化，并保留 `A/M/D/R` 状态与真实修改片段。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
+完整交付不需要维护 `base_branch`。`check-env` 会在干净工作区记录本需求开始时的 HEAD 和需求起点；重复执行只复用原起点，不会隐藏中途已经提交的改动。只有你明确结束上一需求并开始新的串行需求后，AI 才使用 `check-env --new-requirement` 建立新起点。需求修订确认不会更新 Git 基线。`route` 只收集该基线之后的 committed、staged、unstaged 和 untracked 变化，并保留 `A/M/D/R` 状态与真实修改片段。工作区不干净时会停止，由你决定如何处理，脚本不会自动 stash、提交或清理。
+
+同一 `local.yaml` 同时只允许一个活动交付窗口推进状态；其他窗口可以只读检查，但不要同时执行 `check-env`、需求确认、`route` 或最终证据命令。远程设计/API 资料用于正式通过时应登记本地导出、截图或明确版本摘要；整个需求取消时不生成空验收集合或交付通过，先由你决定代码撤销和兼容处置。
 
 ## 确认后继续
 
@@ -225,11 +227,11 @@ python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch \
 | Skill | 负责什么 | 不负责什么 | 默认调用时机 |
 | --- | --- | --- | --- |
 | `android-implement-and-verify` | 确认需求、BDD、生成测试、编码、动态路由、自修复、重验和交付门禁 | 发布上线、生产数据、未授权 Git 提交 | 完整需求、Bug 或迭代的唯一入口 |
-| `android-review-diff` | 检查是否改对、改多、漏改，以及无关 diff 和业务回归 | 通用代码质量、API 字段、UI 像素和测试执行 | 任意代码改动后必跑 |
+| `android-review-diff` | 检查是否改对、改多、漏改，以及无关 diff 和业务回归 | 通用代码质量、API 字段、UI 像素和测试执行 | 最终交付必跑；局部迭代仅在范围不清或用户明确要求时调用 |
 | `android-verify-api-contract` | 核验 OpenAPI、endpoint、Request/Response、DTO、mapper、错误码和兼容性 | 产品需求、通用架构、UI 和完整测试门禁 | API、DTO 或网络 Repository 变更时 |
-| `android-review-code-quality` | 检查架构一致性、可维护性、依赖边界、重复逻辑和资源规范 | 需求覆盖、API 契约、运行时专项风险和 UI 还原 | 任意代码改动后必跑 |
-| `android-audit-stability` | 检查崩溃、动态泄漏、性能、安全隐私、ANR、协程和版本兼容 | diff 范围、通用风格、API 契约和设计还原 | 任意业务改动后必跑，专项按条件执行 |
-| `android-test-and-fix` | 把 BDD 物化为 Unit、迁移、A11y、仪器或 Journey 测试，执行并修复失败 | 需求确认、接口契约来源、设计判断和发布 | 完整交付必跑 |
+| `android-review-code-quality` | 检查架构一致性、可维护性、依赖边界、重复逻辑和资源规范 | 需求覆盖、API 契约、运行时专项风险和 UI 还原 | 最终交付必跑；局部迭代只在架构或职责边界变化时调用 |
+| `android-audit-stability` | 检查崩溃、动态泄漏、性能、安全隐私、ANR、协程和版本兼容 | diff 范围、通用风格、API 契约和设计还原 | 最终交付必跑；局部迭代只在对应高风险变化时调用 |
+| `android-test-and-fix` | 把 BDD 物化为 Unit、迁移、A11y、仪器或 Journey 测试，执行并修复失败 | 需求确认、接口契约来源、设计判断和发布 | 局部迭代执行受影响测试；最终交付执行完整门禁 |
 | `android-verify-ui` | 独立验收布局、截图、设计还原和人工/设备 A11y 表现 | 自动测试用例、接口、数据存储、支付和提交 | 用户在 UI/A11y 变更完成后单独调用 |
 
 ### 单独调用示例

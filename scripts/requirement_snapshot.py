@@ -278,7 +278,8 @@ def _validate_manifest(
         raise RequirementSnapshotError("需求修订清单 version 必须为 1")
     if manifest.get("scope") == "NEW_SERIAL_REQUIREMENT":
         raise RequirementSnapshotError(
-            "检测到新的串行需求：请完成当前需求，并在干净工作区重新执行 check-env"
+            "检测到新的串行需求：请确认当前需求已经结束，并在干净工作区执行 "
+            "check-env --new-requirement"
         )
     if manifest.get("scope") != "SAME_REQUIREMENT":
         raise RequirementSnapshotError("需求修订清单 scope 必须为 SAME_REQUIREMENT")

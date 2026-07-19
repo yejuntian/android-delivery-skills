@@ -9,7 +9,8 @@
 2. Word、Markdown、TXT 需求正文读取及明确失败行为。
 3. 七类工程影响、第二轮条件能力候选、route 外部快照和输出，不把模糊子串当成业务结论。
 4. 当前需求 Git 基线、连续需求修订、部分确认、撤回、删除处置和重复 init 安全性。
-5. 四类 Git 变化、增删改状态、真实片段、最终代码摘要和独立 JSON 输出。
+5. 重复 check-env 复用且校验配对起点，未确认需求不放行编码，只有明确的新串行需求才允许更换起点。
+6. 四类 Git 变化、增删改状态、真实片段、最终代码摘要和独立 JSON 输出。
 
 测试原则：
 - 所有文件和 Git 仓库均创建在临时目录，不读取或修改真实项目状态。
@@ -52,6 +53,7 @@ from ..delivery import (  # noqa: E402
     cmd_route,
     format_requirement_change,
     load_config,
+    print_environment_rules,
     read_requirement,
     resolve_config_paths,
 )
@@ -69,6 +71,7 @@ from ..git_changes import (  # noqa: E402
     collect_changed_files,
     current_delivery_snapshot,
     current_branch,
+    current_head,
     load_baseline,
     write_baseline,
     working_tree_status,
@@ -250,6 +253,20 @@ class RequirementSnapshotTests(unittest.TestCase):
             "BDD-001/T2：删除，已确认：只删除当前入口，保留兼容能力",
             text,
         )
+
+    def test_environment_rules_separate_local_iteration_from_final_delivery(self) -> None:
+        """验证需求确认后的终端提示不会把每次局部完善带回完整门禁。"""
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            print_environment_rules()
+
+        text = output.getvalue()
+        self.assertIn("局部迭代", text)
+        self.assertIn("不自动 route 或全量审查", text)
+        self.assertIn("最终交付", text)
+        self.assertIn("最终检查、完整交付或准备提交", text)
+        self.assertNotIn("编译后：", text)
 
     def test_legacy_snapshot_upgrades_without_losing_confirmed_text(self) -> None:
         """验证已有 v1 外部快照可继续使用，并在下一次确认时安全升级。"""
@@ -497,7 +514,10 @@ class RequirementSnapshotTests(unittest.TestCase):
 
         serial = self._manifest(1, [self._change("BDD-001/T1", "UNCHANGED")])
         serial["scope"] = "NEW_SERIAL_REQUIREMENT"
-        with self.assertRaisesRegex(RequirementSnapshotError, "新的串行需求"):
+        with self.assertRaisesRegex(
+            RequirementSnapshotError,
+            "check-env --new-requirement",
+        ):
             apply_requirement_revision(
                 self.snapshot, self.requirement, "显示错误", serial,
             )
@@ -750,6 +770,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("BDD-001/T1", text)
         self.assertIn("新增、修改、删除、未变化、已被新要求替代", text)
         self.assertIn("英文枚举只写入 requirement-revision.json", text)
+        self.assertIn("check-env --new-requirement", text)
         self.assertNotIn("ADDED/CHANGED/REMOVED/UNCHANGED", text)
 
     def test_confirm_command_never_changes_git_baseline(self) -> None:
@@ -1104,6 +1125,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         args = SimpleNamespace(config=str(Path(self.temp_dir.name) / "local.yaml"))
         requirement = Path(self.temp_dir.name) / "requirement.md"
         requirement.write_text("已确认需求\n", encoding="utf-8")
+        check_baseline = Path(self.temp_dir.name) / "check-env-baseline.json"
         snapshot = Path(self.temp_dir.name) / "requirement-snapshot.json"
         paths = SimpleNamespace(
             project_path=self.repo,
@@ -1113,7 +1135,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         patches = (
             mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
             mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.baseline),
+            mock.patch("scripts.delivery.baseline_path_for_config", return_value=check_baseline),
             mock.patch(
                 "scripts.delivery.requirement_snapshot_path_for_config",
                 return_value=snapshot,
@@ -1129,8 +1151,158 @@ class GitDiffCollectionTests(unittest.TestCase):
             self.git("commit", "-q", "-m", "current requirement prepared")
             with patches[0], patches[1], patches[2], patches[3], redirect_stdout(io.StringIO()):
                 cmd_check_env(args)
-            self.assertEqual(current_branch(self.repo), load_baseline(self.repo, self.baseline)["branch"])
+            self.assertEqual(current_branch(self.repo), load_baseline(self.repo, check_baseline)["branch"])
             self.assertEqual("已确认需求", load_requirement_snapshot(snapshot)["content"])
+        finally:
+            os.chdir(old_cwd)
+
+    def test_check_env_reuses_existing_start_after_intermediate_commit(self) -> None:
+        """验证中途提交后重复检查只复用原起点，不隐藏已经提交的需求改动。"""
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "prepare clean tree")
+        requirement = Path(self.temp_dir.name) / "requirement.md"
+        requirement.write_text("同一需求\n", encoding="utf-8")
+        baseline = Path(self.temp_dir.name) / "check-env-reuse-baseline.json"
+        snapshot = Path(self.temp_dir.name) / "check-env-reuse-snapshot.json"
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement.parent,
+        )
+        args = SimpleNamespace(
+            config=str(Path(self.temp_dir.name) / "local.yaml"),
+            new_requirement=False,
+        )
+        old_cwd = Path.cwd()
+        try:
+            with (
+                mock.patch(
+                    "scripts.delivery.load_config",
+                    return_value={"branch": "feature"},
+                ),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=snapshot,
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                cmd_check_env(args)
+                original_baseline = baseline.read_bytes()
+                original_snapshot = snapshot.read_bytes()
+                original_head = load_baseline(self.repo, baseline)["head"]
+
+                self.write("app/src/main/java/example/Later.kt", "class Later\n")
+                self.git("add", ".")
+                self.git("commit", "-q", "-m", "intermediate requirement work")
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    cmd_check_env(args)
+
+            self.assertIn("复用且不重建基线", output.getvalue())
+            self.assertIn(
+                "未成功执行 confirm-requirement-update 前不得编码",
+                output.getvalue(),
+            )
+            self.assertNotIn("继续当前需求的编码或局部迭代", output.getvalue())
+            self.assertEqual(original_baseline, baseline.read_bytes())
+            self.assertEqual(original_snapshot, snapshot.read_bytes())
+            self.assertEqual(original_head, load_baseline(self.repo, baseline)["head"])
+            self.assertNotEqual(original_head, current_head(self.repo))
+        finally:
+            os.chdir(old_cwd)
+
+    def test_check_env_rejects_mismatched_baseline_and_requirement_snapshot(self) -> None:
+        """验证两份状态各自合法但需求 ID 不配对时停止，不拼接成错误起点。"""
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "prepare clean tree")
+        requirement = Path(self.temp_dir.name) / "requirement.md"
+        requirement.write_text("同一需求\n", encoding="utf-8")
+        baseline = Path(self.temp_dir.name) / "check-env-mismatch-baseline.json"
+        snapshot = Path(self.temp_dir.name) / "check-env-mismatch-snapshot.json"
+        write_baseline(self.repo, baseline)
+        write_requirement_snapshot(
+            snapshot,
+            requirement,
+            "同一需求",
+            requirement_id="another-requirement",
+        )
+        original_baseline = baseline.read_bytes()
+        original_snapshot = snapshot.read_bytes()
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement.parent,
+        )
+        args = SimpleNamespace(
+            config=str(Path(self.temp_dir.name) / "local.yaml"),
+            new_requirement=False,
+        )
+        old_cwd = Path.cwd()
+        try:
+            with (
+                mock.patch(
+                    "scripts.delivery.load_config",
+                    return_value={"branch": "feature"},
+                ),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=snapshot,
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                with self.assertRaisesRegex(DeliveryError, "不属于同一需求"):
+                    cmd_check_env(args)
+        finally:
+            os.chdir(old_cwd)
+        self.assertEqual(original_baseline, baseline.read_bytes())
+        self.assertEqual(original_snapshot, snapshot.read_bytes())
+
+    def test_check_env_replaces_start_only_for_explicit_new_requirement(self) -> None:
+        """验证明确的新串行需求可以在干净工作区安全建立新起点。"""
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "prepare first requirement")
+        requirement = Path(self.temp_dir.name) / "requirement.md"
+        requirement.write_text("第一个需求\n", encoding="utf-8")
+        baseline = Path(self.temp_dir.name) / "check-env-new-baseline.json"
+        snapshot = Path(self.temp_dir.name) / "check-env-new-snapshot.json"
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement.parent,
+        )
+        args = SimpleNamespace(
+            config=str(Path(self.temp_dir.name) / "local.yaml"),
+            new_requirement=False,
+        )
+        old_cwd = Path.cwd()
+        try:
+            with (
+                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=snapshot,
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                cmd_check_env(args)
+                original_id = load_baseline(self.repo, baseline)["id"]
+                self.write("app/src/main/java/example/FirstDone.kt", "class FirstDone\n")
+                self.git("add", ".")
+                self.git("commit", "-q", "-m", "finish first requirement")
+                requirement.write_text("第二个需求\n", encoding="utf-8")
+                args.new_requirement = True
+                cmd_check_env(args)
+
+            updated = load_baseline(self.repo, baseline)
+            self.assertNotEqual(original_id, updated["id"])
+            self.assertEqual(current_head(self.repo), updated["head"])
+            self.assertEqual("第二个需求", load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
 
@@ -1147,7 +1319,10 @@ class GitDiffCollectionTests(unittest.TestCase):
             requirement_path=requirement,
             requirement_dir=requirement.parent,
         )
-        args = SimpleNamespace(config=str(Path(self.temp_dir.name) / "local.yaml"))
+        args = SimpleNamespace(
+            config=str(Path(self.temp_dir.name) / "local.yaml"),
+            new_requirement=True,
+        )
         old_cwd = Path.cwd()
         try:
             with (

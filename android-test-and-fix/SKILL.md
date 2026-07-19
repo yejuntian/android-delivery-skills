@@ -276,7 +276,7 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 4. 每一步记录脱敏命令、布局/截图 SHA-256、状态和说明；不得把 AI 观察描述当作不存在的工具返回值。
 5. 按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出 `specialist=android-test-and-fix/journey-agent` 的统一结果，`executed_tests` 为实际完成的 Journey 数，`executed_checks` 为实际判断的 action 数，最终报告使用 `AGENT` 证据类型。
 
-Android CLI、adb 或设备不可用时，先路由到项目已有 Compose/Espresso/UIAutomator；仍无等价能力时把对应 Then 标为未验证。默认路线失败不会要求用户初始化 Android Studio 壳。
+Android CLI、adb 或设备不可用时，先路由到项目已有 Compose/Espresso/UIAutomator；仍无等价能力时把对应 Then 标为未验证。设备只能完成部分步骤时，把能够独立闭环的已完成 Then 拆成短 Journey 并重跑通过，原中断结果记为 `PARTIAL + ENVIRONMENT_FAILED`：DNS 不可用的业务状态转 Fake/MockWebServer，ROM 禁止 shell 输入的 UI 操作转项目已有仪器测试或现有可控模拟器，性能转 Benchmark/Perfetto；只将剩余 Then 标为未验证。不得用中断前的截图直接冒充 Journey 通过，也不得把已保存但未执行的 Journey XML 写成通过。默认路线失败不会要求用户初始化 Android Studio 壳。
 
 ### 可选壳项目执行
 

@@ -141,6 +141,14 @@ REQ-ID / BDD-ID / Then
 
 - 没有设备时继续编译、Unit、参数化、Robolectric、Repository、MockWebServer、契约、截图和静态门禁；只把需要设备的验证义务标为未验证。
 - 模拟器可以等价证明功能、迁移或基础 A11y 时继续执行；正式性能、厂商 ROM 和真实硬件不得用模拟器冒充。
+- 设备只能完成部分 Journey 时，先把能够独立闭环的已完成 Then 拆成短 Journey 并重跑通过，再按原子 Then 降级剩余部分；中断前的截图只作过程证据，不能直接算自动覆盖：
+
+| 环境限制 | 后续处理 |
+| --- | --- |
+| DNS 或真实接口不可控 | 使用 Fake/MockWebServer 验证业务状态；真实连通性仍标未验证 |
+| ROM 禁止 shell 点击或滑动 | 转项目已有 Compose/Espresso/UIAutomator，或已有可控模拟器；当前 ROM 只保留实际完成或人工证据 |
+| 性能、泄漏或 ANR | 转 Benchmark、Perfetto 或稳定性专项；Journey 只提供复现入口 |
+
 - 低 AGP 目标项目继续使用自己的 wrapper 构建 APK；默认由当前 AI 会话使用 Android CLI/adb 对已安装 APK 执行 Journey，不要求初始化 Studio 壳。已经初始化的独立壳只作可选回退，同样不升级或修改目标项目。
 - 优先复用目标项目已有 Compose/Espresso/UIAutomator；需要为老项目补外部 UIAutomator 时单独设计执行能力，不把逻辑塞进 `run_journey.py`。
 - 工具失败先标 `ENVIRONMENT_FAILED` 并保留原始证据。AI 可以选择等价工具和最小修复，但不能模拟执行结果。

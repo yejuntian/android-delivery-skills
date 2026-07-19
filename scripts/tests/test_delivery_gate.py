@@ -41,6 +41,7 @@ from ..requirement_snapshot import (  # noqa: E402
 from ..requirement_inputs import requirement_inputs_digest  # noqa: E402
 from ..route_impact import build_route_impact, write_route_impact  # noqa: E402
 from ..specialist_result import (  # noqa: E402
+    CODE_QUALITY_CHECK_IDS,
     IMPACT_CATEGORIES,
     SPECIALIST_PRODUCER,
     SPECIALIST_RESULT_VERSION,
@@ -57,6 +58,19 @@ def no_confirmed_impacts() -> list[dict]:
             "reason": "需求与最终 diff 均未涉及。",
         }
         for impact_id in sorted(IMPACT_CATEGORIES)
+    ]
+
+
+def passing_code_quality_checks() -> list[dict]:
+    """生成最终门禁夹具所需的四项代码质量机器检查。"""
+    return [
+        {
+            "id": check_id,
+            "required": True,
+            "status": "PASS",
+            "summary": "已结合最终 diff 逐项检查。",
+        }
+        for check_id in sorted(CODE_QUALITY_CHECK_IDS)
     ]
 
 
@@ -216,6 +230,9 @@ class DeliveryGateTests(unittest.TestCase):
             }
             if skill == "android-review-diff":
                 specialist_result["confirmed_impacts"] = no_confirmed_impacts()
+            if skill == "android-review-code-quality":
+                specialist_result["checks"] = passing_code_quality_checks()
+                specialist_result["executed_checks"] = len(specialist_result["checks"])
             if skill == "android-audit-stability":
                 specialist_result["capabilities"] = [
                     {

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """脚本名称：specialist_result.py
 
-用途：校验 Android 专项审查的最小机器信封、Diff 语义影响，以及按需附加的动态/Agent 证据。
+用途：校验 Android 专项审查的最小机器信封、Diff 语义影响、代码质量核心检查，
+以及按需附加的动态/Agent 证据。
 
 核心流程：统一核对上下文、结论、P0-P3 和未关闭项；Diff Reviewer 逐项确认七类
-工程影响，其他能力、命令、检查、产物和执行数量只在专项实际需要时扩展。
+工程影响，代码质量审查固定确认分层、职责、核心注释和可测试性，其他专项按需扩展。
 
 职责边界：不执行专项 Skill、不生成审查结论、不运行工程命令、不修代码，只定位
 项目外结果目录并验证其他执行者已经产出的结构化结果及其证据文件。
@@ -36,6 +37,13 @@ SEVERITIES = {"P0", "P1", "P2", "P3"}
 JOURNEY_AGENT_SKILL = "android-test-and-fix/journey-agent"
 STABILITY_SKILL = "android-audit-stability"
 DIFF_REVIEW_SKILL = "android-review-diff"
+CODE_QUALITY_SKILL = "android-review-code-quality"
+CODE_QUALITY_CHECK_IDS = {
+    "architecture-layering",
+    "responsibility-cohesion",
+    "source-documentation",
+    "dependency-testability",
+}
 IMPACT_CATEGORIES = {"ui", "api", "data", "system", "build", "architecture", "tests"}
 IMPACT_CONDITIONAL_GATES = {
     "ui": {"android-ui-a11y"},
@@ -274,6 +282,12 @@ def validate_specialist_result(
         errors.append("专项结果包含 checks 时必须填写 executed_checks")
     elif isinstance(executed_checks, int) and executed_checks != len(checks):
         errors.append("专项结果 executed_checks 与 checks 数量不一致")
+    if payload.get("skill") == CODE_QUALITY_SKILL:
+        missing_quality_checks = sorted(CODE_QUALITY_CHECK_IDS - seen_checks)
+        if missing_quality_checks:
+            errors.append(
+                "代码质量专项缺少必需检查: " + ", ".join(missing_quality_checks)
+            )
     executed_tests = payload.get("executed_tests")
     if executed_tests is not None and (
         not isinstance(executed_tests, int) or executed_tests < 0

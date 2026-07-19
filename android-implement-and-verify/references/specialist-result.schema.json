@@ -161,6 +161,29 @@
     {
       "if": {
         "properties": {
+          "skill": { "const": "android-review-code-quality" }
+        },
+        "required": ["skill"]
+      },
+      "then": {
+        "required": ["checks", "executed_checks"],
+        "properties": {
+          "checks": {
+            "minItems": 4,
+            "allOf": [
+              { "contains": { "properties": { "id": { "const": "architecture-layering" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "responsibility-cohesion" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "source-documentation" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "dependency-testability" } }, "required": ["id"] } }
+            ]
+          },
+          "executed_checks": { "minimum": 4 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "skill": { "const": "android-test-and-fix/journey-agent" }
         },
         "required": ["skill"]

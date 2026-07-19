@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """脚本名称：test_specialist_result.py
 
-用途：验证最小专项结果能够阻断 P0/P1、过期代码和被修改的可选证据文件。
+用途：验证最小专项结果能够阻断 P0/P1、过期代码、缺失的代码质量核心检查和被修改的可选证据文件。
 
-覆盖范围：普通 Review 最小信封、按需能力/命令/artifact、上下文绑定。测试只使用
-临时文件，不调用真实 Skill、Android 项目、设备或网络。
+覆盖范围：普通 Review 最小信封、Diff 语义影响、代码质量结构化检查、按需能力/
+命令/artifact 和上下文绑定。测试只使用临时文件，不调用真实项目、设备或网络。
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ if __package__ in {None, ""}:
 
 from ..execution_evidence import sha256_file  # noqa: E402
 from ..specialist_result import (  # noqa: E402
+    CODE_QUALITY_CHECK_IDS,
     IMPACT_CATEGORIES,
     SPECIALIST_PRODUCER,
     SPECIALIST_RESULT_VERSION,
@@ -45,6 +46,19 @@ def no_confirmed_impacts() -> list[dict]:
             "reason": "需求与最终 diff 均未涉及。",
         }
         for impact_id in sorted(IMPACT_CATEGORIES)
+    ]
+
+
+def passing_code_quality_checks() -> list[dict]:
+    """生成分层、职责、核心注释和可测试性均通过的代码质量检查。"""
+    return [
+        {
+            "id": check_id,
+            "required": True,
+            "status": "PASS",
+            "summary": "已结合最终 diff 逐项检查。",
+        }
+        for check_id in sorted(CODE_QUALITY_CHECK_IDS)
     ]
 
 
@@ -140,6 +154,18 @@ class SpecialistResultTests(unittest.TestCase):
             },
             conditional_gates_from_confirmed_impacts(self.payload),
         )
+
+    def test_code_quality_requires_structured_core_checks(self) -> None:
+        """验证代码质量审查不能省略分层、职责、核心注释和可测试性结论。"""
+        self.payload["skill"] = "android-review-code-quality"
+        self.payload.pop("confirmed_impacts")
+
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("代码质量专项缺少必需检查" in error for error in errors))
+
+        self.payload["checks"] = passing_code_quality_checks()
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.assertEqual([], validate_specialist_result(self.payload, self.context))
 
     def test_rejects_stale_context_and_changed_artifact(self) -> None:
         """验证代码变化或证据文件被改写后旧专项结果立即失效。"""

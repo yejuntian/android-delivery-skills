@@ -30,6 +30,8 @@ description: Android 代码质量与架构一致性审查。用于 AI 或人工�
 - 是否为了一个需求新建重复体系。
 - 高内聚、低耦合必须有当前项目证据：同一组件内的代码是否围绕单一变化原因，跨组件交互是否依赖最小稳定输入/输出，而不是只凭层名或架构口号判断。
 - 新增或修改组件能否在不读取无关模块实现细节的情况下独立理解和测试，能否在保持公开契约时替换内部实现；做不到时指出具体耦合点。
+- 架构边界卡片是否落实为真实包、文件和构造依赖；多职责功能在项目没有既有分层时，是否建立了最小功能内分层，而不是把 UI、业务规则、网络/存储、媒体和系统能力堆在同一包或桶文件。
+- Activity/Fragment/Composable 是否只处理界面协调，具体 Retrofit、数据库、缓存、播放器和系统监听是否集中在既有或最小组合入口装配；不得以“没有 DI 框架”为由让 UI 直接创建全部基础设施。
 - 审查服从项目既有架构；不得为了追求理想分层强推 MVVM/MVI/Clean、Compose、Hilt、拆模块或公共重构。
 
 ### Kotlin / Java 混合边界与公开契约
@@ -53,6 +55,8 @@ description: Android 代码质量与架构一致性审查。用于 AI 或人工�
 - 方法是否过长、嵌套是否过深、命名是否清晰。
 - 是否有重复逻辑、魔法值、硬编码文案、颜色、尺寸、URL。
 - 注释是否解释复杂业务而不是重复代码本身。
+- 核心类、接口和非显然 API 是否有 KDoc 说明职责、所有权/生命周期和失败边界；生命周期释放、协程取消、状态迁移、重试、缓存上限、索引换算及兼容降级是否有解释“为什么”的核心注释。
+- 是否存在把无关模型、状态机、策略、DTO/Mapper 和基础设施混入 `Core/Common/Utils/Manager` 等桶文件的情况；同文件多个类型是否确实共同变化且文件名准确。
 - 是否存在无用 import、无用变量、死代码、调试日志。
 
 ### Android 规范
@@ -103,4 +107,4 @@ AI 写的代码必须额外检查：
 
 最后输出：是否建议合入、是否建议继续测试、是否需要用户确认修复。
 
-由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` 只输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3 和未关闭项。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。
+由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出机器结果。除公共字段外，必须输出 `checks` 和 `executed_checks`，逐项包含 `architecture-layering`、`responsibility-cohesion`、`source-documentation`、`dependency-testability`；存在 Kotlin/Java 变更时四项均为必需检查，任一未通过不得标记 `PASS`。没有 Kotlin/Java 变更时仍逐项输出 `required=false + SKIPPED` 及不适用依据，不能省略。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。

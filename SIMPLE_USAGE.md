@@ -196,9 +196,11 @@ python3 ai-skills/android-delivery-skills/scripts/git_changes.py \
 Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默认终止流程：
 
 1. 优先读取本地 `requirement_file`、`ui.directory`、`api.files`。
-2. 能通过 MCP / API / 浏览器读取就使用。
-3. 读不到就记录“外部资料未读取”和剩余风险。
-4. 只有该链接是唯一关键资料且没有任何替代资料时，才暂停让你补充资料或授权。
+2. 当前需求涉及已配置的 `api.links` 时，先尝试复用本机 Chrome 登录状态读取真实接口页面。
+3. 如果只看到登录页、401/403 或无权限，AI 必须请你在 Chrome 登录或授权；你不需要提供账号、密码、Cookie 或 Token，登录后只需回复“已经登录”。
+4. 等待登录时暂停依赖该契约的代码；不能因为存在旧截图就静默跳过。只有你明确选择“使用现有本地证据”“跳过链接”或“先 mock/fake”后才降级。
+5. 读取成功后 AI 主动把导出 JSON/OpenAPI/Postman、完整截图或结构化摘要保存到 `<requirement_dir>/api/` 并登记到 `api.files`，下次换 AI 或登录失效仍可核验。
+6. 与当前需求无关的接口链接不触发登录询问；在线页面和本地证据冲突时保持待确认，不自行选一个答案。
 
 ## Figma UI 最短路径
 

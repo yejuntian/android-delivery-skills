@@ -1,6 +1,6 @@
 ---
 name: android-verify-api-contract
-description: Android API 实现与接口契约核验。用于涉及 Retrofit、OkHttp、Ktor、自研网络层、DTO、Repository、mapper、缓存、分页、鉴权、错误码、Mock 或 sampledata 的改动，依据接口文档和实际 diff 核验 endpoint、请求参数、响应字段、nullable、枚举、错误码、映射和兼容性。检测到 API/DTO/Repository 网络行为变化，或用户要求核对接口实现时使用；无接口契约变化时跳过。
+description: Android API 实现与接口契约核验。用于涉及 Retrofit、OkHttp、Ktor、自研网络层、DTO、Repository、mapper、缓存、分页、鉴权、错误码、Mock 或 sampledata 的改动，依据 YApi、Apifox、Swagger、OpenAPI 等接口文档和实际 diff 核验 endpoint、请求参数、响应字段、nullable、枚举、错误码、映射和兼容性。检测到 API/DTO/Repository 网络行为变化、私有接口页面需要登录授权，或用户要求核对接口实现时使用；无接口契约变化时跳过。
 ---
 
 # Android API 契约核验
@@ -33,6 +33,17 @@ description: Android API 实现与接口契约核验。用于涉及 Retrofit、O
 - 项目已有网络封装、统一 Response、错误处理、鉴权刷新和日志脱敏逻辑。
 
 接口资料缺失时，不得脑补接口地址、字段名、字段类型、枚举值或错误码。
+
+## 登录态与固定证据
+
+- 当前需求或 diff 涉及接口契约且配置了 `api.links` 时，先检测并复用本机 Chrome 已有登录状态，只读取页面可见内容。
+- 如果链接落到登录页、返回 401/403 或提示无权限，标记 `USER_INPUT_REQUIRED`，请用户在 Chrome 登录或授权并回复“已经登录”，随后重试原链接；不得索要、读取或保存账号、密码、Cookie 和会话存储。
+- 未获得登录状态前，停止依赖该契约的 endpoint、DTO、mapper、Repository 和测试实现。已有 `api.files` 只能作为历史或替代证据，不能自动代表用户同意跳过在线来源。
+- 只有用户明确要求使用现有本地证据、跳过链接或先 mock/fake 时才降级；与接口无关的独立范围可以继续并说明隔离依据。
+- 页面读取成功后主动固定本次采用的契约：优先保存 JSON、OpenAPI、Postman/YApi 导出，无法导出时保存完整截图或结构化 Markdown 摘要到 `<requirement_dir>/api/`，并登记到 `api.files` 以绑定内容摘要。新证据不得静默覆盖旧证据。
+- 在线页面、本地证据或页面内部字段相互矛盾时保持 `partial`、未验证或阻断，逐项请求用户/接口负责人确认，不根据客户端现状替后端决定。
+
+登录阻塞时使用面向用户的中文提示，至少包含：无法读取的链接、当前看到的登录/权限现象、请在本机 Chrome 登录、无需提供任何凭据、登录后回复“已经登录”。
 
 ## 序列化框架识别
 

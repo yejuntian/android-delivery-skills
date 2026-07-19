@@ -33,6 +33,10 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 - `android-audit-stability`：编码后检查崩溃、动态泄漏、性能、安全隐私、ANR、协程、生命周期和 Android 版本兼容。
 - `android-review-code-quality`：编码后检查架构一致性、最小修改、资源规范、重复逻辑和测试覆盖。
 
+外部 UI 生产 Skill 的位置：
+
+- `figma-android-xml`：只在已确认使用 XML View 且存在 Figma 设计输入时调用，负责生成 XML、Drawable、Color、Dimen 和预览资源；本 Skill 不复制其内部生成规则，也不让它编写 Kotlin/Java 业务逻辑、测试或最终验收。
+
 ## 外部智能体与工具调用策略
 
 总原则：需求确认前保持轻量；需求确认后直接编码；编码后再按实际改动调用审查和验证能力。
@@ -103,7 +107,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 读取顺序：
 
 1. 先读本地需求文档、截图目录、资源目录和接口文件。
-2. 再尝试 Figma MCP / Figma REST API / 平台 MCP / 导出接口。
+2. 再尝试 Figma MCP、`figma-android-xml` 的截图拉取能力、平台 MCP / 导出接口。
 3. 再尝试浏览器可见页面和公开网页直读。
 4. 哪条路径可用就使用哪条路径；不可用路径只记录失败和风险。
 
@@ -113,7 +117,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 - 外部链接不可读时，记录链接、来源、失败类型和已尝试方式，但继续使用其他可用资料进入需求理解。
 - 只有当链接是唯一关键资料，且没有任何本地文档、截图、资源、接口文件或用户文字可替代时，才暂停请求用户补充资料或授权。
 - 用户明确表示“哪个行得通就走哪个”“先用现有资料”“跳过这个链接”“先 mock”时，不得继续卡在授权流程。
-- Figma 优先级：Figma MCP 结构化读取 → 本地离线标注（`ai-skills/tempfile/[file_key]_[node_id]_spec.json`，读取前先检查 `source.exported_at` 新鲜度）→ `FIGMA_TOKEN` 环境变量驱动的 REST API → 本地截图/资源包 → 浏览器可见页面 → 标记未验证。
+- Figma 优先级：Figma MCP 结构化读取 → `ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" --scale 1` 获取本地 PNG 基准 → 用户提供的本地截图/资源包 → 浏览器可见页面 → 标记未验证。`fetch` 只下载截图，不生成结构化标注、HTML 或 XML；多个链接必须一次传入，采用的截图必须登记到 `ui.screenshots` 或 `ui.directory`，使本次输入摘要绑定其 SHA-256。
 - 接口优先级：本地 OpenAPI/Postman/YApi 导出 → 平台 MCP/API → 浏览器可见页面 → mock/fake/sampledata → 标记未验证。
 - 不得读取、保存或要求用户提供 Cookie、账号、密码；Token 只能来自环境变量或本机安全存储，且不得写入仓库或日志。
 
@@ -260,7 +264,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 退出码 `0` 才表示最新版总需求已确认并允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。编码中途发生变化时重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update`，始终保留最初 Git 基线。修订确认后遵守以下规约：
 1. **先物化测试**：把每个已确认 `BDD/Then` 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动设备或 Journey 引擎；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
-3. **UI 逻辑接管 (最小化修改)**：如果前置步骤生成纯 XML，主动补充对应的 Kotlin ViewBinding 和业务代码。
+3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成完成后，本 Skill 只接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线，并继续负责测试与交付闭环。
 4. **首次验证**：首次处理该项目、route 检测到 Gradle/模块/variant 变化，或真实 task 未知时，运行 `scripts/android_project_capabilities.py --config <配置>`；普通业务代码修改复用最近能力事实并直接执行已确认 task。发现失败时允许结合 Gradle 文件人工确认，但不得猜任务名。
 5. **自修复**：任一项失败，按“统一故障处理与 AI 接管”保存证据并分类，确认根因后只修改对应的生产代码、测试或环境配置，再重跑失败项及相关回归集。禁止删测试、弱化断言、跳过任务或用假数据掩盖失败。
 6. **循环上限**：同一根因连续 3 轮未关闭才进入 `BLOCKED`；报告失败分类、原专项能力/工具、命令、退出码、关键日志、AI 替代与能力损失、已尝试修改和所需输入。

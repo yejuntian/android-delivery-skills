@@ -190,29 +190,22 @@ Figma、YApi、Apifox、Swagger 等链接打不开或需要登录时，不再默
 如果会话已接入 Figma MCP，UI 相关需求默认优先走：
 
 1. Figma MCP 读取 design context / metadata / variables / screenshot。
-2. 先输出一份精简 Design Spec Gate。
-3. 调用 `figma-android-xml` 专注生成纯净的 resources → styles → drawables → XML 与 tools 预览（**此阶段绝对禁止编写 Kotlin**）。
-4. UI 骨架生成完毕后，再由主流程接管，单独补充必要的 Kotlin ViewBinding 和业务连线代码。
-5. 编码后如有 UI 变更，主流程只提示用户单独调用 `android-verify-ui` 做截图或视觉验证。
+2. 先确认目标项目使用 XML View、Compose 还是混合实现，并输出精简 Design Spec Gate；不能因为有 Figma 链接就切换技术栈。
+3. 只有 XML View 部分调用 `figma-android-xml`，由它生成 XML、Drawable、Color、Dimen 和预览资源；Delivery 不复制它的内部生成规则。
+4. UI 资源和 XML 生成完毕后，由主流程接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。Compose 部分直接沿用项目现有结构。
+5. `android-test-and-fix` 验证业务行为；编码后如有 UI 变更，主流程提示用户单独调用 `android-verify-ui` 消费设计基准、生成结果和运行截图做视觉/A11y 验收。
 
-如果 MCP 当前不可用，但你有 Figma Token，也可以先导出本地离线标注：
+如果需要把 Figma 节点保存为本地视觉基准，使用当前真实入口：
 
 ```bash
-# 正常运行（自动检查新鲜度，数据未变则跳过下载）
-python3 ai-skills/figma-android-xml/scripts/export_figma.py \
-  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131"
-
-# 强制重新拉取（设计师刚改完稿时使用）
-python3 ai-skills/figma-android-xml/scripts/export_figma.py \
-  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131" --force
+python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch \
+  "https://www.figma.com/design/FILE_KEY/NAME?node-id=471-131" \
+  --scale 1
 ```
 
-脚本会生成（按 `[file_key]_[node_id]` 动态命名，多节点不相互覆盖）：
+该命令只下载 PNG，并在终端输出实际保存路径；它不会生成 `spec.json`、preview HTML 或 XML。Figma MCP 提供结构化数据，完整 XML 生产由 `figma-android-xml` Skill 执行，二者职责不同。
 
-- `ai-skills/tempfile/[file_key]_[node_id]_spec.json`
-- `ai-skills/tempfile/[file_key]_[node_id].png`
-- `ai-skills/tempfile/[file_key]_[node_id]_preview.html`
-- `ai-skills/tempfile/index.html`（汇总画廊）
+脚本每次运行会清理上次缓存，因此多个 Figma 链接必须放在同一条 `fetch` 命令中。把本轮采用的 PNG 保存到 `<requirement_dir>/ui/`，或将实际路径登记到 `ui.screenshots` / `ui.directory`；需求输入摘要才会绑定图片 SHA-256，避免同一 URL 更新后继续复用旧证据。
 
 ## Skill 职责总表
 

@@ -77,8 +77,11 @@
 | `android-test-and-fix` | 测试工程师与修复门禁 | 分析测试场景、选择测试层、执行测试、分析失败、最小修复和回归 | 不负责设计稿视觉还原 |
 | `android-verify-api-contract` | API 契约检查员 | 检查 endpoint、Request/Response、DTO、mapper、错误码、缓存字段和兼容性 | 不负责普通架构和 UI 验收 |
 | `android-verify-ui` | 独立 UI 验收工程师 | 检查设计还原、截图、布局、动态 UI 和可访问性 | 不生成或管理业务测试用例，不由 route 自动执行 |
+| `figma-android-xml` | 外部 XML UI 生产 Skill | 在已确认的 Figma + XML View 场景生成 XML、Drawable、Color、Dimen 和预览资源 | 不写 Kotlin/Java 业务逻辑，不负责行为测试和最终 UI 验收 |
 
 `android-verify-ui` 保持独立。Journey 可以证明用户操作和可见结果，UI 验收负责判断页面是否符合设计基准；二者可以复用截图，但不能互相代替。
+
+`figma-android-xml` 作为成熟黑盒单向接入：Delivery 只判断是否满足“Figma + XML View”，传入已确认设计，接收 UI 资源和 XML；不复制它的内部生成规则，也不修改它的脚本或配置。Compose 需求继续服从目标项目现有实现。
 
 ## 四、脚本职责划分
 
@@ -110,7 +113,10 @@ flowchart TD
     F -- "待定或冲突" --> G["继续澄清，不允许编码"]
     G --> E
     F -- "确认" --> H["confirm-requirement-update"]
-    H --> I["按最小修改原则编码"]
+    H --> X{"Figma UI 且使用 XML View"}
+    X -- "是" --> Y["figma-android-xml 生成 XML 与资源"]
+    X -- "否" --> I["按目标项目现状编码"]
+    Y --> I
     I --> J{"编码中需求是否变化"}
     J -- "变化" --> K["生成增删改和删除处置清单"]
     K --> F
@@ -142,7 +148,7 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 
 ### 5.4 编码与路由
 
-编码遵守目标项目现状。完成后执行 `route`，根据当前需求基线之后的真实 diff 选择专项和测试，而不是根据文件名或用户一句话直接判定完成。
+编码遵守目标项目现状。Figma + XML View 场景先由 `figma-android-xml` 生成纯 UI 资源和 XML，再由总入口接管 Kotlin/Java、ViewBinding/DataBinding、状态和业务连线；Compose 或非 Figma 场景不调用该 XML Skill。完成后执行 `route`，根据当前需求基线之后的真实 diff 选择专项和测试，而不是根据文件名或用户一句话直接判定完成。
 
 ### 5.5 最终门禁
 
@@ -380,7 +386,7 @@ Journey 用例归 `android-test-and-fix`，默认保存在当前需求作用域�
 
 ### 14.1 远程资料
 
-需求输入摘要自动哈希本地 UI/API 文件和配置中的远程 URL，但不访问网络。如果 Figma、YApi 等内容在 URL 不变时更新，需要专项记录远程版本、抓取时间和产物摘要，或保存本地导出文件后重新 route。
+需求输入摘要自动哈希本地 UI/API 文件和配置中的远程 URL，但不访问网络。Figma MCP 负责结构化设计数据，`figma_workflow.py fetch` 只提供 PNG 视觉基准；本轮采用的截图应保存到 `<requirement_dir>/ui/` 或登记到 `ui.screenshots` / `ui.directory`。这样同一 Figma URL 内容变化后，新截图 SHA-256 会使旧 route 和交付证据失效；只有 URL 而没有本地基准时，必须记录该证据缺口。
 
 ### 14.2 设备能力
 

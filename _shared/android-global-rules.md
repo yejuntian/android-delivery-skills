@@ -155,8 +155,8 @@
 资料读取优先级：
 
 1. 用户本次对话中的明确文字、截图、文件路径和补充说明。
-2. 本地资料：`ai-skills/tempfile/`（由 Figma 导出的本地离线标注与 JSON 树）、`requirement_file`、`requirement_dir`、`ui.directory`、`ui.screenshots`、`ui.assets`、`api.files`。
-3. 结构化工具：Figma MCP、Figma REST API、YApi/Apifox/OpenAPI/Postman 导出、平台 MCP/CLI/API。
+2. 本地资料：`requirement_file`、`requirement_dir`、`ui.directory`、`ui.screenshots`、`ui.assets`、`api.files`，以及 `figma_workflow.py fetch` 实际输出并已登记到本次需求配置的 Figma 基准截图。
+3. 结构化工具：Figma MCP、YApi/Apifox/OpenAPI/Postman 导出、平台 MCP/CLI/API。
 4. 浏览器可见页面：只读取用户已授权后页面上可见的内容，不读取 Cookie、Token、密码或会话存储。
 5. 外部网页直读：公开页面、公开 API 或无需登录的导出接口。
 
@@ -167,7 +167,8 @@
 - 如果本地资料、用户文字或其他可用资料足以理解需求，继续进入需求理解；在待确认问题和最终报告中标记未读取链接及剩余风险。
 - 只有在“该链接是唯一关键资料，且没有任何替代资料，继续编码必然脑补 UI / 接口 / 业务规则”时，才暂停请求用户补充资料或授权。
 - 用户说“哪个行得通就走哪个”“先按现有资料做”“跳过链接”“用 mock / fake / sampledata”时，必须降级继续，不得卡在授权流程。
-- Figma 资料默认优先通过 Figma MCP 读取结构化设计数据，例如 design context、metadata、variables/styles、component variants 和 screenshot；MCP 不可用、权限不足或返回不完整时，再使用本地 Figma 离线标注数据（`ai-skills/tempfile/[file_key]_[node_id]_spec.json`，读取前须先检查 `source.exported_at` 新鲜度，超过 4 小时对比 Figma `lastModified`，超过 24 小时须在 Design Spec Gate 标注 `⚠️ 数据可能过期`）；仍不可用再尝试 `FIGMA_TOKEN` 环境变量驱动的 Figma REST API；最后才退回本地截图/资源包或标记未验证。
+- Figma 资料默认优先通过 Figma MCP 读取 design context、metadata、variables/styles、component variants 等结构化设计数据。需要本地视觉基准时，使用 `ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" --scale 1` 下载 PNG；该命令只提供截图，不得声称生成了结构化标注、HTML 或 XML。MCP 和截图均不可用时，才退回用户提供的本地截图/资源包或标记未验证。
+- 本轮实际采用的 Figma PNG 必须登记到 `ui.screenshots` 或 `ui.directory`，也可以保存到 `<requirement_dir>/ui/` 后登记，使需求输入摘要包含文件 SHA-256。多个 Figma 链接必须在一次 `fetch` 命令中传入，因为该脚本每次执行会清理上次缓存；只保存 URL 不能证明同一链接下的设计内容没有变化。
 - YApi / Apifox / Swagger 链接不可读时，优先尝试导出 JSON、OpenAPI、Postman collection 或本地接口文件；仍不可用且需求要求接正式接口时，才暂停确认。
 
 外部资料读取失败记录模板：
@@ -240,6 +241,7 @@
 - `android-verify-api-contract`：只负责接口、DTO、请求响应、mapper、Repository 网络行为、缓存字段、OpenAPI 和契约兼容审查。
 - `android-verify-ui`：只负责 UI 还原、设计稿/截图一致性、资源规范、页面状态、可见轻交互和人工/设备 A11y 表现验证；可以复用测试产出的截图与 A11y 结果，但不得定义或执行 Journey、Paparazzi、Roborazzi、Shot、Espresso、Compose UI Test、UIAutomator 等测试用例，也不得判断接口、业务规则、数据存储、权限、登录、支付、下载、提交、保存等真实业务能力。
 - `android-test-and-fix`：负责 BDD 测试用例、Journey/截图/仪器/迁移/A11y 测试物化、条件能力命令、执行结果和测试失败自修复；完整交付模式下驱动全绿门禁，单独只报告时不得改生产代码。
+- `figma-android-xml`：只在已确认使用 XML View 且存在 Figma 设计输入时承担 UI 生产，生成 XML、Drawable、Color、Dimen 和预览资源，不编写 Kotlin/Java 业务逻辑。交付 Skill 把它视为稳定黑盒，不复制或改写其内部生成阶段与规则。
 - Journey 适用性必须基于需求与实际 diff：无 UI 影响为 `SKIPPED_NO_UI`，纯视觉变化为 `SKIPPED_VISUAL_ONLY`；每条 BDD 用户旅程按 `FULL/PARTIAL/NONE` 路由，只为 Journey 可稳定覆盖的原子 Then 生成用例，`NO_JOURNEY_FOUND` 不能用于本来不需要 Journey 的需求。
 - `android-audit-stability`：只负责崩溃、生命周期、协程、动态泄漏、ANR、性能、运行时安全隐私、资源释放和 Android 版本兼容风险。
 - `android-review-code-quality`：只负责代码质量、可维护性、架构一致性、资源规范、重复逻辑、依赖边界和测试覆盖风险。
@@ -274,7 +276,8 @@
 - `android-verify-ui` 是编码后手动独立 UI 验收闭环；总入口和 route 只能提示，不得自动调用。
 - `android-test-and-fix`、`android-audit-stability`、`android-review-code-quality` 默认用于编码后验证和审查。
 - 涉及 Figma UI 还原时，编码前先输出一份精简 Design Spec Gate，至少包含 target screen、resource tokens、layout structure、component mapping、assets 和 risks/assumptions；这属于实现闸门，不等同于额外展开一轮完整分析报告。
-- Figma UI 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding；不要先堆完整 XML 再回头补资源。
+- 先根据目标项目真实实现确认 UI 技术：XML View 场景把 UI 生产委托给 `figma-android-xml`；Compose 场景沿用项目既有 Compose 结构，不调用 XML 生成 Skill；混合项目只委托明确属于 XML 的部分。不得因为提供了 Figma 链接就擅自切换技术栈。
+- `figma-android-xml` 完成后，由 `android-implement-and-verify` 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线；`android-test-and-fix` 验证行为，`android-verify-ui` 独立消费设计基准、生成结果和运行截图做验收，三者不得互相代替。
 - Android CLI、Gradle、adb 只在需要真实构建、安装运行、自动测试、截图、抓日志、设备兼容验证时调用。
 - 需求理解阶段默认不调用 Android CLI；需求未确认前不得用构建或设备结果反推需求结论。
 - Firebase MCP 只在涉及 Firebase、Crashlytics、Remote Config、Analytics、AB 实验、线上崩溃或线上配置时调用。

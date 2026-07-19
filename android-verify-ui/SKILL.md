@@ -32,23 +32,19 @@ description: 手动独立执行的 Android UI 实机、设计与无障碍表现�
 优先读取并解析以下设计资料（按优先级排序）：
 
 1. **Figma MCP 结构化数据**：优先读取 design context、metadata、variables/styles、component variants、selected frame screenshot 和 asset export information。
-2. **本地 Figma 离线标注**：如果项目下存在由 `ai-skills/figma-android-xml/scripts/export_figma.py` 导出的离线标注数据（如 `ai-skills/tempfile/[file_key]_[node_id]_spec.json` 或 `ai-skills/tempfile/index.html`），读取它作为 MCP 的兜底快照或对照来源。读取前必须先检查 `source.exported_at` 字段：超过 4 小时须对比 Figma `lastModified` 确认是否过期；超过 24 小时须在 Design Spec Gate 标注 `⚠️ 数据可能过期` 并等用户确认。
+2. **本地 Figma 基准截图**：优先读取已登记到 `ui.screenshots`、`ui.directory` 或 `<requirement_dir>/ui/` 的本轮 PNG，也可以读取 `figma_workflow.py fetch` 终端输出的实际路径。截图只提供视觉基准，不得声称包含结构化设计令牌。
 3. **设计链接**：Figma、蓝湖、即时设计、摹客、MasterGo。
 4. **UI 截图目录**：`ui.directory`，目录内可包含整页截图、局部截图、状态截图或标注图。
 5. **截图或设计文件**：PNG、JPG、PDF、SVG、ZIP。
 6. **资源文件**：图标、图片、字体、动效。
 
-如果 MCP 不可用、链接无法访问且未提供本地离线标注，必须说明缺失项并提示用户运行以下命令生成本地离线标注：
+如果需要从 Figma 链接获取本地视觉基准，可以运行：
 
 ```bash
-# 正常运行（自动检查新鲜度，数据未变则跳过下载）
-python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL"
-
-# 强制重新拉取（设计师刚改完稿时使用）
-python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
+python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" --scale 1
 ```
 
-可以建议先做 UI 骨架，但不得声称已做到和设计稿一致。
+该命令只下载 PNG 并输出实际保存路径，不生成结构化标注、HTML 或 XML；多个链接必须在同一次调用中传入，避免后一次执行清理前一次缓存。将采用的 PNG 登记到本次需求的 `ui.screenshots` 或 `ui.directory`，使报告能够引用文件 SHA-256。结构化数据仍以实际读取到的 Figma MCP 为准；缺少结构化数据时可以进行截图级对比，但不得声称已核对未读取的设计令牌。
 
 ## UI 截图目录规则
 
@@ -73,7 +69,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 
 ## 项目 UI 事实识别
 
-验证或实现时必须确认：
+验收时必须确认：
 
 - 当前项目使用 XML、ViewBinding、DataBinding、Compose 或混合。
 - 是否已有 Design System、Theme、Color、Typography、Dimens、公共组件。
@@ -83,7 +79,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 
 ## Design Spec Gate
 
-在开始写 XML 前，如果设计资料可读，先输出一份精简 Design Spec Gate。优先参考 `references/figma-spec-report.md`，至少覆盖：
+在开始验收前，如果实现阶段已有 Design Spec Gate，先读取并核对；没有时根据实际可读资料建立精简验收基准，不生成或修改 XML。优先参考 `references/figma-spec-report.md`，至少覆盖：
 
 1. Target screen：frame 名称、frame 尺寸、Android baseline width、是否包含状态栏/导航栏、是否滚动。
 2. Resource tokens：colors、dimensions、typography、radius/stroke/shadow。
@@ -92,12 +88,11 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py "FIGMA_URL" --force
 5. Assets：图片导出格式、VectorDrawable 转换项、`scaleType`。
 6. Risks / assumptions：字体缺失、状态缺失、阴影近似、system bars 不确定项。
 
-## UI 还原规则
+## UI 还原验收规则
 
-- 优先复用项目已有主题、组件、颜色、尺寸、文字样式和资源管理方式。
-- 编码阶段如存在可访问设计稿、截图或标注，必须尽量按设计资料实现布局、间距、颜色、字号、资源和状态。
-- 当存在可访问设计资料时，以视觉和交互目标为基准，并优先通过项目已有 Design Token、组件和主题实现。设计资料与项目体系冲突时先报告具体差异，不自行牺牲任一方。
-- 实现顺序默认是：resources → text styles → drawable/selector → layout XML → minimal Kotlin/ViewBinding，不要直接堆完整页面 XML。
+- 检查实现是否优先复用了项目已有主题、组件、颜色、尺寸、文字样式和资源管理方式。
+- Figma + XML View 的 UI 生产结果由 `figma-android-xml` 提供；本 Skill 只消费设计基准、生成的 XML/资源和运行截图做验收，不复制其生成步骤或重新生成 UI。
+- 当存在可访问设计资料时，以视觉和交互目标为验收基准，并检查实现是否遵守项目已有 Design Token、组件和主题。设计资料与项目体系冲突时报告具体差异，不自行牺牲任一方。
 - 文案放入字符串资源或项目既有多语言体系。
 - 颜色、字号、间距、圆角、阴影优先使用项目 design token 或资源文件。
 - 避免无依据的颜色和尺寸魔法值；优先复用现有 Token。是否抽取新资源服从项目约定和复用价值，不为一次使用制造重复别名。

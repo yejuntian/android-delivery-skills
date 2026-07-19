@@ -143,7 +143,7 @@ flowchart TD
 
 ### 5.1 初始化
 
-`delivery.py init` 读取当前需求。中途重复执行时，它只对比最近确认修订并显示变化，不删除当前需求 Git 基线。
+仓库只版本化 `profiles/local.example.yaml` 配置结构；真实 `profiles/local.yaml` 和 `requirement_dir` 是用户所有的本机运行输入，由 Git 忽略。首次使用时从示例复制并填写，已有本机文件时不得覆盖、删除或强制提交。该隔离只减少源码工作区噪声，不降低追溯强度：`delivery.py init` 仍读取真实配置和当前需求，中途重复执行时仍对比最近确认修订并显示变化，完整输入摘要仍使过期 route 和最终证据失效。
 
 ### 5.2 环境与基线
 

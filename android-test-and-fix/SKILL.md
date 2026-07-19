@@ -288,6 +288,8 @@ Android CLI、adb 或设备不可用时，先路由到项目已有 Compose/Espre
 
 目标项目路径默认读取 `../profiles/local.yaml` 的全局 `project_path`，也允许通过 `--config` 指定项目自己的配置文件：
 
+`local.yaml` 是被 Git 忽略的本机运行配置，`local.example.yaml` 只是字段说明模板。测试 Skill 只读取真实配置和当前需求目录，不得覆盖它们、把示例值当成实际项目，或为了保存测试结果强行加入 Git。
+
 ```bash
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \

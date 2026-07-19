@@ -1,0 +1,124 @@
+# Android Delivery Skills 本机配置示例
+#
+# 使用方法：
+# 1. 把本文件复制为同目录的 local.yaml。
+# 2. 只修改 local.yaml；本示例用于说明配置结构，应保持通用、可提交。
+# 3. 所有路径都必须指向真实存在或准备创建的位置，不得由 AI 猜测其他目录。
+# 4. 不要填写账号、密码、Token、Cookie、生产数据等敏感内容。
+#
+# 路径解析规则：
+# - 绝对路径直接使用。
+# - project_path 和 requirement_dir 的相对路径基于 workspace_root。
+# - requirement_file 的相对路径基于 requirement_dir。
+# - UI/API 本地资料的相对路径基于 requirement_dir。
+
+# 必填：当前要开发或分析的 Android 项目根目录。
+# 应指向包含 settings.gradle、settings.gradle.kts 或实际 Gradle 工程入口的目录。
+project_path: "/absolute/path/to/android-project"
+
+# 推荐填写：当前需求对应的目标 Git 分支。
+# check-env 和 route 会核对实际分支；填写错误时流程会停止，不会自动切换分支。
+# 如果明确不需要分支约束，可以设为 null，但通常不建议关闭这项保护。
+branch: "feature/your-requirement"
+
+# 必填：本机公共工作区根目录，用作 requirement_dir 等相对路径的解析基准。
+# 建议使用绝对路径，避免从不同启动目录执行时产生歧义。
+workspace_root: "/absolute/path/to/workspace"
+
+# 必填：当前需求的工作目录，可以是绝对路径，也可以相对于 workspace_root。
+# 需求正文、UI/API 证据、测试用例和交付报告都放在这里；该目录属于运行输入，默认不提交。
+requirement_dir: "ai-skills/current-requirement"
+
+# 必填：需求正文文件，可以是绝对路径，也可以相对于 requirement_dir。
+# 当前支持 .docx、.md、.markdown 和 .txt；文件内容可随同一需求的确认修订持续更新。
+requirement_file: "requirement.docx"
+
+# 可选：UI 设计资料。需求没有 UI 影响时保留空列表和空说明，不要为了填满配置而脑补。
+ui:
+  # Figma 等正式设计链接。链接需要登录时，AI 应先请求复用本机浏览器登录状态，
+  # 不得索要或保存账号、密码、Cookie。
+  # 示例：links: ["https://www.figma.com/design/...?...node-id=1-2"]
+  links: []
+
+  # UI 本地资料目录，相对路径基于 requirement_dir；例如 "ui"，没有目录时保持 null。
+  directory: null
+
+  # 可选截图文件。既可以填写相对 requirement_dir 的路径，也可以填写绝对路径。
+  # 没有截图时保持 []，不要放不存在的占位文件。
+  # 示例：screenshots: ["ui/home-before.png", "ui/home-expected.png"]
+  screenshots: []
+
+  # 可选设计资源，例如图片、图标或导出资源目录；没有时保持 []。
+  # 示例：assets: ["ui/assets"]
+  assets: []
+
+  # 只记录已经确认的补充事实，例如页面入口、交互限制和设计稿版本。
+  # 不确定的信息写入需求待确认项，不要在这里推断业务规则。
+  notes: ""
+
+# 可选：接口契约资料。需求不涉及接口时保留空列表，接口未发布时不要伪造字段。
+api:
+  # YApi、Apifox、Swagger/OpenAPI 等正式来源链接。
+  # 需要登录或授权时，AI 应提示用户在浏览器完成授权后重试；读取失败不能脑补契约。
+  # 示例：links: ["https://api-docs.example.com/project/1/interface/2"]
+  links: []
+
+  # 本地导出、完整截图或结构化接口说明，相对路径基于 requirement_dir。
+  # 它们用于固定本次实际采用的接口证据，不替代仍可读取的最新正式来源。
+  # 示例：files: ["api/interface-request.png", "api/interface-response.png"]
+  files: []
+
+  # 接口资料状态：
+  # - unknown：接口尚未提供或关键字段未知，依赖契约的实现不得脑补。
+  # - partial：只拿到部分信息，可以完成不依赖缺失字段的范围，其余保持待确认。
+  # - confirmed：当前实现所需契约已经确认，仍要保存本次采用的证据。
+  status: "unknown"
+
+  # 只记录已确认的 Base URL、接口版本、鉴权方式或尚缺信息，不要写真实凭据。
+  notes: ""
+
+# 可选：界面流程自动化测试壳配置。
+# 默认路线优先使用项目已有测试或 Android 命令行智能体；只有需求存在可稳定自动化的界面行为、
+# 默认路线不可用且独立壳已经初始化时，才读取下面配置执行 Journey 壳。
+testing:
+  journey_harness:
+    # 当前需求的界面流程用例目录。null 时自动使用：
+    # <requirement_dir>/test-cases/journeys/<需求作用域>，避免不同需求串用旧用例。
+    # 非空相对路径基于 requirement_dir，绝对路径直接使用。
+    cases_dir: null
+
+    # 目标 Android application 模块名称，不包含开头冒号；老项目通常是 app。
+    module: "app"
+
+    # 目标构建变体，可以是 debug，也可以是 demoDebug、paidRelease 等完整变体名。
+    # 必须以项目真实 Gradle 任务和变体为准，不得固定套用示例值。
+    variant: "debug"
+
+    # 界面断言重试次数，必须大于等于 2。
+    # 只有连续真实断言失败才进入实现/用例根因分析，环境失败不会误判为业务缺陷。
+    retries: 2
+
+    # adb 设备序列号。只有一台可用设备时可以为 null；多设备时必须明确填写，避免跑错设备。
+    device: null
+
+    # 应用包名。通常从实际构建的 APK 自动读取；使用 --skip-build 复用已安装应用时必须填写。
+    app_package_name: null
+
+    # 独立壳的完整 Gradle Journey 任务名。可以自动唯一识别时保持 null；
+    # 发现多个候选或项目明确固定任务时再填写，不要把普通测试任务当成 Journey 任务。
+    task: null
+
+    # 可选设备前置条件。每一项都会改变测试设备状态，只执行明确配置的动作。
+    precondition:
+      # true 会清除目标应用的本地数据；默认 false，除非验收场景明确需要干净状态。
+      clear_app_data: false
+
+      # 测试前通过 adb 授予的运行时权限。只填写需求确实需要且目标应用已声明的权限。
+      # 示例：grant_permissions: ["android.permission.POST_NOTIFICATIONS"]
+      grant_permissions: []
+
+      # 用 Deep Link 打开指定业务入口；与 launch_activity 只能配置一个。
+      deep_link: null
+
+      # 直接启动的 Activity，例如 .MainActivity；与 deep_link 只能配置一个。
+      launch_activity: null

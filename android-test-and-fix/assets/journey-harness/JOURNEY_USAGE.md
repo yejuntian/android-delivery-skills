@@ -512,6 +512,8 @@ harness-app/src/main/journeys/
 
 默认读取 `profiles/local.yaml`：
 
+该文件是被 Git 忽略的本机运行配置；首次使用时从 `profiles/local.example.yaml` 复制并按中文注释填写。示例文件不含真实项目、需求、设备或接口资料，不能直接作为执行事实；已有 `local.yaml` 时不得覆盖。当前 Journey 用例和报告继续保存在被忽略的需求工作区或外部状态目录，但仍参与证据新鲜度校验。
+
 ```yaml
 testing:
   journey_harness:

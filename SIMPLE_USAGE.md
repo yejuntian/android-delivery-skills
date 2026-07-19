@@ -20,6 +20,12 @@ android-implement-and-verify
 /Users/example/work/MyPython/ai-skills/android-delivery-skills/profiles/local.yaml
 ```
 
+首次使用时，从同目录的 `local.example.yaml` 复制一份并按中文注释填写。`local.yaml` 是本机运行输入，已被 Git 忽略；切换项目、分支或需求资料不会进入 Skill 源码提交。当前需求目录同样是运行工作区，不作为流程源码版本化。
+
+- 仓库只提交不含真实路径和业务资料的 `local.example.yaml`，日常不要修改它。
+- 不要使用 `git add -f` 强行提交 `local.yaml`、`current-requirement`、当前需求文档、截图、测试用例或报告；确需长期保存时复制到用户明确指定的归档位置。
+- Git 忽略只负责隔离源码提交，不会跳过流程校验：需求正文、UI/API 输入仍会参与摘要，需求变化后旧路由和最终证据仍会失效。
+
 通常只需要改：
 
 - `project_path`：Android 项目路径

@@ -109,6 +109,9 @@
 ## 默认输入
 
 - 默认读取 Skill 套件根目录下的 `profiles/local.yaml`，用户不需要每次重复说明。
+- `profiles/local.yaml` 是用户所有的本机运行输入，必须由 Git 忽略；仓库只提交带完整中文字段说明且不含真实路径、链接和业务资料的 `profiles/local.example.yaml`。首次使用时从示例复制，已有 `local.yaml` 时不得用示例覆盖。
+- `requirement_dir` 及其需求正文、UI/API 证据、测试用例和报告属于当前需求运行工作区，默认不进入 Skill 源码版本控制。不得因为文件被忽略就删除、清空、强制加入 Git，或把示例值当成真实输入。
+- Git 隔离不改变需求与证据门禁：脚本仍读取真实 `local.yaml` 和 `requirement_file`，完整输入摘要仍绑定需求正文及已登记 UI/API 资料；资料变化后旧 route、测试证据和最终结果仍按原规则失效。
 - `profiles/local.yaml` 是日常入口，通常只维护：
   - `project_path`：Android 项目路径
   - `branch`：目标分支

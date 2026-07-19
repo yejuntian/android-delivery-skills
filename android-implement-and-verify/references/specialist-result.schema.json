@@ -12,6 +12,7 @@
     "requirement_id",
     "requirement_revision",
     "requirement_file_sha256",
+    "requirement_inputs_sha256",
     "baseline_id",
     "snapshot_sha256",
     "conclusion",
@@ -21,13 +22,14 @@
     "obligation_sha256s"
   ],
   "properties": {
-    "version": { "const": 1 },
+    "version": { "const": 2 },
     "producer": { "const": "android-delivery-specialist-result" },
     "id": { "type": "string", "minLength": 1 },
     "skill": { "type": "string", "minLength": 1 },
     "requirement_id": { "type": "string", "minLength": 1 },
     "requirement_revision": { "type": "integer", "minimum": 1 },
     "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "requirement_inputs_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "baseline_id": { "type": "string", "minLength": 1 },
     "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "conclusion": { "enum": ["PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"] },
@@ -137,6 +139,27 @@
           "artifacts": { "minItems": 1 },
           "executed_checks": { "minimum": 1 },
           "executed_tests": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "skill": { "const": "android-audit-stability" }
+        },
+        "required": ["skill"]
+      },
+      "then": {
+        "required": ["capabilities"],
+        "properties": {
+          "capabilities": {
+            "minItems": 3,
+            "allOf": [
+              { "contains": { "properties": { "id": { "const": "android-dynamic-leak" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "android-performance" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "android-security-privacy" } }, "required": ["id"] } }
+            ]
+          }
         }
       }
     }

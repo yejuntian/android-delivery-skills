@@ -216,7 +216,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **调研日期**：2026-07-19。
 - **来源**：JSON Schema、Gradle/JUnit/Android Lint 原生报告；[Now in Android Build](https://github.com/android/nowinandroid/blob/main/.github/workflows/Build.yaml) 的分层 Build/Lint/Roborazzi/Instrumentation、[Lottie Validate](https://github.com/airbnb/lottie-android/blob/master/.github/workflows/validate.yml) 的 Lint/Unit/API/Snapshot 独立 Job，以及 [Detekt Danger](https://github.com/detekt/detekt/blob/main/bots/dangerfile.js) 的 diff 缺测试提示。
-- **决策**：`route` 只把四类条件门禁及直接依据保存到项目外快照，并绑定需求修订、Git 基线和代码摘要；七类完整影响只用于当次路由输出。自动命令由独立执行器记录 cwd、时间、脱敏参数、退出码、测试数、日志和原生报告 SHA-256。普通 Reviewer 只输出最小机器信封，Journey/动态专项按需扩展；最终结果契约升级为 version 3，旧的 AI 自报证据不再兼容通过结论。
+- **决策**：`route` 把四类条件门禁及直接依据保存到项目外快照，并绑定需求修订、UI/API 输入、Git 基线和代码摘要。自动命令由独立执行器按单一 gate 保存不可覆盖 attempt、JUnit testcase、Lint 机器报告和脱敏日志；测试/迁移收据强制要求非零 JUnit，普通自动收据不能越权证明专项 gate。普通 Reviewer 保持最小信封，稳定性固定记录泄漏/性能/安全适用性，Journey 按需扩展。最终结果契约升级为 version 4，旧的跨 gate、自报 testcase、空人工说明和空设备待验结论不再兼容通过。
 - **职责边界**：路由快照只表达候选，不替代业务适用性终判；执行器只运行已经选定的命令，不选择 task、不修代码；最终门禁只校验，不运行命令。
 - **原因**：自然语言约束不能阻止条件专项被漏写，也不能证明 AI 填写的退出码和报告路径真实存在；但强迫普通 Review 填写 Journey 字段也会制造维护成本。最小信封加原生报告在关闭假绿的同时避免建立通用状态机。
 

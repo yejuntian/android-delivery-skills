@@ -491,7 +491,7 @@ android run / adb 安装并通过 pm path 校验
 <requirement_dir>/test-cases/journeys/<需求作用域>/*.xml
 ```
 
-完整交付的 `<需求作用域>` 使用 `check-env` 生成的 Git 基线 ID、最近确认修订号和规范化需求正文哈希；编辑中但尚未确认的候选内容不会切换用例目录，行为型 Journey 会直接阻断。单独调用且没有修订记录时退回需求正文内容哈希。这样即使复用同一个 `requirement_dir`，上一需求或待定需求的 XML 也不会进入本次执行。也可以配置 `testing.journey_harness.cases_dir` 或由 Skill 内部使用 `--journeys-dir` 显式指定。
+完整交付的 `<需求作用域>` 使用 `check-env` 生成的 Git 基线 ID、最近确认修订号及需求正文/UI/API 输入摘要；编辑中但尚未确认的候选正文不会切换用例目录，行为型 Journey 会直接阻断，已配置的 UI/API 资料变化则立即隔离旧用例。单独调用且没有修订记录时退回当前完整输入摘要。这样即使复用同一个 `requirement_dir`，上一需求、旧外部资料或待定正文的 XML 也不会进入本次执行。也可以配置 `testing.journey_harness.cases_dir` 或由 Skill 内部使用 `--journeys-dir` 显式指定。
 
 壳目录：
 

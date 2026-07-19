@@ -89,10 +89,14 @@ def evidence_scope_directory(
     requirement_id: str,
     requirement_revision: int,
     snapshot_sha256: str,
+    requirement_inputs_sha256: str,
 ) -> Path:
-    """按需求、修订和代码摘要隔离证据，防止串行需求覆盖上一轮收据。"""
+    """按需求、输入与代码摘要隔离证据，防止资料变化覆盖上一轮收据。"""
     requirement_scope = hashlib.sha256(requirement_id.encode("utf-8")).hexdigest()[:12]
-    scope = f"{requirement_scope}-r{requirement_revision}-{snapshot_sha256[:12]}"
+    scope = (
+        f"{requirement_scope}-r{requirement_revision}-"
+        f"i{requirement_inputs_sha256[:12]}-{snapshot_sha256[:12]}"
+    )
     return Path(evidence_root).expanduser().resolve() / scope
 
 
@@ -101,6 +105,7 @@ def evidence_scope_directory_for_config(
     requirement_id: str,
     requirement_revision: int,
     snapshot_sha256: str,
+    requirement_inputs_sha256: str,
 ) -> Path:
     """根据配置入口返回当前需求的隔离证据目录。"""
     return evidence_scope_directory(
@@ -108,6 +113,7 @@ def evidence_scope_directory_for_config(
         requirement_id,
         requirement_revision,
         snapshot_sha256,
+        requirement_inputs_sha256,
     )
 
 
@@ -116,6 +122,7 @@ def specialist_directory_for_config(
     requirement_id: str,
     requirement_revision: int,
     snapshot_sha256: str,
+    requirement_inputs_sha256: str,
 ) -> Path:
     """返回当前需求和代码的统一专项结果目录，避免跨需求覆盖或串用。"""
     return evidence_scope_directory_for_config(
@@ -123,6 +130,7 @@ def specialist_directory_for_config(
         requirement_id,
         requirement_revision,
         snapshot_sha256,
+        requirement_inputs_sha256,
     ) / "specialists"
 
 

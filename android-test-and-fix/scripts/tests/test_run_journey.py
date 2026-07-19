@@ -292,7 +292,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertTrue(scoped.startswith("run-123-"))
 
     def test_confirmed_revision_keeps_unconfirmed_cases_out_of_scope(self):
-        """验证用例目录只随确认修订变化，编辑中的候选需求不会污染当前 Journey。"""
+        """验证待定正文不污染当前用例，而已配置 UI/API 输入变化会隔离 Journey。"""
         root = Path(tempfile.mkdtemp())
         config_path = root / "profiles" / "local.yaml"
         config_path.parent.mkdir()
@@ -363,8 +363,11 @@ class RunJourneyTest(unittest.TestCase):
                 },
             )
             unconfirmed_scope = run_journey.requirement_scope_id(config_path, config)
+            config["ui"] = {"links": ["https://figma.example/design/v2"]}
+            external_input_scope = run_journey.requirement_scope_id(config_path, config)
 
         self.assertEqual(confirmed_scope, unconfirmed_scope)
+        self.assertNotEqual(confirmed_scope, external_input_scope)
         self.assertIn("-r1-", confirmed_scope)
 
     def test_behavior_journey_blocks_unconfirmed_requirement(self):

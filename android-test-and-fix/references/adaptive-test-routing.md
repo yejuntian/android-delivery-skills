@@ -160,8 +160,9 @@ REQ-ID / BDD-ID / Then
 
 ### 防假绿门禁
 
-- `COVERED_AUTOMATED` 必须有最终代码上的命令、退出码、测试数或工具限制说明、关键输出和报告路径。
-- `COVERED_MANUAL` 只允许用于已经实际完成并保留步骤、结果和证据的人工验收；计划由人工执行只能写 `UNVERIFIED`。
+- 普通 `COVERED_AUTOMATED` 必须有最终代码上的单 gate 收据，并把该 Then 映射到 JUnit 报告中真实通过的 testcase；测试总数大于零不能替代具体映射。Agent Journey 则必须引用实际执行的 action/check、数量和布局/截图产物。
+- `android-test-and-fix` 和 `android-data-migration` 的自动 gate 证据本身也必须包含实际执行数大于零的本轮 JUnit；接口、UI/A11y、安全、泄漏和性能使用对应专项结果，不能用任意成功命令加同名 `gate_id` 占位。
+- `COVERED_MANUAL` 只允许用于已经实际完成并保留执行人、带时区时间、环境、步骤、预期、实际结果和产物的人工验收；没有产物时说明原因，计划由人工执行只能写 `UNVERIFIED`。
 - Journey、截图、Unit 或静态扫描的通过都不能越过自身证据边界。
 - 替代测试必须覆盖同一 BDD/Then、输入、运行条件和风险；能力损失必须保留为未验证。
 - 所有必需 Then 均为 `COVERED_AUTOMATED` 或实际 `COVERED_MANUAL` 后，才允许整体全绿。

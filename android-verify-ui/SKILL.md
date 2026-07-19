@@ -188,4 +188,4 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 - 无 UI：输出最小 `SKIPPED_NO_UI` 报告，不启动验证工具。
 - 结论只能是 `PASS`、`STATIC_ONLY`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有实机/截图证据不得写 `PASS`，适用且必需的动态 A11y 没有证据时也不得写 `PASS`。
 
-输出被完整交付引用时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 写统一专项结果并记录截图/布局 SHA-256、设备环境、P0-P3 和未验证能力。人类报告的 `STATIC_ONLY` 映射为机器结果 `UNVERIFIED`，`SKIPPED_NO_UI` 映射为 `SKIPPED`；二者都不得冒充动态 UI `PASS`。
+输出被完整交付引用时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 写统一专项结果：`android-ui-a11y` capability 记录适用性和未验证原因，设备环境写入摘要/检查，截图或布局写入带 SHA-256 的产物。实际人工覆盖还必须记录执行人、带时区时间、逐步操作、预期和实际结果。人类报告的 `STATIC_ONLY` 映射为机器结果 `UNVERIFIED`，`SKIPPED_NO_UI` 映射为 `SKIPPED`；二者都不得冒充动态 UI `PASS`。

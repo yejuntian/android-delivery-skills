@@ -33,6 +33,12 @@ SPECIALIST_CONCLUSIONS = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 CAPABILITY_STATUSES = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 SEVERITIES = {"P0", "P1", "P2", "P3"}
 JOURNEY_AGENT_SKILL = "android-test-and-fix/journey-agent"
+STABILITY_SKILL = "android-audit-stability"
+STABILITY_CAPABILITIES = {
+    "android-dynamic-leak",
+    "android-performance",
+    "android-security-privacy",
+}
 
 
 class SpecialistResultError(RuntimeError):
@@ -59,7 +65,7 @@ def validate_specialist_result(
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["专项结果根节点必须是 object"]
-    if payload.get("version") != 1 or payload.get("producer") != SPECIALIST_PRODUCER:
+    if payload.get("version") != 2 or payload.get("producer") != SPECIALIST_PRODUCER:
         errors.append("专项结果版本或 producer 无效")
     for field in ("id", "skill", "summary"):
         if not isinstance(payload.get(field), str) or not payload[field].strip():
@@ -71,6 +77,7 @@ def validate_specialist_result(
     for field in (
         "requirement_id",
         "requirement_file_sha256",
+        "requirement_inputs_sha256",
         "baseline_id",
         "snapshot_sha256",
     ):
@@ -114,11 +121,11 @@ def validate_specialist_result(
             errors.append("专项结果仍有未关闭 P0/P1 时不能标记 PASS")
 
     capabilities = payload.get("capabilities", [])
+    seen_capabilities: set[str] = set()
     if not isinstance(capabilities, list):
         errors.append("专项结果 capabilities 必须是数组")
         capabilities = []
     else:
-        seen_capabilities: set[str] = set()
         for index, item in enumerate(capabilities):
             if not isinstance(item, dict):
                 errors.append(f"capabilities[{index}] 必须是 object")
@@ -140,6 +147,12 @@ def validate_specialist_result(
                 errors.append(f"capabilities[{index}] 非通过状态必须说明 reason")
             if conclusion == "PASS" and item.get("required") is True and item.get("status") != "PASS":
                 errors.append(f"必需能力 {capability_id or index} 未通过时专项结果不能标记 PASS")
+    if payload.get("skill") == STABILITY_SKILL:
+        missing_capabilities = sorted(STABILITY_CAPABILITIES - seen_capabilities)
+        if missing_capabilities:
+            errors.append(
+                "稳定性专项缺少能力适用性结论: " + ", ".join(missing_capabilities)
+            )
 
     commands = payload.get("commands", [])
     if not isinstance(commands, list) or not all(
@@ -247,6 +260,7 @@ def validate_specialist_result(
             "requirement_id",
             "requirement_revision",
             "requirement_file_sha256",
+            "requirement_inputs_sha256",
             "baseline_id",
             "snapshot_sha256",
         ):
@@ -309,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
                 str(context["requirement_id"]),
                 int(context["requirement_revision"]),
                 str(context["snapshot_sha256"]),
+                str(context["requirement_inputs_sha256"]),
             )
             directory.mkdir(parents=True, exist_ok=True)
         except (DeliveryError, DeliveryGateError, OSError) as exc:

@@ -140,6 +140,7 @@ class RequirementPathTests(unittest.TestCase):
                 "requirement-1",
                 2,
                 "a" * 64,
+                "b" * 64,
             )
 
         self.assertTrue(baseline.name.endswith(".json"))

@@ -115,12 +115,13 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 - `scripts/delivery.py`：只编排需求读取、修订确认、环境检查和专项 Skill 路由。
 - `scripts/git_changes.py`：只读检查分支、工作区、四类 Git 变化、`A/M/D/R`、真实片段和最终摘要，不判断业务或路由。
 - `scripts/requirement_snapshot.py`：只校验和保存连续需求修订、有效义务及文本差异，不判断业务语义或修改 Git。
+- `scripts/requirement_inputs.py`：只对需求正文及配置声明的 UI/API 链接和本地资料生成输入摘要，不访问网络或判断业务。
 - `scripts/delivery_gate.py`：只校验最终报告和证据新鲜度，不运行测试、不修改代码。
 - `scripts/android_project_capabilities.py`：首次处理项目、构建配置变化或 task 未知时，只读发现模块、variant 和 Gradle task；普通业务修改不必重复运行。
-- `scripts/execution_evidence.py`：只执行已经选择的命令并记录日志、测试数和报告摘要。
+- `scripts/execution_evidence.py`：只执行已经选择的单 gate 命令，按 attempt 保留日志、testcase 和报告摘要。
 - `scripts/specialist_result.py`：只校验专项统一结果、P0/P1 和证据文件摘要。
 
-最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。当前契约为 version 3，旧的 AI 自报命令结果不能继续通过。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
+最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。当前契约为 version 4，旧的跨 gate 收据、空人工说明和无待验项的设备待验结论不能继续通过。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py snapshot
@@ -129,7 +130,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 
 第二条命令退出码为 `0` 才表示最终通过证据仍与当前需求和代码一致；它不会自动提交 Git。
 
-`android-lint` 默认只执行目标项目自己的 Android Gradle Lint task，并引用项目生成的 XML/HTML/SARIF；当前流程不安装或强制外部自定义 Lint。项目已有插件时保持现状，但不单独声明自定义规则覆盖。
+`android-lint` 默认只执行目标项目自己的 Android Gradle Lint task。最终机器证据必须引用本轮 XML 或 SARIF；HTML 可保留给人查看。报告中的 Fatal/Error 即使因 `abortOnError=false` 得到零退出也会阻断。当前流程不安装或强制外部自定义 Lint，项目已有插件时保持原状。
 
 首次处理项目、构建配置变化或 task 未知时先发现真实能力；普通业务修改直接使用已确认 task。最终命令通过收据执行，不要手填退出码和测试数：
 
@@ -140,6 +141,7 @@ python3 ai-skills/android-delivery-skills/scripts/android_project_capabilities.p
 python3 ai-skills/android-delivery-skills/scripts/execution_evidence.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \
   --id E-UNIT \
+  --gate android-test-and-fix \
   --report app/build/test-results/testDebugUnitTest/TEST-example.xml \
   -- ./gradlew :app:testDebugUnitTest
 
@@ -148,7 +150,9 @@ python3 ai-skills/android-delivery-skills/scripts/specialist_result.py path \
 python3 ai-skills/android-delivery-skills/scripts/specialist_result.py validate <专项结果.json>
 ```
 
-`route`、收据、日志和专项结果均放在配置对应的外部状态目录，不修改 Android 项目；最终报告只引用路径和 SHA-256。
+`route`、收据、日志和专项结果均放在配置对应的外部状态目录，不修改 Android 项目；同一证据 ID 重跑会生成 `attempt-001/002` 等不可覆盖记录。测试/迁移收据必须包含本轮实际执行数大于零的 JUnit；最终报告只引用选定收据路径和 SHA-256，并把每个自动覆盖的 Then 映射到真实通过的 testcase。接口由对应专项证明；UI/A11y、安全、泄漏和性能由对应专项或允许的完整人工证据证明，不能用任意成功命令占位。
+
+人工覆盖不能只写“人工通过”：必须记录执行人、带时区时间、设备/环境、逐步操作、预期、实际结果以及产物；确实没有产物时说明原因。使用 `LOCAL_PASS_DEVICE_PENDING` 时，`pending_capabilities` 至少包含一个真实设备待验项，并引用同能力的 `UNVERIFIED/BLOCKED` 专项或人工证据；`FULL_PASS` 不允许保留待验项或专项能力中的 `UNVERIFIED/BLOCKED`。
 
 需要单独排查 Git 收集结果时可以运行：
 
@@ -239,7 +243,7 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py \
 
 Journey 测试用例归 `android-test-and-fix`。老项目 AGP 保持不动，只构建并安装 APK；默认由当前 AI 会话使用 Android CLI/adb 严格执行 XML action。独立 AGP 9 壳只作为已经初始化后的可选回退。`android-verify-ui` 可以复用 Journey 截图做设计还原验收，但不生成或管理测试用例。
 
-当前需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。完整流程使用 Git 基线 ID 与需求正文哈希，单独调用时使用需求正文哈希；默认 Agent 直接读取当前作用域，可选壳中的 `src/main/journeys/` 只是执行暂存目录，因此串行需求不会复用旧测试用例。
+当前需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。完整流程使用 Git 基线 ID、确认修订及需求/UI/API 输入摘要，单独调用时使用当前输入摘要；默认 Agent 直接读取当前作用域，可选壳中的 `src/main/journeys/` 只是执行暂存目录，因此串行需求或外部资料变化不会复用旧测试用例。
 
 Journey 测试用例由 `android-test-and-fix` 根据已确认需求和 BDD 自动分析并生成，用户不需要提供 XML、action/step 或任务名。只有需求本身缺少前置条件或预期结果时，才需要用户补充业务含义。
 

@@ -274,7 +274,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
-**AI 动作**：脚本只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，输出专项审查与测试顺序，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。逐个调用，每项输出必须进入闭环，而不是止于报告。
+**AI 动作**：脚本只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，输出专项审查与测试顺序，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照同时绑定需求正文、配置声明的 UI/API 链接与本地资料摘要；这些输入变化后必须重新确认影响并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
@@ -285,9 +285,10 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
 - `route` 检出的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
-- 最终使用的 Gradle、测试、构建和 lint 命令必须通过 `scripts/execution_evidence.py --id <证据ID> --report <报告> -- <命令参数>` 执行；收据、日志和报告摘要符合 `references/execution-receipt.schema.json`。用于覆盖原子 Then 的命令必须解析到实际测试数大于 0。
-- 核心审查和条件接口审查按 `references/specialist-result.schema.json` 只写最小机器信封；Agent Journey、动态泄漏、性能、UI 等需要工具证据时再添加命令、检查、产物和执行数量。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再用 `scripts/specialist_result.py validate <结果文件>` 校验。P0/P1 未关闭时不得写 `PASS`。
-- `android-lint` 只要求目标项目自己的 Android Gradle Lint task 和原生 XML/HTML/SARIF 报告；本轮不新增、安装或强制外部自定义 Lint。
+- 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；用于覆盖原子 Then 的证据还必须把 obligation 映射到真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
+- 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须分别记录动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
+- `android-lint` 只要求目标项目自己的 Android Gradle Lint task；最终证据必须包含本轮 XML 或 SARIF 机器报告，Fatal/Error 即使零退出也阻断。HTML 只作人类报告；本轮不新增、安装或强制外部自定义 Lint。
+- 人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
 
 所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前确认修订、有效义务、Git 基线和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
 
@@ -303,7 +304,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 
 只有同时满足以下条件才可声明交付完成：
 
-- 每条 BDD 的所有原子 Then 均映射到实现和可执行测试，或明确标记为实际人工覆盖、未验证或阻塞；计划人工执行但尚未执行时不得写成已覆盖。
+- 每条 BDD 的所有原子 Then 均映射到实现及 JUnit 中真实通过的 testcase、Agent Journey 中实际执行的 action/check，或结构完整的实际人工收据；计划人工执行但尚未执行时不得写成已覆盖。
 - 需求修订状态为 `CONFIRMED`，不存在 `PENDING/CONFLICT`；最终报告的 obligation ID、必需性和语义摘要与当前有效 Then 集合完全一致。
 - 当前需求追溯表覆盖全部已确认 `REQ-ID` 和必需 Then，需求映射率为 100%，每条记录包含最终实现、测试/实际人工验收、必需性与证据状态。
 - 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
@@ -315,7 +316,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 - 存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则结论只能是“代码与自动测试完成，UI 验收待执行”。
 - 最终报告包含变更、测试命令与结果、自修复记录、失败分类、专项能力/工具降级、AI 替代、能力损失、所需用户输入、未验证项和剩余风险。
 - 没有真机但不涉及真机必需验收时，结论只能是“代码与本地门禁完成，真机专项待验证”；真机是明确验收条件时保持“未完成/受阻”，但不否定其他已完成范围。
-- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、Git 基线、最终代码摘要和所有引用证据仍一致。
+- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、UI/API 输入摘要、Git 基线、最终代码摘要和所有引用证据仍一致。
 
 任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
 

@@ -41,11 +41,11 @@ delivery.py confirm-requirement-update
 delivery.py route
   -> 仅收集当前需求基线后的变化
   -> 按 A/M/D/R 状态与真实修改片段路由专项 Skill
-  -> 在项目外保存绑定当前代码摘要的条件门禁快照
+  -> 在项目外保存绑定需求资料输入与当前代码摘要的条件门禁快照
   -> 测试、构建、lint 和问题修复形成闭环
 
 delivery_gate.py validate
-  -> 核对最近确认修订、Git 基线、route 快照、执行收据和专项统一结果
+  -> 核对最近确认修订、UI/API 输入、Git 基线、单 gate attempt 收据和专项统一结果
   -> 只有当前证据完整时允许通过结论
 ```
 

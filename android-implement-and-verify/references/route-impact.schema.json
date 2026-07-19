@@ -10,16 +10,18 @@
     "requirement_id",
     "requirement_revision",
     "requirement_file_sha256",
+    "requirement_inputs_sha256",
     "baseline_id",
     "snapshot_sha256",
     "conditional_gates"
   ],
   "properties": {
-    "version": { "const": 1 },
+    "version": { "const": 2 },
     "generated_at": { "type": "string", "format": "date-time" },
     "requirement_id": { "type": "string", "minLength": 1 },
     "requirement_revision": { "type": "integer", "minimum": 1 },
     "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "requirement_inputs_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "baseline_id": { "type": "string", "minLength": 1 },
     "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "conditional_gates": {

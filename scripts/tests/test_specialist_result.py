@@ -46,11 +46,12 @@ class SpecialistResultTests(unittest.TestCase):
             "requirement_id": "requirement-1",
             "requirement_revision": 1,
             "requirement_file_sha256": "b" * 64,
+            "requirement_inputs_sha256": "e" * 64,
             "baseline_id": "baseline-1",
             "snapshot_sha256": "a" * 64,
         }
         self.payload = {
-            "version": 1,
+            "version": 2,
             "producer": SPECIALIST_PRODUCER,
             "id": "E-DIFF",
             "skill": "android-review-diff",
@@ -131,6 +132,27 @@ class SpecialistResultTests(unittest.TestCase):
         }]
         errors = validate_specialist_result(self.payload, self.context)
         self.assertTrue(any("必需能力 dynamic-leak" in error for error in errors))
+
+    def test_stability_requires_all_capability_decisions(self) -> None:
+        """验证稳定性 PASS 必须记录泄漏、性能和安全隐私适用性。"""
+        self.payload["skill"] = "android-audit-stability"
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("稳定性专项缺少能力适用性结论" in error for error in errors))
+
+        self.payload["capabilities"] = [
+            {
+                "id": capability_id,
+                "required": False,
+                "status": "SKIPPED",
+                "reason": "需求与最终 diff 均未涉及。",
+            }
+            for capability_id in (
+                "android-dynamic-leak",
+                "android-performance",
+                "android-security-privacy",
+            )
+        ]
+        self.assertEqual([], validate_specialist_result(self.payload, self.context))
 
     def test_path_command_uses_current_requirement_scope(self) -> None:
         """验证专项结果目录按当前需求、修订和代码摘要隔离。"""

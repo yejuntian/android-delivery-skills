@@ -42,6 +42,8 @@
 
 `不适用` 表示该需求没有对应影响；`未验证` 表示本应检查但缺少条件。两者不得混用。
 
+机器结果中，稳定性专项固定使用 `android-dynamic-leak`、`android-performance`、`android-security-privacy` 三个 capability ID；迁移和 UI/A11y 分别使用 `android-data-migration`、`android-ui-a11y` gate。适用但缺少设备时使用 `UNVERIFIED` 并进入 `pending_capabilities`，同时引用同能力的专项或实际人工阻塞证据；不得用无关构建、Unit 或 Review 证据占位。
+
 ## 设备与降级
 
 - 没有实体真机时继续执行全部非真机门禁；模拟器可等价覆盖的迁移、功能、基础 A11y 和泄漏场景继续运行。

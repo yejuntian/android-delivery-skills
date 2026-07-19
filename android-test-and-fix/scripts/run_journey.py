@@ -55,6 +55,7 @@ from scripts.requirement_snapshot import (  # noqa: E402
     load_requirement_snapshot,
     requirement_digest,
 )
+from scripts.requirement_inputs import requirement_inputs_digest  # noqa: E402
 
 PASS = "PASS"
 PREFLIGHT_PASS = "PREFLIGHT_PASS"
@@ -145,6 +146,7 @@ class JourneyResult:
     requirement_status: str | None = None
     baseline_id: str | None = None
     requirement_file_sha256: str | None = None
+    requirement_inputs_sha256: str | None = None
     snapshot_sha256: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
@@ -338,9 +340,9 @@ def resolve_journeys_dir(
 
 
 def requirement_scope_id(config_path: Path, config: dict[str, Any]) -> str:
-    """优先使用确认需求修订隔离用例；单独调用时退回当前需求内容哈希。"""
+    """优先使用确认修订及 UI/API 输入摘要隔离用例，避免外部资料串用。"""
     requirement_path = resolve_config_paths(config, config_path).requirement_path
-    digest: str | None = None
+    content_digest: str | None = None
     revision: int | None = None
     try:
         snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(config_path))
@@ -351,14 +353,20 @@ def requirement_scope_id(config_path: Path, config: dict[str, Any]) -> str:
         and requirement_path
         and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve()
     ):
-        digest = str(snapshot["sha256"])[:16]
+        content_digest = str(snapshot["sha256"])
         revision = int(snapshot["revision"])
     if requirement_path and requirement_path.is_file():
-        if digest is None:
+        if content_digest is None:
             try:
-                digest = requirement_digest(read_requirement(requirement_path))[:16]
+                content_digest = requirement_digest(read_requirement(requirement_path))
             except DeliveryError:
                 pass
+
+    digest = (
+        requirement_inputs_digest(config, config_path, content_digest)[:16]
+        if content_digest
+        else None
+    )
 
     baseline_path = baseline_path_for_config(config_path)
     try:
@@ -696,6 +704,11 @@ def delivery_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any
             pass
         else:
             context["requirement_file_sha256"] = current_digest
+            context["requirement_inputs_sha256"] = requirement_inputs_digest(
+                config,
+                config_path,
+                current_digest,
+            )
             if requirement_snapshot:
                 context["requirement_id"] = requirement_snapshot["requirement_id"]
                 context["requirement_revision"] = requirement_snapshot["revision"]
@@ -967,6 +980,7 @@ def write_result(result: JourneyResult, path: Path) -> None:
         f"- 需求状态：`{result.requirement_status or '未识别'}`\n"
         f"- Git 基线：`{result.baseline_id or '未识别'}`\n"
         f"- 最终代码摘要：`{result.snapshot_sha256 or '未识别'}`\n"
+        f"- 完整需求输入摘要：`{result.requirement_inputs_sha256 or '未识别'}`\n"
         f"- 开始时间：`{result.started_at or '未记录'}`\n"
         f"- 完成时间：`{result.finished_at or '未记录'}`\n\n"
         "## Journey 覆盖的 BDD/Then\n\n"
@@ -1076,6 +1090,7 @@ def main(argv: list[str] | None = None) -> int:
         result.requirement_status = context.get("requirement_status")
         result.baseline_id = context.get("baseline_id")
         result.requirement_file_sha256 = context.get("requirement_file_sha256")
+        result.requirement_inputs_sha256 = context.get("requirement_inputs_sha256")
         result.snapshot_sha256 = context.get("snapshot_sha256")
         result.started_at = started_at
         return finish(result, result_path)

@@ -51,13 +51,13 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 - 对每个 `REQ-ID` 检查主流程、备选流程、异常流程、恢复流程和非功能约束；只选择与需求及实际 diff 相关的场景。不适用项写明原因，资料不足项标为待确认，禁止脑补预期。
 - 非功能场景按实际影响选择性能、稳定性、安全、兼容性、可访问性或资源使用，不要求所有需求机械执行所有类型。
 - 禁止固定 `sleep`、`Thread.sleep` 或无条件延时掩盖时序问题；优先使用 IdlingResource、条件轮询、虚拟时间、框架智能等待或目标项目已有等待机制。
-- 重试只允许处理已证明的环境或基础设施不稳定，不能重试业务断言直到碰巧通过。必须保留首次失败命令、日志、重试原因、次数和每次结果。
+- 重试只允许处理已证明的环境或基础设施不稳定，不能重试业务断言直到碰巧通过。相同证据 ID 的每轮执行必须保留独立 `attempt-###` 收据，首次失败命令、日志、重试原因、次数和每次结果都不得覆盖。
 - 必需测试只有重试后才通过时标记 `FLAKY`，不得计为稳定全绿；先定位并关闭不稳定根因，无法关闭时门禁为“未完成/受阻”。
 
 ## 新鲜证据
 
 - 最终证据必须来自最后一次生产代码、测试、资源或构建配置修改之后的执行；任何必需项变化都会使对应旧证据失效。
-- 每项最终命令使用 `scripts/execution_evidence.py` 生成收据，记录 `TEST-ID`、参数数组、执行目录、退出码、实际测试数、日志、报告路径和 SHA-256；没有结构化测试数时不得用该命令覆盖原子 Then。
+- 每项最终命令使用 `scripts/execution_evidence.py --gate <gate-id>` 生成单一用途收据，记录 `TEST-ID`、参数数组、执行目录、退出码、JUnit testcase、日志、报告路径和 SHA-256；测试和迁移自动收据没有本轮实际执行数大于零的 JUnit 时不能证明 gate，没有具体通过 testcase 时不能覆盖原子 Then，一份收据不得兼任其他 gate。
 - 替代验证必须覆盖相同 BDD、运行条件和风险；能力损失仍标记未验证，不得用较弱证据冒充原门禁通过。
 
 ## Android CLI / Gradle / adb 使用策略
@@ -78,7 +78,7 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 执行顺序：
 
 1. **Kotlin/Java 编译**：读取项目模块、variant 和 Gradle task，优先执行受影响模块已有的 Kotlin/Java compile task；无法可靠确定独立 compile task 时，使用项目已有最小 assemble/test task 覆盖编译，不猜任务名造结果。
-2. **Android Lint**：存在 Android 模块和对应 lint task 时执行受影响范围的现有 lint；保存文本输出及项目生成的 SARIF、XML 或 HTML 报告路径。
+2. **Android Lint**：存在 Android 模块和对应 lint task 时执行受影响范围的现有 lint；最终机器证据保存本轮 XML 或 SARIF，HTML 可另存给人查看。收据解析 Fatal/Error，不能依赖 `abortOnError` 的进程退出码造绿。
 3. **语言专项**：Kotlin 仅执行项目已配置的 detekt；Java 仅执行项目已配置的 Error Prone、NullAway、SpotBugs 或 Infer。遵守现有版本、task、config 和扫描范围，不临时生成规则集。
 4. **质量任务**：PMD、Checkstyle 等格式或风格任务只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
 5. **跨语言扫描**：Semgrep 只有本机/项目已有 binary 且仓库已有明确 config/rules 时执行；CodeQL 只有仓库、脚本或 CI 已配置 Kotlin/Java 流程时复用。不得自动下载未知规则、创建数据库或设计新查询套件。
@@ -262,7 +262,7 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 - 把每个 `When` 拆成独立 action，避免一个 action 包含多个操作。
 - 把每个 `Then` 写成独立 verify/check action，不得只隐含在操作描述中。
 - XML 和最终报告必须标明覆盖的 `BDD/Then`；同一 BDD 中未分配给 Journey 的 Then 保持自己的测试与状态，不因 Journey 通过而改变。
-- 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线和需求正文哈希，单独调用时来自需求正文哈希。默认 Agent 路线使用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须使用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
+- 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线、确认修订和需求正文/UI/API 输入摘要，单独调用时来自当前完整输入摘要。默认 Agent 路线使用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须使用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
 - 不把需求用例长期保存在共享壳源码中。默认 Agent 直接读取当前作用域；可选壳每次只同步当前用例集并清除上一次残留 XML，防止跨项目串用测试。
 - 多指、长按、双击、旋转/折叠、精确计数或复杂条件不稳定时，改用项目已有 Compose/Espresso/UIAutomator，或明确列为人工测试。
 

@@ -419,12 +419,12 @@
 - **预期结论**：执行真实迁移检查后标 `required=true + PASS`，或有需求/diff 复核证据证明不适用后标 `required=false + SKIPPED`。
 - **禁止行为**：由最终报告自行省略迁移、UI/A11y、接口或安全隐私候选，或用空 reason 跳过。
 
-## 场景 51：命令零退出但测试报告失败
+## 场景 51：命令零退出但测试报告缺失或失败
 
-- **用户请求**：Gradle 配置了 `ignoreFailures`，命令退出码为 0，但 JUnit XML 有一个失败测试。
-- **预期动作**：`execution_evidence.py` 解析 JUnit 的 tests/failures/errors/skipped，收据判定证据失败；最终门禁拒绝该自动证据。
-- **预期结论**：修复真实失败并重新生成当前代码上的收据；原子 Then 还必须有大于 0 的实际执行测试数。
-- **禁止行为**：只复制命令和 `exit_code=0`、伪造测试数、引用旧报告或把全部 skipped 写成通过。
+- **用户请求**：命令退出码为 0，但没有 JUnit XML；或 Gradle 配置了 `ignoreFailures` 且 JUnit 有一个失败测试。
+- **预期动作**：测试/迁移 gate 缺少实际执行数大于零的本轮 JUnit 时直接失败；存在报告时解析 tests/failures/errors/skipped，最终门禁拒绝零测试或失败证据。
+- **预期结论**：修复真实失败并重新生成当前代码上的收据；每个自动覆盖的原子 Then 还必须映射到 JUnit 中真实存在且通过的 testcase。
+- **禁止行为**：用普通成功命令加测试 `gate_id` 占位、只复制 `exit_code=0`、用非零测试总数代替 testcase 映射、引用旧报告或把全部 skipped 写成通过。
 
 ## 场景 52：老项目自定义 Gradle 任务
 

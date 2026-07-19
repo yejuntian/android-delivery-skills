@@ -8,9 +8,12 @@
     "version",
     "producer",
     "id",
+    "gate_id",
+    "attempt",
     "requirement_id",
     "requirement_revision",
     "requirement_file_sha256",
+    "requirement_inputs_sha256",
     "baseline_id",
     "snapshot_sha256_before",
     "snapshot_sha256_after",
@@ -28,12 +31,27 @@
     "stderr"
   ],
   "properties": {
-    "version": { "const": 1 },
+    "version": { "const": 2 },
     "producer": { "const": "android-delivery-execution-evidence" },
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+    "gate_id": {
+      "enum": [
+        "android-test-and-fix",
+        "android-build",
+        "android-lint",
+        "android-verify-api-contract",
+        "android-data-migration",
+        "android-ui-a11y",
+        "android-security-privacy",
+        "android-dynamic-leak",
+        "android-performance"
+      ]
+    },
+    "attempt": { "type": "integer", "minimum": 1 },
     "requirement_id": { "type": "string", "minLength": 1 },
     "requirement_revision": { "type": "integer", "minimum": 1 },
     "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "requirement_inputs_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "baseline_id": { "type": "string", "minLength": 1 },
     "snapshot_sha256_before": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "snapshot_sha256_after": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
@@ -50,6 +68,30 @@
     "stdout": { "$ref": "#/$defs/file" },
     "stderr": { "$ref": "#/$defs/file" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "gate_id": {
+            "enum": ["android-test-and-fix", "android-data-migration"]
+          }
+        },
+        "required": ["gate_id"]
+      },
+      "then": {
+        "properties": {
+          "executed_tests": { "type": "integer", "minimum": 1 },
+          "reports": {
+            "minItems": 1,
+            "contains": {
+              "type": "object",
+              "required": ["junit"]
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "file": {
       "type": "object",
@@ -64,15 +106,44 @@
         "junit": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["tests", "failures", "errors", "skipped", "executed"],
+          "required": ["tests", "failures", "errors", "skipped", "executed", "test_cases"],
           "properties": {
             "tests": { "type": "integer", "minimum": 0 },
             "failures": { "type": "integer", "minimum": 0 },
             "errors": { "type": "integer", "minimum": 0 },
             "skipped": { "type": "integer", "minimum": 0 },
-            "executed": { "type": "integer", "minimum": 0 }
+            "executed": { "type": "integer", "minimum": 0 },
+            "test_cases": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/test_case" }
+            }
           }
-        }
+        },
+        "android_lint": { "$ref": "#/$defs/android_lint" }
+      }
+    },
+    "test_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "classname", "name", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "classname": { "type": "string" },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["PASS", "FAIL", "ERROR", "SKIPPED"] }
+      }
+    },
+    "android_lint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "fatal", "errors", "warnings", "information", "total"],
+      "properties": {
+        "format": { "enum": ["XML", "SARIF"] },
+        "fatal": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "information": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
       }
     }
   }

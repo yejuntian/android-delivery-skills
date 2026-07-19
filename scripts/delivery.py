@@ -58,6 +58,7 @@ from .requirement_snapshot import (  # noqa: E402
     requirement_digest,
     write_requirement_snapshot,
 )
+from .requirement_inputs import requirement_inputs_digest  # noqa: E402
 from .route_impact import (  # noqa: E402
     RouteImpactError,
     build_route_impact,
@@ -666,6 +667,11 @@ def cmd_route(args):
     if not paths.requirement_path or not paths.requirement_path.is_file():
         raise DeliveryError(f"需求文件无效: {paths.requirement_path}")
     requirement_sha256 = requirement_digest(read_requirement(paths.requirement_path))
+    requirement_inputs_sha256 = requirement_inputs_digest(
+        config,
+        args.config,
+        requirement_sha256,
+    )
     try:
         requirement_snapshot = load_requirement_snapshot(
             requirement_snapshot_path_for_config(args.config)
@@ -697,6 +703,7 @@ def cmd_route(args):
                 "requirement_id": requirement_snapshot["requirement_id"],
                 "requirement_revision": requirement_snapshot["revision"],
                 "requirement_file_sha256": requirement_sha256,
+                "requirement_inputs_sha256": requirement_inputs_sha256,
             },
             impacts,
             conditional_gates,

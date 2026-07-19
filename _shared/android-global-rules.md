@@ -65,11 +65,13 @@
 
 ### 统一机器证据
 
-- `delivery.py route` 必须在目标项目外生成绑定当前需求修订、Git 基线和代码摘要的影响快照；最终代码、测试或资源变化后重新 route。条件候选不能从最终报告中省略，终判不适用时也必须提供理由和复核证据。
-- 最终交付使用的 Gradle、测试、构建和 lint 命令必须通过 `scripts/execution_evidence.py` 执行并生成收据；AI 不得手填退出码、测试数或不存在的报告路径。原子 Then 的自动覆盖必须有结构化测试数大于 0。
+- `delivery.py route` 必须在目标项目外生成绑定当前需求修订、UI/API 输入、Git 基线和代码摘要的影响快照；需求资料、最终代码、测试或资源变化后重新 route。条件候选不能从最终报告中省略，终判不适用时也必须提供理由和复核证据。
+- 最终交付使用的命令必须通过 `scripts/execution_evidence.py --gate <gate-id>` 生成单一用途、不可覆盖的 attempt 收据；一份测试收据不得兼任 build、lint 或迁移。自动覆盖原子 Then 时必须把 `BDD/Then` 映射到收据中真实通过的 JUnit testcase。
+- `android-test-and-fix` 和 `android-data-migration` 的自动收据必须包含本轮实际执行数大于零且无失败的 JUnit；普通自动收据只能直接证明测试、构建、Lint 和迁移 gate。接口、UI/A11y、安全、泄漏和性能 gate 必须由对应专项 capability 或允许的完整人工证据证明，不能只填写同名 `gate_id`。
 - 由总入口编排的 `android-review-diff`、`android-review-code-quality`、`android-audit-stability`、条件触发的 `android-verify-api-contract`，以及 Agent Journey 必须按 `android-implement-and-verify/references/specialist-result.schema.json` 输出最小机器信封。
-- 所有专项只必填负责 Skill、当前需求/代码、结论、摘要、P0-P3 和未关闭项；能力、命令、逐项检查、产物、执行数量和时间仅在动态专项或 Agent Journey 实际需要时扩展。P0/P1 未关闭或已声明的必需能力未通过时不得输出 `PASS`。
-- `android-lint` 默认只运行目标项目自己的 Android Gradle Lint task 并保留原生报告；不得自动安装、配置或依赖外部自定义 Lint 规则库。目标项目已有插件或 `lintChecks` 时保持项目现状，不由本流程擅自增删。
+- 普通 Review 只必填公共信封；`android-audit-stability` 必须分别记录 `android-dynamic-leak`、`android-performance`、`android-security-privacy` 的适用性。P0/P1 未关闭或已声明的必需能力未通过时不得输出 `PASS`。
+- `android-lint` 默认只运行目标项目自己的 Android Gradle Lint task；最终证据必须包含本轮 XML 或 SARIF 机器报告，Fatal/Error 即使被项目配置成零退出也必须阻断。HTML 只作人类报告；不得自动安装、配置或依赖外部自定义 Lint。
+- `COVERED_MANUAL` 必须有执行人、带时区时间、环境、步骤、预期、实际结果及产物或无产物原因；`LOCAL_PASS_DEVICE_PENDING` 必须列出真实设备待验项及同能力的未验证证据。
 - 执行收据、日志和统一专项结果写入配置对应的外部状态目录，避免报告自身改变目标项目代码摘要。使用 `python3 scripts/specialist_result.py path --config <配置>` 获取专项目录；不得把这些外部文件当成生产源码提交。
 
 ## 默认输入

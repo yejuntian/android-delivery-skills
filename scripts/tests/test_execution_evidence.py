@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """脚本名称：test_execution_evidence.py
 
-用途：验证命令执行收据能够绑定代码摘要、结构化测试数、日志和报告文件。
+用途：验证单 gate 命令收据能够绑定代码摘要、testcase、Lint、日志和报告文件。
 
-覆盖范围：敏感参数脱敏、JUnit 计数、缺失报告和执行期间源码变化。所有命令只在
-临时 Git 仓库运行，不接触真实 Android 项目、设备或网络。
+覆盖范围：敏感参数脱敏、JUnit 映射、Lint 报告、不可覆盖 attempt、缺失报告和执行
+期间源码变化。所有命令只在临时 Git 仓库运行，不接触真实 Android 项目、设备或网络。
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -22,7 +23,6 @@ if __package__ in {None, ""}:
     __package__ = "scripts.tests"
 
 from ..execution_evidence import (  # noqa: E402
-    ExecutionEvidenceError,
     redact_command,
     redact_output,
     run_and_record,
@@ -62,9 +62,48 @@ class ExecutionEvidenceTests(unittest.TestCase):
             "requirement_id": baseline["id"],
             "requirement_revision": 1,
             "requirement_file_sha256": "b" * 64,
+            "requirement_inputs_sha256": "c" * 64,
             "result_path": str(self.root / "delivery-result.json"),
         }
         self.receipt_dir = self.root / "receipts"
+
+    def _record_clean_lint(self, evidence_id: str) -> tuple[dict, Path, dict]:
+        """使用忽略目录中的假 Gradle wrapper 生成干净 Lint XML 和对应证据。"""
+        build_dir = self.repo / "build"
+        build_dir.mkdir(exist_ok=True)
+        wrapper = build_dir / "gradlew"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            "mkdir -p reports\n"
+            "printf '<issues><issue id=\"W\" severity=\"Warning\"/></issues>' "
+            "> reports/lint-results.xml\n",
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o700)
+        report = build_dir / "reports" / "lint-results.xml"
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id=evidence_id,
+            gate_id="android-lint",
+            command=["./gradlew", ":app:lintDebug"],
+            cwd=build_dir,
+            timeout_seconds=30,
+            reports=[report],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        self.assertEqual(0, exit_code)
+        evidence = {
+            "id": evidence_id,
+            "gate_id": "android-lint",
+            "command": receipt["command"],
+            "exit_code": 0,
+            "executed_tests": None,
+            "report_paths": [receipt["reports"][0]["path"]],
+            "obligation_test_cases": {},
+        }
+        return receipt, receipt_path, evidence
 
     def test_redacts_sensitive_values_and_deep_link_queries(self) -> None:
         """验证收据不会泄漏 Token、密码或 DeepLink 查询参数。"""
@@ -90,6 +129,13 @@ class ExecutionEvidenceTests(unittest.TestCase):
             redact_output(b"Authorization: Bearer abc.def\ntoken=secret-value\nsample://x?code=1"),
         )
         self.assertIn("sample://x?<redacted>", redact_output("sample://x?code=1"))
+        structured = redact_output(
+            '{"access_token":"abc123","client_secret":"secret-value"}\n'
+            "PRIVATE_KEY=-----BEGIN_PRIVATE_KEY-----"
+        )
+        self.assertNotIn("abc123", structured)
+        self.assertNotIn("secret-value", structured)
+        self.assertNotIn("BEGIN_PRIVATE_KEY", structured)
 
     def test_records_fresh_junit_and_validates_receipt(self) -> None:
         """验证真实命令、JUnit 测试数、日志和摘要可以形成有效最终证据。"""
@@ -97,10 +143,15 @@ class ExecutionEvidenceTests(unittest.TestCase):
         script = (
             "from pathlib import Path; "
             f"p=Path({str(report)!r}); p.parent.mkdir(parents=True, exist_ok=True); "
-            "p.write_text('<testsuite tests=\"3\" failures=\"0\"/>\\n')"
+            "p.write_text('<testsuite tests=\"3\" failures=\"0\">'"
+            "'<testcase classname=\"RulesTest\" name=\"caseA\"/>'"
+            "'<testcase classname=\"RulesTest\" name=\"caseB\"/>'"
+            "'<testcase classname=\"RulesTest\" name=\"caseC\"/>'"
+            "'</testsuite>\\n')"
         )
         receipt, receipt_path, exit_code = run_and_record(
             evidence_id="E-UNIT",
+            gate_id="android-test-and-fix",
             command=[sys.executable, "-c", script],
             cwd=self.repo,
             timeout_seconds=30,
@@ -112,13 +163,15 @@ class ExecutionEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(0, exit_code)
         self.assertEqual(3, receipt["executed_tests"])
-        self.assertIn("-r1-", receipt_path.parent.name)
+        self.assertIn("-r1-", str(receipt_path))
         evidence = {
             "id": "E-UNIT",
+            "gate_id": "android-test-and-fix",
             "command": receipt["command"],
             "exit_code": 0,
             "executed_tests": 3,
             "report_paths": [receipt["reports"][0]["path"]],
+            "obligation_test_cases": {},
         }
         self.assertEqual(
             [],
@@ -134,6 +187,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         """验证命令零退出但显式报告不存在时收集器返回证据失败。"""
         _, _, exit_code = run_and_record(
             evidence_id="E-MISSING",
+            gate_id="android-test-and-fix",
             command=[sys.executable, "-c", "print('ok')"],
             cwd=self.repo,
             timeout_seconds=30,
@@ -145,6 +199,39 @@ class ExecutionEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(3, exit_code)
 
+    def test_test_gate_requires_nonzero_junit_report(self) -> None:
+        """验证普通成功命令不能在没有 JUnit 执行结果时证明测试 gate。"""
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id="E-EMPTY-TEST",
+            gate_id="android-test-and-fix",
+            command=[sys.executable, "-c", "pass"],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        evidence = {
+            "id": "E-EMPTY-TEST",
+            "gate_id": "android-test-and-fix",
+            "command": receipt["command"],
+            "exit_code": 0,
+            "executed_tests": None,
+            "report_paths": [],
+            "obligation_test_cases": {},
+        }
+
+        self.assertEqual(3, exit_code)
+        errors = validate_execution_receipt(
+            receipt_path,
+            sha256_file(receipt_path),
+            evidence,
+            self.context,
+        )
+        self.assertTrue(any("缺少实际执行大于零的 JUnit 报告" in error for error in errors))
+
     def test_junit_failure_cannot_pass_even_when_command_exits_zero(self) -> None:
         """验证 Gradle ignoreFailures 等零退出设置不能掩盖 JUnit 真实失败。"""
         report = self.repo / "build" / "test-results" / "TEST-failed.xml"
@@ -155,6 +242,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         )
         receipt, _, exit_code = run_and_record(
             evidence_id="E-FAILED-JUNIT",
+            gate_id="android-test-and-fix",
             command=[sys.executable, "-c", script],
             cwd=self.repo,
             timeout_seconds=30,
@@ -172,6 +260,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         script = "from pathlib import Path; Path('App.kt').write_text('class Mutated\\n')"
         receipt, _, exit_code = run_and_record(
             evidence_id="E-MUTATE",
+            gate_id="android-test-and-fix",
             command=[sys.executable, "-c", script],
             cwd=self.repo,
             timeout_seconds=30,
@@ -187,12 +276,31 @@ class ExecutionEvidenceTests(unittest.TestCase):
             receipt["snapshot_sha256_after"],
         )
 
-    def test_command_start_failure_is_actionable(self) -> None:
-        """验证命令不存在时返回明确环境错误而不是 Python traceback。"""
-        with self.assertRaisesRegex(ExecutionEvidenceError, "命令无法启动"):
+    def test_command_start_failure_is_recorded(self) -> None:
+        """验证命令无法启动也保留不可覆盖收据，而不是只抛出 traceback。"""
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id="E-NOT-FOUND",
+            gate_id="android-test-and-fix",
+            command=[str(self.repo / "missing-command")],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        self.assertEqual(127, exit_code)
+        self.assertEqual(127, receipt["exit_code"])
+        self.assertTrue(receipt_path.is_file())
+
+    def test_same_evidence_id_keeps_immutable_attempts(self) -> None:
+        """验证同一证据重跑分配新 attempt，首次失败和日志不会被覆盖。"""
+        results = [
             run_and_record(
-                evidence_id="E-NOT-FOUND",
-                command=[str(self.repo / "missing-command")],
+                evidence_id="E-RETRY",
+                gate_id="android-test-and-fix",
+                command=[sys.executable, "-c", "raise SystemExit(1)" if index == 0 else "print('ok')"],
                 cwd=self.repo,
                 timeout_seconds=30,
                 reports=[],
@@ -201,6 +309,65 @@ class ExecutionEvidenceTests(unittest.TestCase):
                 baseline_path=self.baseline,
                 receipt_dir=self.receipt_dir,
             )
+            for index in range(2)
+        ]
+        self.assertEqual([1, 2], [result[0]["attempt"] for result in results])
+        self.assertNotEqual(results[0][1], results[1][1])
+        self.assertEqual(1, results[0][0]["exit_code"])
+        self.assertEqual(0, results[1][0]["exit_code"])
+        self.assertTrue(all(result[1].is_file() for result in results))
+
+    def test_lint_report_errors_fail_zero_exit_command(self) -> None:
+        """验证 Android Lint 即使被配置为零退出，报告中的 Error 仍阻断证据。"""
+        report = self.repo / "build" / "reports" / "lint-results.xml"
+        script = (
+            "from pathlib import Path; "
+            f"p=Path({str(report)!r}); p.parent.mkdir(parents=True, exist_ok=True); "
+            "p.write_text('<issues><issue id=\"X\" severity=\"Error\"/></issues>')"
+        )
+        receipt, _, exit_code = run_and_record(
+            evidence_id="E-LINT",
+            gate_id="android-lint",
+            command=[sys.executable, "-c", script],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[report],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        self.assertEqual(3, exit_code)
+        self.assertEqual(1, receipt["reports"][0]["android_lint"]["errors"])
+
+    def test_clean_lint_report_produces_valid_gate_receipt(self) -> None:
+        """验证真实 lint task 加本轮无 Error 的 XML 可以形成有效单 gate 收据。"""
+        _, receipt_path, evidence = self._record_clean_lint("E-LINT-CLEAN")
+
+        self.assertEqual(
+            [],
+            validate_execution_receipt(
+                receipt_path,
+                sha256_file(receipt_path),
+                evidence,
+                self.context,
+            ),
+        )
+
+    def test_malformed_lint_summary_returns_error_instead_of_crashing(self) -> None:
+        """验证畸形 Lint 计数字段只会阻断证据，不会让最终门禁异常退出。"""
+        receipt, receipt_path, evidence = self._record_clean_lint("E-LINT-MALFORMED")
+        receipt["reports"][0]["android_lint"]["errors"] = "not-an-integer"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+        errors = validate_execution_receipt(
+            receipt_path,
+            sha256_file(receipt_path),
+            evidence,
+            self.context,
+        )
+
+        self.assertTrue(any("Android Lint 汇总字段无效: errors" in error for error in errors))
 
 
 if __name__ == "__main__":

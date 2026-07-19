@@ -38,6 +38,7 @@ from ..requirement_snapshot import (  # noqa: E402
     apply_requirement_revision,
     write_requirement_snapshot,
 )
+from ..requirement_inputs import requirement_inputs_digest  # noqa: E402
 from ..route_impact import build_route_impact, write_route_impact  # noqa: E402
 from ..specialist_result import SPECIALIST_PRODUCER  # noqa: E402
 
@@ -52,6 +53,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.temp_root = Path(self.temp_dir.name)
         self.snapshot = "a" * 64
         self.requirement = "b" * 64
+        self.requirement_inputs = "c" * 64
         self.obligation = "d" * 64
         self.context = {
             "requirement_id": "baseline-1",
@@ -61,69 +63,117 @@ class DeliveryGateTests(unittest.TestCase):
             "head": "head-2",
             "snapshot_sha256": self.snapshot,
             "requirement_file_sha256": self.requirement,
+            "requirement_inputs_sha256": self.requirement_inputs,
             "expected_obligations": {
                 "BDD-001/T1": {"required": True, "sha256": self.obligation},
             },
             "expected_conditional_gates": [],
             "result_path": "/tmp/result.json",
         }
-        command = ["./gradlew", ":app:testDebugUnitTest"]
-        report = self.temp_root / "TEST-result.xml"
-        stdout = self.temp_root / "stdout.log"
-        stderr = self.temp_root / "stderr.log"
-        report.write_text('<testsuite tests="2" failures="0"/>\n', encoding="utf-8")
-        stdout.write_text("BUILD SUCCESSFUL\n", encoding="utf-8")
-        stderr.write_text("", encoding="utf-8")
-        receipt = {
-            "version": 1,
-            "producer": RECEIPT_PRODUCER,
-            "id": "E-TEST",
-            "requirement_id": "baseline-1",
-            "requirement_revision": 2,
-            "requirement_file_sha256": self.requirement,
-            "baseline_id": "baseline-1",
-            "snapshot_sha256_before": self.snapshot,
-            "snapshot_sha256_after": self.snapshot,
-            "command": command,
-            "command_sha256": hashlib.sha256(json.dumps(command).encode()).hexdigest(),
-            "cwd": "/tmp/project",
-            "started_at": "2026-07-19T00:00:00+00:00",
-            "finished_at": "2026-07-19T00:00:01+00:00",
-            "timeout_seconds": 60,
-            "timed_out": False,
-            "exit_code": 0,
-            "executed_tests": 2,
-            "reports": [{
-                "path": str(report),
-                "exists": True,
-                "fresh": True,
-                "size": report.stat().st_size,
-                "sha256": sha256_file(report),
-                "junit": {
-                    "tests": 2,
-                    "failures": 0,
-                    "errors": 0,
-                    "skipped": 0,
-                    "executed": 2,
+        test_command = ["./gradlew", ":app:testDebugUnitTest"]
+        test_report = self.temp_root / "TEST-result.xml"
+        test_report.write_text(
+            '<testsuite tests="2" failures="0" errors="0" skipped="0">'
+            '<testcase classname="FeatureTest" name="thenT1"/>'
+            '<testcase classname="FeatureTest" name="regression"/>'
+            "</testsuite>\n",
+            encoding="utf-8",
+        )
+        lint_report = self.temp_root / "lint-results.xml"
+        lint_report.write_text("<issues/>\n", encoding="utf-8")
+
+        def create_receipt(
+            evidence_id: str,
+            gate_id: str,
+            command: list[str],
+            reports: list[dict],
+            executed_tests: int | None,
+        ) -> Path:
+            """生成与当前上下文绑定的测试收据，分别证明单一 gate。"""
+            stdout = self.temp_root / f"{evidence_id}.stdout.log"
+            stderr = self.temp_root / f"{evidence_id}.stderr.log"
+            stdout.write_text("BUILD SUCCESSFUL\n", encoding="utf-8")
+            stderr.write_text("", encoding="utf-8")
+            receipt = {
+                "version": 2,
+                "producer": RECEIPT_PRODUCER,
+                "id": evidence_id,
+                "gate_id": gate_id,
+                "attempt": 1,
+                "requirement_id": "baseline-1",
+                "requirement_revision": 2,
+                "requirement_file_sha256": self.requirement,
+                "requirement_inputs_sha256": self.requirement_inputs,
+                "baseline_id": "baseline-1",
+                "snapshot_sha256_before": self.snapshot,
+                "snapshot_sha256_after": self.snapshot,
+                "command": command,
+                "command_sha256": hashlib.sha256(json.dumps(command).encode()).hexdigest(),
+                "cwd": "/tmp/project",
+                "started_at": "2026-07-19T00:00:00+00:00",
+                "finished_at": "2026-07-19T00:00:01+00:00",
+                "timeout_seconds": 60,
+                "timed_out": False,
+                "exit_code": 0,
+                "executed_tests": executed_tests,
+                "reports": reports,
+                "stdout": {
+                    "path": str(stdout),
+                    "exists": True,
+                    "fresh": True,
+                    "size": stdout.stat().st_size,
+                    "sha256": sha256_file(stdout),
                 },
-            }],
-            "stdout": {
-                "path": str(stdout),
-                "exists": True,
-                "fresh": True,
-                "size": stdout.stat().st_size,
-                "sha256": sha256_file(stdout),
-            },
-            "stderr": {
-                "path": str(stderr),
-                "exists": True,
-                "fresh": True,
-                "size": stderr.stat().st_size,
-                "sha256": sha256_file(stderr),
+                "stderr": {
+                    "path": str(stderr),
+                    "exists": True,
+                    "fresh": True,
+                    "size": stderr.stat().st_size,
+                    "sha256": sha256_file(stderr),
+                },
+            }
+            receipt_path = self.temp_root / f"{evidence_id}.json"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            return receipt_path
+
+        test_report_record = {
+            "path": str(test_report),
+            "exists": True,
+            "fresh": True,
+            "size": test_report.stat().st_size,
+            "sha256": sha256_file(test_report),
+            "junit": {
+                "tests": 2,
+                "failures": 0,
+                "errors": 0,
+                "skipped": 0,
+                "executed": 2,
+                "test_cases": [
+                    {"id": "FeatureTest#thenT1", "classname": "FeatureTest", "name": "thenT1", "status": "PASS"},
+                    {"id": "FeatureTest#regression", "classname": "FeatureTest", "name": "regression", "status": "PASS"},
+                ],
             },
         }
-        receipt_path = self.temp_root / "E-TEST.json"
-        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        lint_report_record = {
+            "path": str(lint_report),
+            "exists": True,
+            "fresh": True,
+            "size": lint_report.stat().st_size,
+            "sha256": sha256_file(lint_report),
+            "android_lint": {
+                "format": "XML",
+                "fatal": 0,
+                "errors": 0,
+                "warnings": 0,
+                "information": 0,
+                "total": 0,
+            },
+        }
+        receipt_paths = {
+            "E-TEST": create_receipt("E-TEST", "android-test-and-fix", test_command, [test_report_record], 2),
+            "E-BUILD": create_receipt("E-BUILD", "android-build", ["./gradlew", ":app:assembleDebug"], [], None),
+            "E-LINT": create_receipt("E-LINT", "android-lint", ["./gradlew", ":app:lintDebug"], [lint_report_record], None),
+        }
         review_evidence = []
         for evidence_id, skill, summary in (
             ("E-DIFF", "android-review-diff", "实际 diff 与需求范围一致，未发现阻断项。"),
@@ -131,13 +181,14 @@ class DeliveryGateTests(unittest.TestCase):
             ("E-STABILITY", "android-audit-stability", "稳定性静态审查完成，未发现阻断项。"),
         ):
             specialist_result = {
-                "version": 1,
+                "version": 2,
                 "producer": SPECIALIST_PRODUCER,
                 "id": evidence_id,
                 "skill": skill,
                 "requirement_id": "baseline-1",
                 "requirement_revision": 2,
                 "requirement_file_sha256": self.requirement,
+                "requirement_inputs_sha256": self.requirement_inputs,
                 "baseline_id": "baseline-1",
                 "snapshot_sha256": self.snapshot,
                 "conclusion": "PASS",
@@ -146,6 +197,20 @@ class DeliveryGateTests(unittest.TestCase):
                 "unresolved_findings": [],
                 "obligation_sha256s": {},
             }
+            if skill == "android-audit-stability":
+                specialist_result["capabilities"] = [
+                    {
+                        "id": capability_id,
+                        "required": False,
+                        "status": "SKIPPED",
+                        "reason": "需求与最终 diff 未涉及。",
+                    }
+                    for capability_id in (
+                        "android-dynamic-leak",
+                        "android-performance",
+                        "android-security-privacy",
+                    )
+                ]
             specialist_path = self.temp_root / f"{evidence_id}.specialist.json"
             specialist_path.write_text(json.dumps(specialist_result), encoding="utf-8")
             review_evidence.append({
@@ -159,13 +224,15 @@ class DeliveryGateTests(unittest.TestCase):
                 "obligation_sha256s": {},
             })
         self.payload = {
-            "version": 3,
+            "version": 4,
             "requirement_id": "baseline-1",
             "requirement_revision": 2,
             "baseline_id": "baseline-1",
             "requirement_file_sha256": self.requirement,
+            "requirement_inputs_sha256": self.requirement_inputs,
             "snapshot_sha256": self.snapshot,
             "conclusion": "FULL_PASS",
+            "pending_capabilities": [],
             "obligations": [
                 {
                     "id": "BDD-001/T1",
@@ -204,27 +271,55 @@ class DeliveryGateTests(unittest.TestCase):
                     "id": "android-build",
                     "required": True,
                     "status": "PASS",
-                    "evidence_ids": ["E-TEST"],
+                    "evidence_ids": ["E-BUILD"],
                 },
                 {
                     "id": "android-lint",
                     "required": True,
                     "status": "PASS",
-                    "evidence_ids": ["E-TEST"],
+                    "evidence_ids": ["E-LINT"],
                 },
             ],
             "evidence": [
                 {
                     "id": "E-TEST",
                     "kind": "AUTOMATED",
+                    "gate_id": "android-test-and-fix",
                     "snapshot_sha256": self.snapshot,
-                    "command": command,
+                    "command": test_command,
                     "exit_code": 0,
                     "executed_tests": 2,
-                    "receipt_path": str(receipt_path),
-                    "receipt_sha256": sha256_file(receipt_path),
-                    "report_paths": [str(report)],
+                    "receipt_path": str(receipt_paths["E-TEST"]),
+                    "receipt_sha256": sha256_file(receipt_paths["E-TEST"]),
+                    "report_paths": [str(test_report)],
                     "obligation_sha256s": {"BDD-001/T1": self.obligation},
+                    "obligation_test_cases": {"BDD-001/T1": ["FeatureTest#thenT1"]},
+                },
+                {
+                    "id": "E-BUILD",
+                    "kind": "AUTOMATED",
+                    "gate_id": "android-build",
+                    "snapshot_sha256": self.snapshot,
+                    "command": ["./gradlew", ":app:assembleDebug"],
+                    "exit_code": 0,
+                    "receipt_path": str(receipt_paths["E-BUILD"]),
+                    "receipt_sha256": sha256_file(receipt_paths["E-BUILD"]),
+                    "report_paths": [],
+                    "obligation_sha256s": {},
+                    "obligation_test_cases": {},
+                },
+                {
+                    "id": "E-LINT",
+                    "kind": "AUTOMATED",
+                    "gate_id": "android-lint",
+                    "snapshot_sha256": self.snapshot,
+                    "command": ["./gradlew", ":app:lintDebug"],
+                    "exit_code": 0,
+                    "receipt_path": str(receipt_paths["E-LINT"]),
+                    "receipt_sha256": sha256_file(receipt_paths["E-LINT"]),
+                    "report_paths": [str(lint_report)],
+                    "obligation_sha256s": {},
+                    "obligation_test_cases": {},
                 },
                 *review_evidence,
             ],
@@ -235,10 +330,10 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
 
     def test_rejects_legacy_self_reported_result_version(self) -> None:
-        """验证旧 version 2 报告不能绕过新增 route、收据和专项结果门禁。"""
-        self.payload["version"] = 2
+        """验证旧 version 3 报告不能绕过 gate 专属证据和人工收据门禁。"""
+        self.payload["version"] = 3
         errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("version 必须为 3" in error for error in errors))
+        self.assertTrue(any("version 必须为 4" in error for error in errors))
 
     def test_rejects_stale_snapshot_and_missing_evidence(self) -> None:
         """验证测试后代码变化或引用不存在时，旧报告不能继续判绿。"""
@@ -294,8 +389,92 @@ class DeliveryGateTests(unittest.TestCase):
 
         errors = validate_delivery_result(self.payload, self.context)
 
-        self.assertTrue(any("gate android-build 必须引用" in error for error in errors))
-        self.assertTrue(any("gate android-lint 必须引用" in error for error in errors))
+        self.assertTrue(any("gate android-build 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("gate android-lint 没有专属于本 gate" in error for error in errors))
+
+    def test_automated_evidence_cannot_cross_gate_boundaries(self) -> None:
+        """验证测试收据不能冒充构建、Lint 或迁移专项证据。"""
+        for gate in self.payload["gates"]:
+            if gate["id"] == "android-build":
+                gate["evidence_ids"] = ["E-TEST"]
+        self.context["expected_conditional_gates"] = ["android-data-migration"]
+        self.payload["gates"].append({
+            "id": "android-data-migration",
+            "required": True,
+            "status": "PASS",
+            "evidence_ids": ["E-TEST"],
+        })
+
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("gate android-build 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("gate android-data-migration 没有专属于本 gate" in error for error in errors))
+
+    def test_empty_test_receipt_cannot_prove_test_gate(self) -> None:
+        """验证 gate 标签正确也不能让零报告、零测试命令证明测试门禁。"""
+        source = next(item for item in self.payload["evidence"] if item["id"] == "E-BUILD")
+        receipt = json.loads(Path(source["receipt_path"]).read_text(encoding="utf-8"))
+        command = ["python3", "-c", "pass"]
+        receipt.update({
+            "id": "E-EMPTY-TEST",
+            "gate_id": "android-test-and-fix",
+            "command": command,
+            "command_sha256": hashlib.sha256(json.dumps(command).encode()).hexdigest(),
+            "executed_tests": None,
+            "reports": [],
+        })
+        receipt_path = self.temp_root / "E-EMPTY-TEST.json"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        self.payload["evidence"].append({
+            "id": "E-EMPTY-TEST",
+            "kind": "AUTOMATED",
+            "gate_id": "android-test-and-fix",
+            "snapshot_sha256": self.snapshot,
+            "command": command,
+            "exit_code": 0,
+            "receipt_path": str(receipt_path),
+            "receipt_sha256": sha256_file(receipt_path),
+            "report_paths": [],
+            "obligation_sha256s": {},
+            "obligation_test_cases": {},
+        })
+        next(
+            gate for gate in self.payload["gates"]
+            if gate["id"] == "android-test-and-fix"
+        )["evidence_ids"] = ["E-EMPTY-TEST"]
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("缺少实际执行大于零的 JUnit 报告" in error for error in errors))
+        self.assertTrue(any("gate android-test-and-fix 没有专属于本 gate" in error for error in errors))
+
+    def test_generic_automated_receipt_cannot_prove_specialist_gate(self) -> None:
+        """验证 UI/安全等专项 gate 不能仅凭 AI 填写同名 gate_id 判绿。"""
+        source = next(item for item in self.payload["evidence"] if item["id"] == "E-TEST")
+        receipt = json.loads(Path(source["receipt_path"]).read_text(encoding="utf-8"))
+        receipt.update({"id": "E-UI-AUTO", "gate_id": "android-ui-a11y"})
+        receipt_path = self.temp_root / "E-UI-AUTO.json"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        automated = dict(source)
+        automated.update({
+            "id": "E-UI-AUTO",
+            "gate_id": "android-ui-a11y",
+            "receipt_path": str(receipt_path),
+            "receipt_sha256": sha256_file(receipt_path),
+            "obligation_sha256s": {},
+            "obligation_test_cases": {},
+        })
+        self.payload["evidence"].append(automated)
+        self.context["expected_conditional_gates"] = ["android-ui-a11y"]
+        self.payload["gates"].append({
+            "id": "android-ui-a11y",
+            "required": True,
+            "status": "PASS",
+            "evidence_ids": ["E-UI-AUTO"],
+        })
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("gate android-ui-a11y 没有专属于本 gate" in error for error in errors))
 
     def test_requires_route_triggered_conditional_gate(self) -> None:
         """验证 route 检出的条件能力不能被最终报告直接省略。"""
@@ -330,19 +509,175 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
         self.assertTrue(any("没有实际执行测试" in error for error in errors))
 
+    def test_automated_obligation_requires_real_testcase_mapping(self) -> None:
+        """验证测试总数不能替代 Then 到 JUnit testcase 的明确映射。"""
+        self.payload["evidence"][0]["obligation_test_cases"] = {}
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("缺少自动执行证据" in error for error in errors))
+
+    def test_manual_coverage_requires_complete_receipt(self) -> None:
+        """验证一句人工通过不能覆盖 Then，完整步骤和环境记录才可使用。"""
+        manual = {
+            "id": "E-MANUAL",
+            "kind": "MANUAL",
+            "gate_id": "android-test-and-fix",
+            "snapshot_sha256": self.snapshot,
+            "summary": "人工验证业务结果正确。",
+            "executor": "用户",
+            "environment": "Pixel 8 / Android 15 / debug",
+            "performed_at": "2026-07-19T08:00:00+08:00",
+            "steps": [{
+                "action": "打开页面并执行保存",
+                "expected": "显示保存成功",
+                "actual": "显示保存成功",
+                "status": "PASS",
+            }],
+            "artifacts": [],
+            "no_artifact_reason": "该业务结果没有可导出的额外产物。",
+            "obligation_sha256s": {"BDD-001/T1": self.obligation},
+        }
+        self.payload["evidence"].append(manual)
+        self.payload["obligations"][0].update({
+            "status": "COVERED_MANUAL",
+            "evidence_ids": ["E-MANUAL"],
+        })
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+        manual["steps"] = []
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("steps 必须是非空数组" in error for error in errors))
+        self.assertTrue(any("缺少实际人工证据" in error for error in errors))
+
+    def test_device_pending_conclusion_requires_real_pending_item(self) -> None:
+        """验证设备待验结论不能作为 FULL_PASS 的空别名。"""
+        self.payload["conclusion"] = "LOCAL_PASS_DEVICE_PENDING"
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("至少记录一个真实设备待验证项" in error for error in errors))
+
+        summary = "静态 UI 检查完成，当前没有设备执行 TalkBack 动态验收。"
+        specialist = {
+            "version": 2,
+            "producer": SPECIALIST_PRODUCER,
+            "id": "E-UI-PENDING",
+            "skill": "android-verify-ui",
+            "requirement_id": "baseline-1",
+            "requirement_revision": 2,
+            "requirement_file_sha256": self.requirement,
+            "requirement_inputs_sha256": self.requirement_inputs,
+            "baseline_id": "baseline-1",
+            "snapshot_sha256": self.snapshot,
+            "conclusion": "UNVERIFIED",
+            "summary": summary,
+            "findings": {"P0": 0, "P1": 0, "P2": 0, "P3": 0},
+            "unresolved_findings": [],
+            "capabilities": [{
+                "id": "android-ui-a11y",
+                "required": False,
+                "status": "UNVERIFIED",
+                "reason": "当前没有可用设备。",
+            }],
+            "obligation_sha256s": {},
+        }
+        result_path = self.temp_root / "E-UI-PENDING.specialist.json"
+        result_path.write_text(json.dumps(specialist), encoding="utf-8")
+        self.payload["evidence"].append({
+            "id": "E-UI-PENDING",
+            "kind": "REVIEW",
+            "snapshot_sha256": self.snapshot,
+            "summary": summary,
+            "specialist": "android-verify-ui",
+            "specialist_result_path": str(result_path),
+            "specialist_result_sha256": sha256_file(result_path),
+            "obligation_sha256s": {},
+        })
+        self.payload["pending_capabilities"] = [{
+            "id": "android-ui-a11y",
+            "requires_device": True,
+            "reason": "当前没有可用设备，TalkBack 动态体验待验证。",
+            "evidence_ids": ["E-UI-PENDING"],
+        }]
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+        self.payload["conclusion"] = "FULL_PASS"
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("FULL_PASS 不允许保留" in error for error in errors))
+
+    def test_full_pass_rejects_unverified_optional_specialist_capability(self) -> None:
+        """验证可选专项能力未验证时也不能把 FULL_PASS 写成零风险结论。"""
+        evidence = next(item for item in self.payload["evidence"] if item["id"] == "E-STABILITY")
+        result_path = Path(evidence["specialist_result_path"])
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        result["capabilities"][0].update({
+            "status": "UNVERIFIED",
+            "reason": "当前没有设备执行动态泄漏验证。",
+        })
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        evidence["specialist_result_sha256"] = sha256_file(result_path)
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("FULL_PASS 不允许保留 UNVERIFIED/BLOCKED" in error for error in errors))
+
+    def test_pending_capability_requires_matching_unverified_evidence(self) -> None:
+        """验证设备待验项不能引用无关 Review 证据或自造 capability 名称。"""
+        self.payload["conclusion"] = "LOCAL_PASS_DEVICE_PENDING"
+        self.payload["pending_capabilities"] = [{
+            "id": "invented-device-check",
+            "requires_device": True,
+            "reason": "等待设备。",
+            "evidence_ids": ["E-DIFF"],
+        }]
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("缺少同能力的 UNVERIFIED/BLOCKED" in error for error in errors))
+
+    def test_security_gate_requires_matching_stability_capability(self) -> None:
+        """验证安全条件 gate 只能由稳定性结果中的同名 PASS capability 证明。"""
+        self.context["expected_conditional_gates"] = ["android-security-privacy"]
+        self.payload["gates"].append({
+            "id": "android-security-privacy",
+            "required": True,
+            "status": "PASS",
+            "evidence_ids": ["E-STABILITY"],
+        })
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("gate android-security-privacy 没有专属于本 gate" in error for error in errors))
+
+        evidence = next(item for item in self.payload["evidence"] if item["id"] == "E-STABILITY")
+        result_path = Path(evidence["specialist_result_path"])
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        capability = next(
+            item for item in result["capabilities"]
+            if item["id"] == "android-security-privacy"
+        )
+        capability.update({"required": True, "status": "PASS"})
+        capability.pop("reason", None)
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+        evidence["specialist_result_sha256"] = sha256_file(result_path)
+
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_requirement_input_change_invalidates_result(self) -> None:
+        """验证 Figma/API 等输入摘要变化后旧交付结果立即失效。"""
+        self.context["requirement_inputs_sha256"] = "f" * 64
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("requirement_inputs_sha256" in error for error in errors))
+
     def test_accepts_agent_journey_with_structured_actions_and_artifact(self) -> None:
         """验证 Android CLI Agent Journey 可凭统一结果覆盖实际断言的原子 Then。"""
         screenshot = self.temp_root / "journey-home.png"
         screenshot.write_bytes(b"fake-png-evidence")
         summary = "已执行首页 Journey，点击重试后首页标题可见。"
         agent_result = {
-            "version": 1,
+            "version": 2,
             "producer": SPECIALIST_PRODUCER,
             "id": "E-JOURNEY",
             "skill": "android-test-and-fix/journey-agent",
             "requirement_id": "baseline-1",
             "requirement_revision": 2,
             "requirement_file_sha256": self.requirement,
+            "requirement_inputs_sha256": self.requirement_inputs,
             "baseline_id": "baseline-1",
             "snapshot_sha256": self.snapshot,
             "conclusion": "PASS",
@@ -474,6 +809,11 @@ class DeliveryGateTests(unittest.TestCase):
                 "requirement_dir": str(requirement_dir),
                 "requirement_file": str(requirement),
             }
+            inputs_sha256 = requirement_inputs_digest(
+                config,
+                root / "local.yaml",
+                confirmed["sha256"],
+            )
             git_snapshot = current_delivery_snapshot(repo, baseline)
             route_path = root / "route-impact.json"
             write_route_impact(
@@ -484,6 +824,7 @@ class DeliveryGateTests(unittest.TestCase):
                         "requirement_id": confirmed["requirement_id"],
                         "requirement_revision": 1,
                         "requirement_file_sha256": confirmed["sha256"],
+                        "requirement_inputs_sha256": inputs_sha256,
                     },
                     {category: [] for category in (
                         "ui", "api", "data", "system", "build", "architecture", "tests",
@@ -512,6 +853,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(baseline_payload["id"], context["baseline_id"])
         self.assertEqual(64, len(context["snapshot_sha256"]))
         self.assertEqual(64, len(context["requirement_file_sha256"]))
+        self.assertEqual(64, len(context["requirement_inputs_sha256"]))
         self.assertEqual(confirmed["requirement_id"], context["requirement_id"])
         self.assertEqual(1, context["requirement_revision"])
         self.assertIn("BDD-001/T1", context["expected_obligations"])

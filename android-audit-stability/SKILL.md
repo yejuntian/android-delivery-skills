@@ -158,4 +158,4 @@ Firebase / Crashlytics 重点关注：崩溃堆栈、非致命异常、受影响
 
 存在生命周期或资源候选时，汇总中必须同时包含资源所有权表、静态结论和独立的动态结论；存在并发候选时再包含并发访问表。不得把“未发现明确静态问题”改写为“无泄漏”或“线程安全”。
 
-由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果。动态泄漏、性能、安全隐私和兼容性分别记录 `PASS/SKIPPED/UNVERIFIED/BLOCKED`；P0/P1 未关闭或必需动态能力未验证时不得把专项结论标记 `PASS`。
+由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果。`capabilities` 必须包含 `android-dynamic-leak`、`android-performance`、`android-security-privacy`，分别记录 `required`、`PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED` 和非通过原因；P0/P1 未关闭或必需动态能力未验证时不得把专项结论标记 `PASS`。

@@ -31,6 +31,7 @@ android-implement-and-verify
 - `project_path`：Android 项目路径
 - `branch`：目标分支
 - `requirement_file`：需求 Word / Markdown / TXT 文件
+- `requirement_workspace`：串行需求目录策略，通常保持示例中的 `rotate / 3 个 / 7 天`，不需要每个需求修改
 - 可选 `ui.links` / `ui.screenshots`
 - 可选 `api.links` / `api.files` / `api.status`
 
@@ -63,6 +64,34 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 `requirement-revision.json` 由 AI 根据已经确认的 BDD 自动生成，用户不需要手写 JSON、修订号或 Then 摘要；用户只确认业务变化和删除处置。文件结构以 `android-implement-and-verify/references/requirement-revision.schema.json` 为准。
 
 英文枚举只属于 `requirement-revision.json` 的机器协议。AI 给用户展示需求修订时必须转换为中文，例如“修改 / 已确认”“新增 / 已确认”“未变化 / 已确认”；待确认、冲突、撤回和删除处置也必须使用中文，不能要求用户理解英文状态。
+
+### 开始下一个独立需求
+
+`requirement_workspace.mode` 推荐保持 `rotate`：每个串行需求使用独立目录，机器编号负责稳定隔离，后面的中文名称负责让人看懂，例如 `REQ-20260721-001-视频下载页登录拦截`。目录内的 `需求说明.md` 给用户阅读，`requirement-workspace.json` 供脚本判断活动、完成或取消状态。
+
+只有你明确说“上一需求已经完成/取消，开始下一个需求”时才轮换。同一需求中途补充、修改、删除或只重跑测试时不轮换。先把新需求文件放到当前需求目录之外，再执行预览：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py next \
+  --title "视频下载页登录拦截" \
+  --requirement-file /path/to/new-requirement.docx \
+  --previous-title "上一需求中文名称" \
+  --previous-outcome 已完成
+```
+
+预览不会修改文件。确认名称、上一需求结论和路径正确后，给同一命令追加 `--confirm`。轮换要求目标 Android 项目没有未提交修改；脚本不会自动提交、暂存或清理代码。两个窗口同时确认时只有获得单写锁的窗口执行，另一个窗口会停止，不会删除或覆盖前者的目录。完成后的固定顺序是：
+
+1. `delivery.py init` 读取新需求。
+2. 你确认新需求理解。
+3. `delivery.py check-env --new-requirement` 建立新需求 Git 基线。
+
+查看当前活动需求和回收候选：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py status
+```
+
+历史需求不会在每次交付后立即删除。只有“不是当前活动需求、状态已经完成或取消、超出最近 `keep_completed` 个、并超过 `cache_retention_days` 天”四项同时满足才成为候选；`tempfile` 使用相同时间门槛。`next` 预览会列出本次候选，追加 `--confirm` 表示同时确认轮换和这些候选的延迟回收；也可以单独运行 `prune` 预览，确认后再执行 `prune --confirm`。如果轮换已经成功但旧缓存因权限等原因回收失败，新需求仍可正常使用；修复原因后只重试 `prune`，不要再次执行 `next`。
 
 ### 需求文件读取失败时
 

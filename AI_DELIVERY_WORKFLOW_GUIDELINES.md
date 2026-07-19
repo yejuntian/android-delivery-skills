@@ -92,6 +92,7 @@
 | 脚本 | 单一职责 |
 |---|---|
 | `scripts/delivery.py` | 读取需求、检查环境、确认修订和编排 route |
+| `scripts/requirement_workspace.py` | 预览并轮换串行需求独立目录，按数量与时间延迟回收项目外运行资料 |
 | `scripts/config_paths.py` | 统一解析项目、需求和项目外状态路径 |
 | `scripts/git_changes.py` | 只读收集分支、基线、committed/staged/unstaged/untracked、A/M/D/R 和实际 patch |
 | `scripts/requirement_snapshot.py` | 保存确认需求、原子 Then、修订清单和文本差异 |
@@ -143,7 +144,7 @@ flowchart TD
 
 ### 5.1 初始化
 
-仓库只版本化 `profiles/local.example.yaml` 配置结构；真实 `profiles/local.yaml` 和 `requirement_dir` 是用户所有的本机运行输入，由 Git 忽略。首次使用时从示例复制并填写，已有本机文件时不得覆盖、删除或强制提交。该隔离只减少源码工作区噪声，不降低追溯强度：`delivery.py init` 仍读取真实配置和当前需求，中途重复执行时仍对比最近确认修订并显示变化，完整输入摘要仍使过期 route 和最终证据失效。
+仓库只版本化 `profiles/local.example.yaml` 配置结构；真实 `profiles/local.yaml` 和 `requirement_dir` 是用户所有的本机运行输入，由 Git 忽略。首次使用时从示例复制并填写，已有本机文件时不得覆盖、删除或强制提交。`requirement_workspace.mode=rotate` 时，每个新串行需求由 `requirement_workspace.py` 创建独立目录；稳定编号用于机器隔离，中文名称和 `需求说明.md` 用于用户识别。该隔离只减少源码工作区噪声，不降低追溯强度：`delivery.py init` 仍读取真实配置和当前需求，中途重复执行时仍对比最近确认修订并显示变化，完整输入摘要仍使过期 route 和最终证据失效。
 
 ### 5.2 环境与基线
 
@@ -185,7 +186,13 @@ AI 根据需求生成稳定的 `REQ-###`、`BDD-###` 和 `BDD-001/T1` 原子 The
 
 ### 6.4 串行需求
 
-当前需求未完成时，不把另一个独立需求混入同一 Git 基线。完成当前需求并获得用户明确确认后，再用 `check-env --new-requirement` 为下一需求建立新的干净基线。项目外证据按需求 ID、修订、完整输入摘要和代码摘要隔离，不复用上一需求结果。同一配置只允许一个活动写入窗口；整个需求取消时不生成空义务或通过结论，先由用户决定代码处置。
+当前需求未完成时，不把另一个独立需求混入同一 Git 基线。同一需求的增改删和局部重测继续使用原目录、原 Git 基线和未变化的义务 ID；它们不是“下一个需求”。
+
+只有用户明确确认上一需求已经完成或取消并要求开始下一需求时，才使用 `scripts/requirement_workspace.py next`。命令默认输出中文预览，不修改文件；用户确认后追加 `--confirm`。新需求正文必须位于旧活动目录之外，Android 项目必须处于干净状态。脚本保留上一目录，创建 `REQ-日期-序号-中文名称` 独立目录，只更新 `local.yaml` 的活动需求指针，不操作 Android 源码和 Git。
+
+轮换后先执行 `delivery.py init` 并由用户确认新需求，再执行 `check-env --new-requirement` 建立新 Git 基线。项目外需求正文、UI/API 固定证据、测试用例、报告和机器状态均留在对应需求目录，不复用上一需求结果。同一配置只允许一个活动写入窗口；轮换和回收通过单写锁阻断第二个写窗口，失败回滚只处理本轮实际创建或修改的对象。整个需求取消时不生成空义务或通过结论，先由用户决定代码处置。
+
+回收采用“最近数量 + 最短时间”双门槛：当前活动、未完成、近期或状态损坏的需求永不进入自动候选；已经完成/取消的目录还必须超出 `keep_completed` 且超过 `cache_retention_days`。`tempfile` 只使用时间门槛。`next` 预览会列出随本次轮换回收的候选，追加 `--confirm` 才同时授权轮换和回收；独立 `prune` 同样先预览、再用 `prune --confirm`。两条路径都只删除白名单根目录的直接子项，不在需求初始化或交付结束时无条件清空。轮换成功但回收失败属于“新工作区已生效、旧内容待回收”，修复后只重试 `prune`，不得重跑 `next`。
 
 ### 6.5 完整输入摘要
 

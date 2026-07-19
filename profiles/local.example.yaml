@@ -33,6 +33,23 @@ requirement_dir: "ai-skills/current-requirement"
 # 当前支持 .docx、.md、.markdown 和 .txt；文件内容可随同一需求的确认修订持续更新。
 requirement_file: "requirement.docx"
 
+# 串行需求工作区管理策略。
+# 只有用户明确说“开始下一个需求”时才执行轮换；同一需求的补充、修改和重测不触发。
+requirement_workspace:
+  # rotate：每个新需求创建独立目录，推荐。
+  # reuse：继续复用 requirement_dir，工作区脚本不会自动轮换。
+  mode: "rotate"
+
+  # 所有独立需求目录的公共根路径。相对路径基于 workspace_root；不得指向 Android 项目。
+  root: "ai-skills/requirements-runtime"
+
+  # 至少保留最近完成的需求数量；当前活动和未完成需求永远不参与回收。
+  keep_completed: 3
+
+  # 已完成需求超出保留数量后，还必须超过该天数才允许回收。
+  # workspace_root/tempfile 中的缓存也使用相同保留天数。
+  cache_retention_days: 7
+
 # 可选：UI 设计资料。需求没有 UI 影响时保留空列表和空说明，不要为了填满配置而脑补。
 ui:
   # Figma 等正式设计链接。链接需要登录时，AI 应先请求复用本机浏览器登录状态，

@@ -69,6 +69,8 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 `profiles/local.yaml` 和 `requirement_dir` 是用户所有的本机运行输入，默认由 Git 忽略；仓库中的 `profiles/local.example.yaml` 只用于说明字段结构。首次使用时从示例复制并填写真实值，已有本机配置时不得覆盖；不得把示例路径、空资料或占位值当成当前需求，也不得使用 `git add -f` 强行提交当前配置、需求正文、截图、测试用例或报告。忽略规则只隔离源码提交，不影响需求内容摘要、修订确认、输入新鲜度和最终门禁。
 
+串行需求默认读取 `requirement_workspace` 策略。`mode=rotate` 时只通过 `scripts/requirement_workspace.py` 创建下一需求独立目录和延迟回收；`mode=reuse` 时继续使用固定 `requirement_dir`。不得在同一需求修订或局部重测时轮换，也不得绕过该脚本直接删除、搬移或复用历史证据。
+
 优先级：
 
 1. 用户本次对话中明确提供的项目路径、分支、需求文档、UI 链接、接口链接。
@@ -79,6 +81,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 - 定位参数：`project_path`（项目路径）和 `branch`（目标分支）。这是后续所有编码、测试和验证的执行上下文。
 - 公共路径：`workspace_root`（本机工作区根路径）和 `requirement_dir`（当前需求资料目录）。
+- 工作区策略：`requirement_workspace.mode/root/keep_completed/cache_retention_days`，分别控制是否轮换、独立目录根路径、最近保留数量和最短保留天数。
 - 固定需求文档：`requirement_file`，只表示需求正文、评审记录和验收标准来源，不强制包含 UI 或接口资料。
 - 需求资料：需求描述、Jira、TAPD、飞书、语雀、Confluence、GitHub Issue。
 - UI 资料：Figma、蓝湖、即时设计、摹客、MasterGo、截图、UI 截图目录 `ui.directory`、PDF、图片、字体、动效、资源 zip。
@@ -228,6 +231,22 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 ### 执行手册
 
 请严格按照以下三个阶段、通过运行 Python 脚本推进流程。**每次运行脚本后，必须严格遵循终端输出中带有“👉 AI 指令”的提示内容。**
+
+#### 开始下一个串行需求
+
+只有用户明确确认上一需求已经完成或取消并要求开始新需求时，才执行工作区轮换。同一需求的补充、修改、删除和局部重测继续使用当前目录。新需求文件必须先放在当前 `requirement_dir` 之外；先运行不带 `--confirm` 的命令向用户展示中文预览：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py next \
+  --title "新需求中文名称" \
+  --requirement-file /path/to/new-requirement.docx \
+  --previous-title "上一需求中文名称" \
+  --previous-outcome 已完成
+```
+
+用户确认预览后，使用完全相同的命令追加 `--confirm`。脚本要求 Android 项目工作区干净，保留上一需求，创建 `REQ-日期-序号-中文名称` 目录及中文 `需求说明.md`，并只更新本机配置中的活动需求路径；不操作 Android 源码或 Git。轮换完成后继续执行下方阶段 1，确认新需求理解后，阶段 2 使用 `check-env --new-requirement` 建立新基线。不得直接跳到 `check-env --new-requirement`。
+
+查看当前目录和回收候选使用 `requirement_workspace.py status`。历史需求和 `tempfile` 只有状态明确、不是活动需求且同时超过最近保留数量和保留天数时才成为候选；`next` 预览会明确列出候选，同一命令追加 `--confirm` 后才随轮换回收。也可以单独执行 `prune` 预览，再用 `prune --confirm` 回收。确认写操作使用单写锁；另一个窗口正在轮换或回收时停止，绝不覆盖其配置、锁或目录。轮换成功但回收失败时，新需求目录和配置仍然有效；明确告诉用户只需修复权限或路径后单独重试 `prune`，不得再次执行 `next` 制造重复需求。
 
 #### 阶段 1：初始化需求理解
 

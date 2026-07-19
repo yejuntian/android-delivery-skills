@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """脚本名称：delivery_gate.py
 
-用途：校验最终交付报告是否覆盖最新版全部 BDD/Then、专项门禁和新鲜执行证据。
+用途：校验最终报告是否覆盖最新版 BDD/Then、route 条件门禁、执行收据和专项结果。
 
 职责边界：只读取配置、确认需求修订、Git 基线、当前工作树和最终报告；不运行
 测试、不调用 Skill、不修代码、不维护流程阶段，也不执行任何 Git 写操作。
@@ -25,13 +25,20 @@ from .config_paths import (  # noqa: E402
     baseline_path_for_config,
     requirement_snapshot_path_for_config,
     resolve_config_paths,
+    route_impact_path_for_config,
 )
 from .delivery import DeliveryError, load_config, read_requirement  # noqa: E402
+from .execution_evidence import validate_execution_receipt  # noqa: E402
 from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     load_requirement_snapshot,
     requirement_digest,
+)
+from .route_impact import RouteImpactError, load_route_impact  # noqa: E402
+from .specialist_result import (  # noqa: E402
+    JOURNEY_AGENT_SKILL,
+    validate_specialist_evidence,
 )
 
 
@@ -45,7 +52,14 @@ OBLIGATION_STATUSES = {
     "NOT_APPLICABLE",
 }
 GATE_STATUSES = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
-EVIDENCE_KINDS = {"AUTOMATED", "MANUAL", "REVIEW"}
+EVIDENCE_KINDS = {"AUTOMATED", "AGENT", "MANUAL", "REVIEW"}
+SPECIALIST_GATE_SKILLS = {
+    "android-review-diff": "android-review-diff",
+    "android-review-code-quality": "android-review-code-quality",
+    "android-audit-stability": "android-audit-stability",
+    "android-verify-api-contract": "android-verify-api-contract",
+}
+EXECUTION_RECEIPT_GATES = {"android-build", "android-lint"}
 CORE_REQUIRED_GATES = {
     "android-review-diff",
     "android-review-code-quality",
@@ -115,14 +129,36 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         )
     except GitInspectionError as exc:
         raise DeliveryGateError(str(exc)) from exc
-    return {
+    context = {
         **snapshot,
+        "project_path": str(paths.project_path.resolve()),
         "requirement_id": requirement_snapshot["requirement_id"],
         "requirement_revision": requirement_snapshot["revision"],
         "requirement_file_sha256": requirement_sha256,
         "expected_obligations": expected_obligations,
         "result_path": str(result_path),
     }
+    route_path = route_impact_path_for_config(config_path)
+    try:
+        route_impact = load_route_impact(route_path)
+    except RouteImpactError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    for field in (
+        "requirement_id",
+        "requirement_revision",
+        "requirement_file_sha256",
+        "baseline_id",
+        "snapshot_sha256",
+    ):
+        if route_impact.get(field) != context[field]:
+            raise DeliveryGateError(
+                f"路由影响快照的 {field} 已失效，请在最终代码上重新执行 delivery.py route"
+            )
+    context["route_impact_path"] = str(route_path)
+    context["expected_conditional_gates"] = sorted(
+        candidate["id"] for candidate in route_impact["conditional_gates"]
+    )
+    return context
 
 
 def _indexed(items: Any, label: str, errors: list[str]) -> dict[str, dict[str, Any]]:
@@ -151,8 +187,8 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["delivery-result.json 根节点必须是 object"]
-    if payload.get("version") != 2:
-        errors.append("version 必须为 2")
+    if payload.get("version") != 3:
+        errors.append("version 必须为 3")
     for field in (
         "requirement_id", "requirement_revision", "baseline_id",
         "requirement_file_sha256", "snapshot_sha256",
@@ -162,6 +198,7 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
     conclusion = payload.get("conclusion")
     if conclusion not in CONCLUSIONS:
         errors.append(f"conclusion 必须是 {sorted(CONCLUSIONS)} 之一")
+    passing = conclusion in PASSING_CONCLUSIONS
 
     evidence = _indexed(payload.get("evidence"), "evidence", errors)
     obligations = _indexed(payload.get("obligations"), "obligations", errors)
@@ -177,6 +214,7 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         if unexpected:
             errors.append(f"最终报告包含非当前义务: {', '.join(unexpected)}")
 
+    specialist_results: dict[str, dict[str, Any]] = {}
     for identifier, item in evidence.items():
         kind = item.get("kind")
         if kind not in EVIDENCE_KINDS:
@@ -191,9 +229,50 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 errors.append(f"自动证据 {identifier} 缺少参数数组形式的 command")
             if item.get("exit_code") != 0:
                 errors.append(f"自动证据 {identifier} 的 exit_code 必须为 0")
-        elif kind in {"MANUAL", "REVIEW"}:
+            receipt_path = item.get("receipt_path")
+            receipt_sha256 = item.get("receipt_sha256")
+            if not isinstance(receipt_path, str) or not receipt_path.strip():
+                errors.append(f"自动证据 {identifier} 缺少 execution_evidence.py 收据路径")
+            elif not isinstance(receipt_sha256, str) or not re.fullmatch(
+                r"[a-f0-9]{64}", receipt_sha256
+            ):
+                errors.append(f"自动证据 {identifier} 缺少有效收据 SHA-256")
+            else:
+                errors.extend(
+                    validate_execution_receipt(
+                        receipt_path,
+                        receipt_sha256,
+                        item,
+                        context,
+                    )
+                )
+        elif kind in {"MANUAL", "REVIEW", "AGENT"}:
             if not isinstance(item.get("summary"), str) or not item["summary"].strip():
                 errors.append(f"{kind} 证据 {identifier} 缺少实际结果 summary")
+            if kind in {"REVIEW", "AGENT"}:
+                specialist = item.get("specialist")
+                result_path = item.get("specialist_result_path")
+                result_sha = item.get("specialist_result_sha256")
+                if not isinstance(specialist, str) or not specialist.strip():
+                    errors.append(f"{kind} 证据 {identifier} 缺少 specialist")
+                elif kind == "AGENT" and specialist != JOURNEY_AGENT_SKILL:
+                    errors.append(
+                        f"AGENT 证据 {identifier} 只能由 {JOURNEY_AGENT_SKILL} 生成"
+                    )
+                if not isinstance(result_path, str) or not result_path.strip():
+                    errors.append(f"{kind} 证据 {identifier} 缺少统一专项结果路径")
+                elif not isinstance(result_sha, str) or not re.fullmatch(r"[a-f0-9]{64}", result_sha):
+                    errors.append(f"{kind} 证据 {identifier} 缺少有效专项结果 SHA-256")
+                else:
+                    specialist_errors, specialist_payload = validate_specialist_evidence(
+                        result_path,
+                        result_sha,
+                        item,
+                        context,
+                    )
+                    errors.extend(specialist_errors)
+                    if specialist_payload:
+                        specialist_results[identifier] = specialist_payload
         obligation_hashes = item.get("obligation_sha256s", {})
         if not isinstance(obligation_hashes, dict) or not all(
             isinstance(key, str) and isinstance(value, str)
@@ -221,7 +300,6 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             errors.append(f"{owner} 引用了不存在的证据: {', '.join(missing)}")
         return refs
 
-    passing = conclusion in PASSING_CONCLUSIONS
     for identifier, item in obligations.items():
         if not re.fullmatch(r"BDD-[0-9]+/T[0-9]+", identifier):
             errors.append(f"obligation id 格式无效: {identifier}")
@@ -241,12 +319,22 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         if passing and required and status not in {"COVERED_AUTOMATED", "COVERED_MANUAL"}:
             errors.append(f"必需 obligation {identifier} 尚未覆盖，不能使用通过结论")
         if status == "COVERED_AUTOMATED" and not any(
-            evidence.get(ref, {}).get("kind") == "AUTOMATED"
+            evidence.get(ref, {}).get("kind") in {"AUTOMATED", "AGENT"}
             and evidence.get(ref, {}).get("obligation_sha256s", {}).get(identifier)
             == (expected or {}).get("sha256")
+            and (
+                evidence.get(ref, {}).get("kind") != "AGENT"
+                or specialist_results.get(ref, {}).get("conclusion") == "PASS"
+            )
             for ref in refs
         ):
             errors.append(f"obligation {identifier} 缺少自动执行证据")
+        if status == "COVERED_AUTOMATED" and not any(
+            isinstance(evidence.get(ref, {}).get("executed_tests"), int)
+            and evidence.get(ref, {}).get("executed_tests", 0) > 0
+            for ref in refs
+        ):
+            errors.append(f"obligation {identifier} 的自动证据没有实际执行测试")
         if status == "COVERED_MANUAL" and not any(
             evidence.get(ref, {}).get("kind") == "MANUAL"
             and evidence.get(ref, {}).get("obligation_sha256s", {}).get(identifier)
@@ -266,6 +354,23 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             errors.append(f"必需 gate {identifier} 未通过")
         if status == "PASS" and not refs:
             errors.append(f"gate {identifier} 标记 PASS 但没有证据")
+        if status == "PASS" and refs and not any(
+            evidence.get(ref, {}).get("kind") in {"AUTOMATED", "MANUAL"}
+            or specialist_results.get(ref, {}).get("conclusion") == "PASS"
+            for ref in refs
+        ):
+            errors.append(f"gate {identifier} 没有结论为 PASS 的执行、专项或人工证据")
+        if status == "PASS" and identifier in EXECUTION_RECEIPT_GATES and not any(
+            evidence.get(ref, {}).get("kind") == "AUTOMATED" for ref in refs
+        ):
+            errors.append(f"gate {identifier} 必须引用 execution_evidence.py 执行收据")
+        expected_specialist = SPECIALIST_GATE_SKILLS.get(identifier)
+        if status == "PASS" and expected_specialist and not any(
+            specialist_results.get(ref, {}).get("skill") == expected_specialist
+            and specialist_results.get(ref, {}).get("conclusion") == "PASS"
+            for ref in refs
+        ):
+            errors.append(f"gate {identifier} 缺少对应 Skill 的统一 PASS 结果")
 
     if passing and not obligations:
         errors.append("通过结论至少需要一个原子 BDD/Then obligation")
@@ -280,6 +385,25 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 errors.append(f"通过结论缺少核心 gate: {gate_id}")
             elif gate.get("required") is not True or gate.get("status") != "PASS":
                 errors.append(f"核心 gate {gate_id} 必须 required=true 且状态为 PASS")
+        for gate_id in sorted(context.get("expected_conditional_gates", set())):
+            gate = gates.get(gate_id)
+            if not gate:
+                errors.append(f"通过结论缺少路由触发的条件 gate: {gate_id}")
+                continue
+            if gate.get("required") is True:
+                if gate.get("status") != "PASS":
+                    errors.append(f"适用的条件 gate {gate_id} 必须状态为 PASS")
+                continue
+            reason = gate.get("reason")
+            refs = gate.get("evidence_ids", [])
+            if gate.get("status") != "SKIPPED":
+                errors.append(
+                    f"条件 gate {gate_id} 判定不适用时必须 required=false 且状态为 SKIPPED"
+                )
+            if not isinstance(reason, str) or not reason.strip():
+                errors.append(f"条件 gate {gate_id} 跳过时必须说明需求与 diff 依据")
+            if not isinstance(refs, list) or not refs:
+                errors.append(f"条件 gate {gate_id} 跳过时必须引用实际复核证据")
     return errors
 
 

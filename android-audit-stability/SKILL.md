@@ -157,3 +157,5 @@ Firebase / Crashlytics 重点关注：崩溃堆栈、非致命异常、受影响
 最后汇总：已检查项；动态泄漏、性能和安全隐私的适用性、工具与新鲜证据；设备类型和降级能力；未验证项；剩余风险；是否等待用户确认修复。详细状态边界见 `../android-implement-and-verify/references/conditional-capability-gates.md`。
 
 存在生命周期或资源候选时，汇总中必须同时包含资源所有权表、静态结论和独立的动态结论；存在并发候选时再包含并发访问表。不得把“未发现明确静态问题”改写为“无泄漏”或“线程安全”。
+
+由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果。动态泄漏、性能、安全隐私和兼容性分别记录 `PASS/SKIPPED/UNVERIFIED/BLOCKED`；P0/P1 未关闭或必需动态能力未验证时不得把专项结论标记 `PASS`。

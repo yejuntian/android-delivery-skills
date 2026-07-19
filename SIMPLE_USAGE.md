@@ -95,7 +95,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 ③ delivery.py confirm-requirement-update   确认最新总需求和全部 Then → 开始编码
    └─ 受影响测试 + assemble + lint;失败自动修复并重跑
                           ↓
-④ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查
+④ delivery.py route   按当前需求基线后的 Git Diff 自动路由审查并保存条件门禁快照
 
    【核心·业务逻辑层】(route 自动逐个调用,必先过)
      1. android-review-diff        ← 必跑:diff 影响范围
@@ -107,7 +107,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
      6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
 
 ⑤ delivery_gate.py validate
-   └─ 核对确认修订的完整 Then、最终代码、专项门禁和新鲜证据；退出码 0 才可声明通过
+   └─ 核对确认修订、最终代码、route 条件门禁、执行收据和专项结果；退出码 0 才可声明通过
 ```
 
 脚本职责保持分离：
@@ -116,8 +116,11 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 - `scripts/git_changes.py`：只读检查分支、工作区、四类 Git 变化、`A/M/D/R`、真实片段和最终摘要，不判断业务或路由。
 - `scripts/requirement_snapshot.py`：只校验和保存连续需求修订、有效义务及文本差异，不判断业务语义或修改 Git。
 - `scripts/delivery_gate.py`：只校验最终报告和证据新鲜度，不运行测试、不修改代码。
+- `scripts/android_project_capabilities.py`：首次处理项目、构建配置变化或 task 未知时，只读发现模块、variant 和 Gradle task；普通业务修改不必重复运行。
+- `scripts/execution_evidence.py`：只执行已经选择的命令并记录日志、测试数和报告摘要。
+- `scripts/specialist_result.py`：只校验专项统一结果、P0/P1 和证据文件摘要。
 
-最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
+最终报告写入 `<requirement_dir>/test-results/delivery-result.json`。当前契约为 version 3，旧的 AI 自报命令结果不能继续通过。AI 先用 `snapshot` 获取当前摘要，按 `android-implement-and-verify/references/delivery-result.schema.json` 生成报告，再校验：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py snapshot
@@ -125,6 +128,27 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 ```
 
 第二条命令退出码为 `0` 才表示最终通过证据仍与当前需求和代码一致；它不会自动提交 Git。
+
+`android-lint` 默认只执行目标项目自己的 Android Gradle Lint task，并引用项目生成的 XML/HTML/SARIF；当前流程不安装或强制外部自定义 Lint。项目已有插件时保持现状，但不单独声明自定义规则覆盖。
+
+首次处理项目、构建配置变化或 task 未知时先发现真实能力；普通业务修改直接使用已确认 task。最终命令通过收据执行，不要手填退出码和测试数：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/android_project_capabilities.py \
+  --config ai-skills/android-delivery-skills/profiles/local.yaml
+
+python3 ai-skills/android-delivery-skills/scripts/execution_evidence.py \
+  --config ai-skills/android-delivery-skills/profiles/local.yaml \
+  --id E-UNIT \
+  --report app/build/test-results/testDebugUnitTest/TEST-example.xml \
+  -- ./gradlew :app:testDebugUnitTest
+
+python3 ai-skills/android-delivery-skills/scripts/specialist_result.py path \
+  --config ai-skills/android-delivery-skills/profiles/local.yaml
+python3 ai-skills/android-delivery-skills/scripts/specialist_result.py validate <专项结果.json>
+```
+
+`route`、收据、日志和专项结果均放在配置对应的外部状态目录，不修改 Android 项目；最终报告只引用路径和 SHA-256。
 
 需要单独排查 Git 收集结果时可以运行：
 
@@ -211,22 +235,22 @@ python3 ai-skills/figma-android-xml/scripts/export_figma.py \
 
 单独调用审查型 Skill 默认只报告。只有用户明确要求“先分析别改”，或继续编码会脑补、误改或高风险破坏时，专项 Skill 才前置使用。
 
-## Journey UI 测试(壳项目隔离方案)
+## Journey UI 测试(Android CLI Agent 优先)
 
-Journey 测试用例归 `android-test-and-fix`。老项目 AGP 保持不动，只构建并安装 APK；独立 AGP 9 壳通过 `JOURNEYS_CUSTOM_APP_ID` 测试实际包名。`android-verify-ui` 可以复用 Journey 截图做设计还原验收，但不生成或管理测试用例。
+Journey 测试用例归 `android-test-and-fix`。老项目 AGP 保持不动，只构建并安装 APK；默认由当前 AI 会话使用 Android CLI/adb 严格执行 XML action。独立 AGP 9 壳只作为已经初始化后的可选回退。`android-verify-ui` 可以复用 Journey 截图做设计还原验收，但不生成或管理测试用例。
 
-当前需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。完整流程使用 Git 基线 ID 与需求正文哈希，单独调用时使用需求正文哈希；共享壳中的 `src/main/journeys/` 只是执行暂存目录，因此串行需求不会复用旧测试用例。
+当前需求的 Journey XML 默认放在 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。完整流程使用 Git 基线 ID 与需求正文哈希，单独调用时使用需求正文哈希；默认 Agent 直接读取当前作用域，可选壳中的 `src/main/journeys/` 只是执行暂存目录，因此串行需求不会复用旧测试用例。
 
 Journey 测试用例由 `android-test-and-fix` 根据已确认需求和 BDD 自动分析并生成，用户不需要提供 XML、action/step 或任务名。只有需求本身缺少前置条件或预期结果时，才需要用户补充业务含义。
 
 并非所有需求都运行 Journey：无 UI 影响返回 `SKIPPED_NO_UI`；只有布局、样式和资源变化返回 `SKIPPED_VISUAL_ONLY`。涉及 UI 行为时再按原子 Then 聚合 `FULL/PARTIAL/NONE`，只为稳定可覆盖部分生成 Journey。`NO_JOURNEY_FOUND` 只表示“已有 Then 分配给 Journey，但测试用例尚未成功物化”。
 
-是否调用 Journey 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断，不需要用户选择。下面的 `--ui-impact` 是 Skill 调用脚本时使用的内部安全参数，用来防止未判断适用性就启动设备和壳流程。
+是否调用 Journey 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断，不需要用户选择。下面的 `--ui-impact` 只属于可选壳脚本，用来防止未判断适用性就启动设备和壳流程。
 
-判断采用“两次判断、一次执行”：需求确认后先做候选初判和测试设计，编码后结合实际 diff 做最终判定；只有最终仍适合 Journey 才启动壳。两次结论不一致时以实际 diff 为准，并在测试报告中说明原因。
+判断采用“两次判断、一次执行”：需求确认后先做候选初判和测试设计，编码后结合实际 diff 做最终判定；只有最终仍适合 Journey 才启动默认 Agent 或可选壳。两次结论不一致时以实际 diff 为准，并在测试报告中说明原因。
 
 ```bash
-# 一键：构建老项目 APK → 读取实际包名 → 指定设备安装 → 注入包名 → 跑 Journey → JSON 结果
+# 可选壳：只有默认 Agent 不可用且壳已经初始化时才执行
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \
   --ui-impact behavior \
@@ -246,6 +270,6 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/detect_pa
   --project-path <项目路径>
 ```
 
-`--skip-build` 只要求设备中存在 `app_package_name`，不要求目标源码目录有效。设备未就绪时只跳过 Journey 等设备测试，本地单测、构建和 lint 仍要执行。首次使用共享壳时，在当前 Android Studio 中执行一次 `New > Journey Test`，让官方模板生成匹配版本的 XML schema、testSuites、依赖和运行配置。
+`--skip-build` 只要求设备中存在 `app_package_name`，不要求目标源码目录有效。设备未就绪时只跳过 Journey 等设备测试，本地单测、构建和 lint 仍要执行。默认 Agent 不要求 Android Studio 初始化；只有用户决定长期使用可选壳时，才执行一次 `New > Journey Test`。
 
 Journey 只有在 Gradle 成功且本轮存在测试数大于 0 的结构化 JUnit XML 时才返回 `PASS`；普通构建图片不会被当成截图证据。报告按需求作用域保存到 `<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json` 和 `result.md`。退出码：`0` 真实通过、明确跳过或仅预检 / `1` 环境、壳或证据不足 / `2` 连续两次结构化 UI 断言失败。`PREFLIGHT_PASS` 只代表预检通过，不代表测试通过。

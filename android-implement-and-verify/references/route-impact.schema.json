@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "route-impact.schema.json",
+  "title": "Android Delivery Route Impact Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "generated_at",
+    "requirement_id",
+    "requirement_revision",
+    "requirement_file_sha256",
+    "baseline_id",
+    "snapshot_sha256",
+    "conditional_gates"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "requirement_id": { "type": "string", "minLength": 1 },
+    "requirement_revision": { "type": "integer", "minimum": 1 },
+    "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "baseline_id": { "type": "string", "minLength": 1 },
+    "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "conditional_gates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/gate" }
+    }
+  },
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "basis_files"],
+      "properties": {
+        "id": {
+          "enum": [
+            "android-verify-api-contract",
+            "android-data-migration",
+            "android-ui-a11y",
+            "android-security-privacy"
+          ]
+        },
+        "basis_files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

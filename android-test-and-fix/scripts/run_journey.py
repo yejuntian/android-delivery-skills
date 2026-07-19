@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """脚本名称：run_journey.py
 
-用途：通过独立 AGP 9 壳项目，对已安装的旧 Android 应用执行 UI Journey 测试。
+用途：在明确选择可选 AGP 9 壳回退时，对已安装的旧 Android 应用执行 UI Journey。
 
 主流程：预检 Journey -> 构建并安装目标 APK -> 从 APK 注入真实包名 -> 执行
 Journey -> 归因失败 -> 输出 JSON/Markdown 报告。壳项目与目标项目相互隔离，因此
 无需升级旧项目的 Gradle 或 AGP；Gradle 用户缓存、项目缓存和构建输出均写入 Skill
-目录外，避免运行产物导致 Skill 超出体积限制。
+目录外，避免运行产物导致 Skill 超出体积限制。默认 Journey 由当前 AI 会话使用
+Android CLI/adb 执行，本脚本不会启动或模拟不存在的 AI Agent CLI。
 
 退出码是自动修复的安全边界：0 表示真实通过、明确跳过或仅预检，必须结合状态读取；
 1 表示壳、设备、结构化证据或环境不可用，只能降级，不得修改目标应用；2 表示连续
@@ -667,12 +668,13 @@ def journey_task_candidates(output: str) -> list[str]:
 
 
 def missing_task_status(discovery: CommandResult | None) -> tuple[str, str]:
-    """区分壳尚未初始化与任务发现异常，给用户明确且不误导的下一步。"""
+    """区分可选壳尚未初始化与任务发现异常，不把它误报为默认 Journey 阻塞。"""
     if discovery and discovery.returncode == 0 and not journey_task_candidates(discovery.output):
         return (
             INITIALIZATION_REQUIRED,
-            "Journey 壳尚未初始化：请在当前 Android Studio 中执行一次 New > Journey Test，"
-            "并保留官方生成的 DSL、依赖、XML schema 和 Gradle task",
+            "可选 Journey 壳尚未初始化：请改用默认 Android CLI Agent 或项目已有 UI 测试；"
+            "只有明确选择长期使用壳时，才在当前 Android Studio 中执行一次 "
+            "New > Journey Test 并保留官方生成内容",
         )
     return (
         HARNESS_UNAVAILABLE,
@@ -1000,7 +1002,7 @@ def finish(result: JourneyResult, result_path: Path) -> int:
     if result.status == NO_JOURNEY_FOUND:
         print("👉 AI 指令：根据已确认需求和 BDD 自动生成当前 Journey 用例；仅在业务预期不明确时询问用户。")
     elif result.status == INITIALIZATION_REQUIRED:
-        print("👉 Journey 壳需要一次性初始化：使用当前 Android Studio 的官方 New > Journey Test，不要手写预览 DSL。")
+        print("👉 可选 Journey 壳未初始化：优先改用默认 Android CLI Agent 或项目已有 UI 测试；只有明确选择壳时才用 Android Studio 初始化。")
     elif result.status in {HARNESS_UNAVAILABLE, HARNESS_FAILED, MALFORMED_JOURNEY}:
         print("👉 壳 Journey 不可用：不要修改目标项目，改用现有仪器测试或人工测试路径。")
     elif result.status == APP_ASSERTION_FAILED:

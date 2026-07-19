@@ -11,8 +11,8 @@
 1. `init`: 负责首次需求提炼，或对比最近确认修订汇总中途需求变化并制定 BDD。
 2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求起点建立。
 3. `confirm-requirement-update`: 负责确认原子义务修订，不修改 Git 基线。
-4. `route`: 识别七类工程影响和第二轮条件能力候选，负责编码后的动态审查、
-   测试与自修复闭环分发；泄漏和性能仍由 AI 结合需求与真实 diff 终判。
+4. `route`: 识别七类工程影响和第二轮条件能力候选，保存绑定当前代码的路由快照，
+   再负责编码后的动态审查、测试与自修复闭环分发；泄漏和性能仍由 AI 语义终判。
 
 通过输出带 "👉 AI 指令" 的终端文本，强制 AI 采取“走一步看一步”的精准执行策略，
 实现媲美高级 Android 开发工程师的稳定性与工程纪律。
@@ -37,6 +37,7 @@ if __package__ in {None, ""}:
 from .config_paths import (  # noqa: E402
     baseline_path_for_config,
     requirement_snapshot_path_for_config,
+    route_impact_path_for_config,
     resolve_config_paths as resolve_paths,
 )
 from .git_changes import (  # noqa: E402
@@ -44,6 +45,7 @@ from .git_changes import (  # noqa: E402
     collect_changed_entries,
     collect_changed_files,
     current_branch,
+    current_delivery_snapshot,
     write_baseline,
     working_tree_status,
 )
@@ -55,6 +57,11 @@ from .requirement_snapshot import (  # noqa: E402
     render_requirement_diff,
     requirement_digest,
     write_requirement_snapshot,
+)
+from .route_impact import (  # noqa: E402
+    RouteImpactError,
+    build_route_impact,
+    write_route_impact,
 )
 
 
@@ -622,11 +629,13 @@ def cmd_confirm_requirement_update(args):
 
 def cmd_route(args):
     """
-    执行 `route` 命令：基于实际的代码改动（Git Diff）动态决定触发哪些专项审查 Skill。
-    防呆设计：严格遵循单一职责原则 (SRP)。没碰 UI 就不查 UI，没碰网络就不查 API。
+    基于实际 Git diff 路由专项 Skill，并保存最终门禁使用的候选影响快照。
+
+    防呆设计：没碰 UI 就不查 UI，没碰网络就不查 API；代码变化后旧快照失效。
     """
     config = load_config(args.config)
-    project_path, _ = resolve_config_paths(config, args.config)
+    paths = resolve_paths(config, args.config)
+    project_path = paths.project_path
 
     if not project_path or not os.path.isdir(project_path):
         raise DeliveryError(f"项目路径无效: {project_path}")
@@ -637,12 +646,67 @@ def cmd_route(args):
     if target_branch and branch != target_branch:
         raise DeliveryError(f"当前分支 ({branch}) 与目标分支 ({target_branch}) 不匹配")
 
-    changes, warnings = get_diff_changes(baseline_path_for_config(args.config))
+    baseline_path = baseline_path_for_config(args.config)
+    changes, warnings = get_diff_changes(baseline_path)
     diff_files = [change.path for change in changes]
     print("=== 审查路由分析 ===")
 
     for warning in warnings:
         print(f"⚠️ {warning}")
+    # 路径和内容只生成候选，最终路由必须结合已确认需求和实际 diff。
+    impacts = classify_route_impacts(
+        diff_files,
+        project_root=project_path,
+        route_signals={change.path: change.patch for change in changes},
+    )
+    ui_files = impacts["ui"]
+    api_files = impacts["api"]
+    conditional_gates = classify_conditional_gate_candidates(impacts)
+
+    if not paths.requirement_path or not paths.requirement_path.is_file():
+        raise DeliveryError(f"需求文件无效: {paths.requirement_path}")
+    requirement_sha256 = requirement_digest(read_requirement(paths.requirement_path))
+    try:
+        requirement_snapshot = load_requirement_snapshot(
+            requirement_snapshot_path_for_config(args.config)
+        )
+    except RequirementSnapshotError as exc:
+        raise DeliveryError(str(exc)) from exc
+    if not requirement_snapshot:
+        raise DeliveryError("尚未建立需求修订，请先执行 check-env 和 confirm-requirement-update")
+    if requirement_snapshot["status"] != "CONFIRMED" or requirement_snapshot["pending_changes"]:
+        raise DeliveryError("需求修订仍有待定或冲突项，不能生成最终路由影响快照")
+    if requirement_snapshot["sha256"] != requirement_sha256:
+        raise DeliveryError("当前需求正文尚未确认为最新修订，不能生成最终路由影响快照")
+
+    result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
+    excluded: set[str] = set()
+    try:
+        excluded.add(result_path.relative_to(project_path.resolve()).as_posix())
+    except ValueError:
+        pass
+    try:
+        code_snapshot = current_delivery_snapshot(
+            project_path,
+            baseline_path,
+            exclude_paths=excluded,
+        )
+        route_payload = build_route_impact(
+            {
+                **code_snapshot,
+                "requirement_id": requirement_snapshot["requirement_id"],
+                "requirement_revision": requirement_snapshot["revision"],
+                "requirement_file_sha256": requirement_sha256,
+            },
+            impacts,
+            conditional_gates,
+        )
+        route_path = route_impact_path_for_config(args.config)
+        write_route_impact(route_path, route_payload)
+    except (GitInspectionError, RouteImpactError) as exc:
+        raise DeliveryError(str(exc)) from exc
+    print(f"📄 路由影响快照: {route_path}")
+
     if not diff_files:
         print("⚠️ 未检测到任何代码变更。")
         print("👉 AI 指令：当前需求基线后没有变化；不得把之前需求的 diff 当成本次结果。")
@@ -652,15 +716,6 @@ def cmd_route(args):
     for change in changes:
         rename = f" <- {change.old_path}" if change.old_path else ""
         print(f"  - [{change.status}] {change.path}{rename}")
-
-    # 路径和内容只生成候选，最终路由必须结合已确认需求和实际 diff。
-    impacts = classify_route_impacts(
-        diff_files,
-        project_root=project_path,
-        route_signals={change.path: change.patch for change in changes},
-    )
-    ui_files = impacts["ui"]
-    api_files = impacts["api"]
 
     print("\n🧭 语义影响候选(不是业务结论):")
     impact_labels = {
@@ -695,7 +750,6 @@ def cmd_route(args):
         for item in attention:
             print(f"  - {item}")
 
-    conditional_gates = classify_conditional_gate_candidates(impacts)
     print("\n🔬 第二轮条件能力候选:")
     conditional_labels = {
         "openapi": "OpenAPI 契约",

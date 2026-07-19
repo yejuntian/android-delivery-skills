@@ -63,6 +63,15 @@
 - `__init__.py` 等无业务逻辑的包标记文件允许只保留一句中文 docstring。
 - 缺少必要简介、方法用途或核心注释时，Python 脚本不得视为交付完成；最终自检必须扫描本次涉及的全部 Python 文件，存在遗漏必须先补齐再交付。
 
+### 统一机器证据
+
+- `delivery.py route` 必须在目标项目外生成绑定当前需求修订、Git 基线和代码摘要的影响快照；最终代码、测试或资源变化后重新 route。条件候选不能从最终报告中省略，终判不适用时也必须提供理由和复核证据。
+- 最终交付使用的 Gradle、测试、构建和 lint 命令必须通过 `scripts/execution_evidence.py` 执行并生成收据；AI 不得手填退出码、测试数或不存在的报告路径。原子 Then 的自动覆盖必须有结构化测试数大于 0。
+- 由总入口编排的 `android-review-diff`、`android-review-code-quality`、`android-audit-stability`、条件触发的 `android-verify-api-contract`，以及 Agent Journey 必须按 `android-implement-and-verify/references/specialist-result.schema.json` 输出最小机器信封。
+- 所有专项只必填负责 Skill、当前需求/代码、结论、摘要、P0-P3 和未关闭项；能力、命令、逐项检查、产物、执行数量和时间仅在动态专项或 Agent Journey 实际需要时扩展。P0/P1 未关闭或已声明的必需能力未通过时不得输出 `PASS`。
+- `android-lint` 默认只运行目标项目自己的 Android Gradle Lint task 并保留原生报告；不得自动安装、配置或依赖外部自定义 Lint 规则库。目标项目已有插件或 `lintChecks` 时保持项目现状，不由本流程擅自增删。
+- 执行收据、日志和统一专项结果写入配置对应的外部状态目录，避免报告自身改变目标项目代码摘要。使用 `python3 scripts/specialist_result.py path --config <配置>` 获取专项目录；不得把这些外部文件当成生产源码提交。
+
 ## 默认输入
 
 - 默认读取 Skill 套件根目录下的 `profiles/local.yaml`，用户不需要每次重复说明。

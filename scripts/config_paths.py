@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """脚本名称：config_paths.py
 
-用途：统一解析 Android Delivery 配置中的工作区、项目和需求路径。
+用途：统一解析 Android Delivery 配置路径及项目外基线、路由和证据位置。
 
 职责边界：只根据配置文件位置和显式字段解析路径，不读取需求正文、不检查 Git，
 也不决定 Skill 路由。Delivery 与 Journey 共用本模块，避免同一相对路径指向不同位置。
@@ -71,3 +71,61 @@ def baseline_path_for_config(config_path: str | Path) -> Path:
 def requirement_snapshot_path_for_config(config_path: str | Path) -> Path:
     """返回外部需求修订路径，供连续确认、义务校验和中途差异分析共用。"""
     return _state_path_for_config(config_path, "requirement")
+
+
+def route_impact_path_for_config(config_path: str | Path) -> Path:
+    """返回路由影响快照路径，使条件门禁绑定最近一次最终 diff 分析。"""
+    return _state_path_for_config(config_path, "route-impact")
+
+
+def evidence_directory_for_config(config_path: str | Path) -> Path:
+    """返回执行收据目录；日志和收据放在目标项目外，避免改变交付代码摘要。"""
+    marker = _state_path_for_config(config_path, "evidence")
+    return marker.with_suffix("")
+
+
+def evidence_scope_directory(
+    evidence_root: str | Path,
+    requirement_id: str,
+    requirement_revision: int,
+    snapshot_sha256: str,
+) -> Path:
+    """按需求、修订和代码摘要隔离证据，防止串行需求覆盖上一轮收据。"""
+    requirement_scope = hashlib.sha256(requirement_id.encode("utf-8")).hexdigest()[:12]
+    scope = f"{requirement_scope}-r{requirement_revision}-{snapshot_sha256[:12]}"
+    return Path(evidence_root).expanduser().resolve() / scope
+
+
+def evidence_scope_directory_for_config(
+    config_path: str | Path,
+    requirement_id: str,
+    requirement_revision: int,
+    snapshot_sha256: str,
+) -> Path:
+    """根据配置入口返回当前需求的隔离证据目录。"""
+    return evidence_scope_directory(
+        evidence_directory_for_config(config_path),
+        requirement_id,
+        requirement_revision,
+        snapshot_sha256,
+    )
+
+
+def specialist_directory_for_config(
+    config_path: str | Path,
+    requirement_id: str,
+    requirement_revision: int,
+    snapshot_sha256: str,
+) -> Path:
+    """返回当前需求和代码的统一专项结果目录，避免跨需求覆盖或串用。"""
+    return evidence_scope_directory_for_config(
+        config_path,
+        requirement_id,
+        requirement_revision,
+        snapshot_sha256,
+    ) / "specialists"
+
+
+def capabilities_path_for_config(config_path: str | Path) -> Path:
+    """返回 Android 项目能力发现结果路径，供不同模型复用同一工程事实。"""
+    return _state_path_for_config(config_path, "capabilities")

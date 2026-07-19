@@ -102,3 +102,5 @@ AI 写的代码必须额外检查：
 - 是否建议立即修复
 
 最后输出：是否建议合入、是否建议继续测试、是否需要用户确认修复。
+
+由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` 只输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3 和未关闭项。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。

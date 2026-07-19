@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "specialist-result.schema.json",
+  "title": "Android Delivery Specialist Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "producer",
+    "id",
+    "skill",
+    "requirement_id",
+    "requirement_revision",
+    "requirement_file_sha256",
+    "baseline_id",
+    "snapshot_sha256",
+    "conclusion",
+    "summary",
+    "findings",
+    "unresolved_findings",
+    "obligation_sha256s"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "producer": { "const": "android-delivery-specialist-result" },
+    "id": { "type": "string", "minLength": 1 },
+    "skill": { "type": "string", "minLength": 1 },
+    "requirement_id": { "type": "string", "minLength": 1 },
+    "requirement_revision": { "type": "integer", "minimum": 1 },
+    "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "baseline_id": { "type": "string", "minLength": 1 },
+    "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "conclusion": { "enum": ["PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["P0", "P1", "P2", "P3"],
+      "properties": {
+        "P0": { "type": "integer", "minimum": 0 },
+        "P1": { "type": "integer", "minimum": 0 },
+        "P2": { "type": "integer", "minimum": 0 },
+        "P3": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "unresolved_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+          "summary": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean" },
+          "status": { "enum": ["PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required", "status", "summary"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean" },
+          "status": { "enum": ["PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"] },
+          "summary": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "kind": { "type": "string" }
+        }
+      }
+    },
+    "executed_checks": { "type": "integer", "minimum": 0 },
+    "executed_tests": { "type": ["integer", "null"], "minimum": 0 },
+    "obligation_sha256s": {
+      "type": "object",
+      "propertyNames": { "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+      "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "skill": { "const": "android-test-and-fix/journey-agent" }
+        },
+        "required": ["skill"]
+      },
+      "then": {
+        "required": [
+          "capabilities",
+          "commands",
+          "checks",
+          "artifacts",
+          "executed_checks",
+          "executed_tests",
+          "started_at",
+          "finished_at"
+        ],
+        "properties": {
+          "capabilities": { "minItems": 1 },
+          "commands": { "minItems": 1 },
+          "checks": { "minItems": 1 },
+          "artifacts": { "minItems": 1 },
+          "executed_checks": { "minimum": 1 },
+          "executed_tests": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  ]
+}

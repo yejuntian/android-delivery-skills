@@ -17,7 +17,7 @@
     "evidence"
   ],
   "properties": {
-    "version": { "const": 2 },
+    "version": { "const": 3 },
     "requirement_id": { "type": "string", "minLength": 1 },
     "requirement_revision": { "type": "integer", "minimum": 1 },
     "baseline_id": { "type": "string", "minLength": 1 },
@@ -64,14 +64,19 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "kind", "snapshot_sha256"],
+        "required": ["id", "kind", "snapshot_sha256", "obligation_sha256s"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "kind": { "enum": ["AUTOMATED", "MANUAL", "REVIEW"] },
+          "kind": { "enum": ["AUTOMATED", "AGENT", "MANUAL", "REVIEW"] },
           "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
           "exit_code": { "type": "integer" },
           "executed_tests": { "type": "integer", "minimum": 0 },
+          "receipt_path": { "type": "string", "minLength": 1 },
+          "receipt_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "specialist": { "type": "string", "minLength": 1 },
+          "specialist_result_path": { "type": "string", "minLength": 1 },
+          "specialist_result_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "summary": { "type": "string" },
           "report_paths": { "type": "array", "items": { "type": "string" } },
           "obligation_sha256s": {
@@ -79,7 +84,48 @@
             "propertyNames": { "pattern": "^BDD-[0-9]+/T[0-9]+$" },
             "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": "AUTOMATED" } }, "required": ["kind"] },
+            "then": {
+              "required": [
+                "command",
+                "exit_code",
+                "receipt_path",
+                "receipt_sha256",
+                "report_paths"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": { "kind": { "enum": ["AGENT", "REVIEW"] } },
+              "required": ["kind"]
+            },
+            "then": {
+              "required": [
+                "summary",
+                "specialist",
+                "specialist_result_path",
+                "specialist_result_sha256"
+              ]
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "AGENT" } }, "required": ["kind"] },
+            "then": {
+              "required": ["executed_tests"],
+              "properties": {
+                "specialist": { "const": "android-test-and-fix/journey-agent" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "kind": { "const": "MANUAL" } }, "required": ["kind"] },
+            "then": { "required": ["summary"] }
+          }
+        ]
       }
     }
   }

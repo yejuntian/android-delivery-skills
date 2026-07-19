@@ -199,7 +199,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertIn("BDD-001/T2", report)
 
     def test_distinguishes_uninitialized_harness_from_task_ambiguity(self):
-        """验证任务列表没有 Journey 时明确要求一次性初始化，多个任务仍归发现异常。"""
+        """验证可选壳缺任务时建议默认 Agent，多个任务仍归发现异常。"""
         empty = run_journey.CommandResult(["gradlew", "tasks"], 0, "assembleDebug - build")
         ambiguous = run_journey.CommandResult(
             ["gradlew", "tasks"],
@@ -208,6 +208,7 @@ class RunJourneyTest(unittest.TestCase):
         )
 
         self.assertEqual(run_journey.INITIALIZATION_REQUIRED, run_journey.missing_task_status(empty)[0])
+        self.assertIn("默认 Android CLI Agent", run_journey.missing_task_status(empty)[1])
         self.assertEqual(run_journey.HARNESS_UNAVAILABLE, run_journey.missing_task_status(ambiguous)[0])
 
     def test_reports_initialization_before_requiring_device(self):

@@ -111,7 +111,7 @@ REQ-ID / BDD-ID / Then
 | --- | --- | --- |
 | `FULL` | BDD 中全部用户可见操作和可见断言都能由 Journey 稳定完成 | 物化并执行完整 Journey；非 UI/不可见 Then 仍由其他测试层证明 |
 | `PARTIAL` | Journey 只能稳定完成其中部分用户可见操作或可见断言 | 只为可覆盖的 Then 生成 Journey；其余 Then 路由到其他能力并保留独立状态 |
-| `NONE` | 没有 UI 行为、只有视觉变化，或 Given/When/Then 无法由 Journey 可靠表达 | 不启动壳，使用其他测试或人工路径 |
+| `NONE` | 没有 UI 行为、只有视觉变化，或 Given/When/Then 无法由 Journey 可靠表达 | 不启动 Journey 引擎，使用其他测试或人工路径 |
 
 `FULL/PARTIAL/NONE` 是每条 BDD 用户旅程的适用性，不是测试通过状态。Journey `PASS` 只更新它实际覆盖的原子 Then。
 
@@ -141,7 +141,7 @@ REQ-ID / BDD-ID / Then
 
 - 没有设备时继续编译、Unit、参数化、Robolectric、Repository、MockWebServer、契约、截图和静态门禁；只把需要设备的验证义务标为未验证。
 - 模拟器可以等价证明功能、迁移或基础 A11y 时继续执行；正式性能、厂商 ROM 和真实硬件不得用模拟器冒充。
-- 低 AGP 目标项目继续使用自己的 wrapper 构建 APK；Journey 壳只做黑盒 Journey，不升级或修改目标项目。
+- 低 AGP 目标项目继续使用自己的 wrapper 构建 APK；默认由当前 AI 会话使用 Android CLI/adb 对已安装 APK 执行 Journey，不要求初始化 Studio 壳。已经初始化的独立壳只作可选回退，同样不升级或修改目标项目。
 - 优先复用目标项目已有 Compose/Espresso/UIAutomator；需要为老项目补外部 UIAutomator 时单独设计执行能力，不把逻辑塞进 `run_journey.py`。
 - 工具失败先标 `ENVIRONMENT_FAILED` 并保留原始证据。AI 可以选择等价工具和最小修复，但不能模拟执行结果。
 - 明确验收所必需的能力没有等价证据时，完整交付保持未完成/受阻；这不否定其他已完成范围。

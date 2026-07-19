@@ -140,3 +140,5 @@ Java DTO 或 Java/Kotlin 混合模型还必须核对：
 8. 兼容性风险
 9. 不应进入生产代码的部分
 10. 建议测试项
+
+由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果；记录契约摘要、operation/schema、机器能力状态、P0-P3 和未关闭项。缺少正式契约或存在未关闭 P0/P1 时不得标记 `PASS`。

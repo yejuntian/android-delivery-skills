@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "execution-receipt.schema.json",
+  "title": "Android Delivery Execution Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "producer",
+    "id",
+    "requirement_id",
+    "requirement_revision",
+    "requirement_file_sha256",
+    "baseline_id",
+    "snapshot_sha256_before",
+    "snapshot_sha256_after",
+    "command",
+    "command_sha256",
+    "cwd",
+    "started_at",
+    "finished_at",
+    "timeout_seconds",
+    "timed_out",
+    "exit_code",
+    "executed_tests",
+    "reports",
+    "stdout",
+    "stderr"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "producer": { "const": "android-delivery-execution-evidence" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+    "requirement_id": { "type": "string", "minLength": 1 },
+    "requirement_revision": { "type": "integer", "minimum": 1 },
+    "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "baseline_id": { "type": "string", "minLength": 1 },
+    "snapshot_sha256_before": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "snapshot_sha256_after": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "command_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "cwd": { "type": "string", "minLength": 1 },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "timeout_seconds": { "type": "integer", "minimum": 1 },
+    "timed_out": { "type": "boolean" },
+    "exit_code": { "type": "integer" },
+    "executed_tests": { "type": ["integer", "null"], "minimum": 0 },
+    "reports": { "type": "array", "items": { "$ref": "#/$defs/file" } },
+    "stdout": { "$ref": "#/$defs/file" },
+    "stderr": { "$ref": "#/$defs/file" }
+  },
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "exists", "fresh"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "exists": { "type": "boolean" },
+        "fresh": { "type": "boolean" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "junit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tests", "failures", "errors", "skipped", "executed"],
+          "properties": {
+            "tests": { "type": "integer", "minimum": 0 },
+            "failures": { "type": "integer", "minimum": 0 },
+            "errors": { "type": "integer", "minimum": 0 },
+            "skipped": { "type": "integer", "minimum": 0 },
+            "executed": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}

@@ -14,6 +14,9 @@
 8. `android-test-and-fix/references/adaptive-test-routing.md`：原子 Then、风险分层、混合需求测试路由和 Journey `FULL/PARTIAL/NONE` 的权威边界。
 9. `android-implement-and-verify/references/requirement-revision.schema.json`：同一需求中途修订清单契约。
 10. `android-implement-and-verify/references/delivery-result.schema.json`：最终一次性交付结果契约，不是流程状态机。
+11. `android-implement-and-verify/references/route-impact.schema.json`：最终 diff 的最小条件门禁与直接依据快照契约；七类完整影响只用于当次路由输出。
+12. `android-implement-and-verify/references/execution-receipt.schema.json`：Gradle、测试、构建和 lint 的真实执行收据契约。
+13. `android-implement-and-verify/references/specialist-result.schema.json`：普通审查使用最小机器信封，动态专项和 Agent Journey 按需扩展证据。
 
 规则冲突时按以下顺序处理：目标项目 `AGENTS.md` / `CONTRIBUTING.md` 等更严格规则 → `_shared/android-global-rules.md` → 当前 Skill。无法确定时暂停说明，不自行选择宽松规则。
 
@@ -38,14 +41,15 @@ delivery.py confirm-requirement-update
 delivery.py route
   -> 仅收集当前需求基线后的变化
   -> 按 A/M/D/R 状态与真实修改片段路由专项 Skill
+  -> 在项目外保存绑定当前代码摘要的条件门禁快照
   -> 测试、构建、lint 和问题修复形成闭环
 
 delivery_gate.py validate
-  -> 核对最近确认修订的完整 Then、Git 基线、最终代码摘要、专项门禁和证据
+  -> 核对最近确认修订、Git 基线、route 快照、执行收据和专项统一结果
   -> 只有当前证据完整时允许通过结论
 ```
 
-这些命令是轻量编排与最终校验，不是通用状态机。只保存外部 Git 基线、需求修订记录和一次性最终结果，不维护 phase、MVU 或执行恢复状态。
+这些命令是轻量编排与最终校验，不是通用状态机。只保存外部 Git 基线、需求修订、派生 route/能力快照、一次性执行/专项证据和最终结果，不维护 phase、MVU 或执行恢复状态。
 
 ## 不可覆盖的安全边界
 

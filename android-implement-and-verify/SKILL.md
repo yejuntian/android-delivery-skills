@@ -258,10 +258,10 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 ```
 
 退出码 `0` 才表示最新版总需求已确认并允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。编码中途发生变化时重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update`，始终保留最初 Git 基线。修订确认后遵守以下规约：
-1. **先物化测试**：把每个已确认 `BDD/Then` 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动壳；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
+1. **先物化测试**：把每个已确认 `BDD/Then` 映射为测试清单；项目具备测试框架时，编码前生成可编译的测试骨架和断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动设备或 Journey 引擎；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索**：动笔前，主动用搜索工具在项目中寻找同类组件、Base 类和测试范式。
 3. **UI 逻辑接管 (最小化修改)**：如果前置步骤生成纯 XML，主动补充对应的 Kotlin ViewBinding 和业务代码。
-4. **首次验证**：编码后运行受影响测试、`assemble` 和 `lint`。命令必须按项目模块与 variant 动态选择。
+4. **首次验证**：首次处理该项目、route 检测到 Gradle/模块/variant 变化，或真实 task 未知时，运行 `scripts/android_project_capabilities.py --config <配置>`；普通业务代码修改复用最近能力事实并直接执行已确认 task。发现失败时允许结合 Gradle 文件人工确认，但不得猜任务名。
 5. **自修复**：任一项失败，按“统一故障处理与 AI 接管”保存证据并分类，确认根因后只修改对应的生产代码、测试或环境配置，再重跑失败项及相关回归集。禁止删测试、弱化断言、跳过任务或用假数据掩盖失败。
 6. **循环上限**：同一根因连续 3 轮未关闭才进入 `BLOCKED`；报告失败分类、原专项能力/工具、命令、退出码、关键日志、AI 替代与能力损失、已尝试修改和所需输入。
 7. **同步追溯**：编码和验证过程中把最终实现文件、`TEST-###`、真实命令和证据补入当前需求追溯表，不把上一需求或中间轮次结果复用为完成证据。
@@ -274,7 +274,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
-**AI 动作**：脚本只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，并输出专项审查与测试顺序。逐个调用，每项输出必须进入闭环，而不是止于报告。
+**AI 动作**：脚本只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，输出专项审查与测试顺序，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。逐个调用，每项输出必须进入闭环，而不是止于报告。
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
@@ -284,10 +284,14 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - `android-test-and-fix` 在此阶段先根据最终 diff 终判风险和测试层，再根据原子 Then 分配聚合每条 BDD 的 Journey `FULL/PARTIAL/NONE`；需求阶段的候选结论不能直接触发 Journey 执行，Journey 通过也不能替代未分配给它的证据。
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
+- `route` 检出的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
+- 最终使用的 Gradle、测试、构建和 lint 命令必须通过 `scripts/execution_evidence.py --id <证据ID> --report <报告> -- <命令参数>` 执行；收据、日志和报告摘要符合 `references/execution-receipt.schema.json`。用于覆盖原子 Then 的命令必须解析到实际测试数大于 0。
+- 核心审查和条件接口审查按 `references/specialist-result.schema.json` 只写最小机器信封；Agent Journey、动态泄漏、性能、UI 等需要工具证据时再添加命令、检查、产物和执行数量。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再用 `scripts/specialist_result.py validate <结果文件>` 校验。P0/P1 未关闭时不得写 `PASS`。
+- `android-lint` 只要求目标项目自己的 Android Gradle Lint task 和原生 XML/HTML/SARIF 报告；本轮不新增、安装或强制外部自定义 Lint。
 
 所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前确认修订、有效义务、Git 基线和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
 
-通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/设备等条件 gate 按真实影响追加。
+通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/A11y 和安全隐私条件 gate 由最新 route 快照自动要求，不能由最终报告自行决定是否出现。
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate

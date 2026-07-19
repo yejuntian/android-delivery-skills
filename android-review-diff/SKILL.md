@@ -99,3 +99,5 @@ description: Android Git diff 范围与业务回归审查。用于编码后根�
 4. 需要回归的范围
 5. 上线和回滚风险
 6. 是否建议继续修复、测试或提交
+
+由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` 只输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3 和未关闭项。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。

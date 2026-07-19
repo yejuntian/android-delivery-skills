@@ -198,7 +198,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **调研日期**：2026-07-19。
 - **来源**：[Android 官方测试策略](https://developer.android.com/training/testing/fundamentals/strategies) 的单元、组件、功能、应用和候选版本分层，[Android 测试基础](https://developer.android.com/training/testing/fundamentals) 的可测试架构与解耦，[UIAutomator](https://developer.android.com/training/testing/other-components/ui-automator)、[Espresso](https://developer.android.com/training/testing/espresso) 和 [Compose UI Test](https://developer.android.com/develop/ui/compose/testing) 的能力边界；Maestro、Robolectric、Kaspresso、Paparazzi、Kotest 属性测试和 PIT Mutation Testing 作为补充对照。
 - **决策**：把每个 BDD 的复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，按 `L1/L2/L3/BLOCKED` 做需求初判和最终 diff 终判，再为每项选择最低且足够的测试层。Journey 只做少量关键黑盒旅程，并根据原子 Then 分配用 `FULL/PARTIAL/NONE` 表达整条 BDD 的适用性；Journey 通过只覆盖它实际断言的 Then。
-- **老项目边界**：低 AGP 项目继续使用自身 wrapper 构建 APK，独立壳优先处理 Journey；项目已有 Compose/Espresso/UIAutomator 时复用。需要外部 UIAutomator 时另行设计独立能力，不把职责塞入 `run_journey.py`，也不升级目标项目。
+- **老项目边界**：低 AGP 项目继续使用自身 wrapper 构建 APK，当前 AI 会话优先使用 Android CLI/adb 对已安装 APK 执行 Journey；已经初始化的独立壳只作可选回退。项目已有 Compose/Espresso/UIAutomator 时复用，不升级目标项目。
 - **工具边界**：不自动安装 Maestro、Appium、Kaspresso、属性测试或 Mutation 工具。只有场景仍适合黑盒 UI、Journey 引擎能力不足且项目已有或用户允许时才考虑 Maestro；业务上不适合 Journey 的场景不能通过换黑盒引擎解决。
 - **原因**：成熟方案不是万能 E2E 兜底，而是大量快速确定的小测试加少量高保真流程。原子证据可以补齐 UI 与业务混合需求、Journey 部分覆盖和无设备降级，同时避免每个小改动机械执行完整测试矩阵。
 - **拒绝**：不按代码行数判断风险，不把 Journey/截图/Unit/静态扫描越权写成整条业务通过，不把计划人工测试写成已覆盖，不建立跨需求持久化状态机。
@@ -211,6 +211,21 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **职责边界**：需求修订脚本只校验连续性和原子保存，不判断业务语义或修改 Git；Git 脚本不决定路由，最终门禁不运行测试或修代码。Journey 只使用已确认修订的用例作用域，并只声明实际覆盖的 Then。
 - **原因**：提示词规则无法单独证明某个 Skill 已执行，也无法阻止测试后代码变化继续复用旧结果；最小结构化契约可以关闭假绿，同时保持脚本可替换和跨模型可读。
 - **拒绝**：不新增通用 phase/state 状态机，不把待定/冲突或聊天内容自动合并进总需求，不把文本删除直接等同于删除公共代码，不用文件名代替真实 patch，不让最终门禁执行 Git 写操作、测试或发布。
+
+### M19 条件门禁快照与执行收据
+
+- **调研日期**：2026-07-19。
+- **来源**：JSON Schema、Gradle/JUnit/Android Lint 原生报告；[Now in Android Build](https://github.com/android/nowinandroid/blob/main/.github/workflows/Build.yaml) 的分层 Build/Lint/Roborazzi/Instrumentation、[Lottie Validate](https://github.com/airbnb/lottie-android/blob/master/.github/workflows/validate.yml) 的 Lint/Unit/API/Snapshot 独立 Job，以及 [Detekt Danger](https://github.com/detekt/detekt/blob/main/bots/dangerfile.js) 的 diff 缺测试提示。
+- **决策**：`route` 只把四类条件门禁及直接依据保存到项目外快照，并绑定需求修订、Git 基线和代码摘要；七类完整影响只用于当次路由输出。自动命令由独立执行器记录 cwd、时间、脱敏参数、退出码、测试数、日志和原生报告 SHA-256。普通 Reviewer 只输出最小机器信封，Journey/动态专项按需扩展；最终结果契约升级为 version 3，旧的 AI 自报证据不再兼容通过结论。
+- **职责边界**：路由快照只表达候选，不替代业务适用性终判；执行器只运行已经选定的命令，不选择 task、不修代码；最终门禁只校验，不运行命令。
+- **原因**：自然语言约束不能阻止条件专项被漏写，也不能证明 AI 填写的退出码和报告路径真实存在；但强迫普通 Review 填写 Journey 字段也会制造维护成本。最小信封加原生报告在关闭假绿的同时避免建立通用状态机。
+
+### M20 Android CLI Agent Journey 默认路线
+
+- **调研日期**：2026-07-19。
+- **来源**：Google Android CLI Skill 的 Journey action 顺序、失败和结构化汇总规则，以及 Android CLI `run/layout/screen` 的已安装 APK 操作能力。
+- **决策**：Journey 适用时，由执行当前 Skill 的 AI 会话优先读取 XML，使用 Android CLI/adb 逐个 action 操作和验证；统一专项结果保存 Journey 数、action 数、命令及布局/截图摘要。AGP 9 Studio Labs 壳保留为已经初始化后的可选 JUnit 回退。
+- **边界**：当前 Android CLI 没有可由 Python 调用的 `android journey` 或 `android agent` 子命令，不创建伪命令；没有 Agent 会话、设备或等价 UI 引擎时保持未验证。壳未初始化不再阻断默认路线，也不自动要求用户打开 Android Studio。
 
 ## 明确不照搬
 

@@ -7,7 +7,7 @@
 覆盖范围：
 1. 配置中的绝对/相对路径解析。
 2. Word、Markdown、TXT 需求正文读取及明确失败行为。
-3. 七类工程影响、第二轮条件能力候选和 route 输出，不把模糊子串当成业务结论。
+3. 七类工程影响、第二轮条件能力候选、route 外部快照和输出，不把模糊子串当成业务结论。
 4. 当前需求 Git 基线、连续需求修订、部分确认、撤回、删除处置和重复 init 安全性。
 5. 四类 Git 变化、增删改状态、真实片段、最终代码摘要和独立 JSON 输出。
 
@@ -57,7 +57,11 @@ from ..delivery import (  # noqa: E402
 )
 from ..config_paths import (  # noqa: E402
     baseline_path_for_config,
+    capabilities_path_for_config,
+    evidence_directory_for_config,
     requirement_snapshot_path_for_config,
+    route_impact_path_for_config,
+    specialist_directory_for_config,
 )
 from ..git_changes import (  # noqa: E402
     GitChange,
@@ -123,16 +127,29 @@ class RequirementPathTests(unittest.TestCase):
         self.assertEqual(resolved_project, project.resolve())
         self.assertEqual(resolved_requirement, requirement.resolve())
 
-    def test_external_state_keeps_existing_baseline_name_and_separates_snapshot(self) -> None:
-        """验证新增需求快照不会改名或覆盖旧版本已经建立的 Git 基线文件。"""
+    def test_external_state_keeps_baseline_and_derived_evidence_separate(self) -> None:
+        """验证基线、需求、路由、能力和证据使用独立且位于项目外的路径。"""
         with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.root / "state")}):
             baseline = baseline_path_for_config(self.config_path)
             snapshot = requirement_snapshot_path_for_config(self.config_path)
+            route = route_impact_path_for_config(self.config_path)
+            capabilities = capabilities_path_for_config(self.config_path)
+            evidence = evidence_directory_for_config(self.config_path)
+            specialists = specialist_directory_for_config(
+                self.config_path,
+                "requirement-1",
+                2,
+                "a" * 64,
+            )
 
         self.assertTrue(baseline.name.endswith(".json"))
         self.assertNotIn("-baseline.json", baseline.name)
         self.assertTrue(snapshot.name.endswith("-requirement.json"))
-        self.assertNotEqual(baseline, snapshot)
+        self.assertTrue(route.name.endswith("-route-impact.json"))
+        self.assertTrue(capabilities.name.endswith("-capabilities.json"))
+        self.assertEqual(evidence, specialists.parents[1])
+        self.assertEqual("specialists", specialists.name)
+        self.assertEqual(5, len({baseline, snapshot, route, capabilities, evidence}))
 
 
 class RequirementReaderTests(unittest.TestCase):
@@ -1156,6 +1173,8 @@ class RouteCommandTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.root = Path(self.temp_dir.name)
+        self.requirement = self.root / "requirement.md"
+        self.requirement.write_text("修改首页、用户接口和本地数据。\n", encoding="utf-8")
 
     def test_route_prints_api_and_manual_ui_selection(self) -> None:
         """验证 API 自动入队、UI 保持手动，并输出其他工程影响关注点。"""
@@ -1167,12 +1186,46 @@ class RouteCommandTests(unittest.TestCase):
             "gradle/libs.versions.toml",
         ]
         output = io.StringIO()
+        paths = SimpleNamespace(
+            project_path=self.root,
+            requirement_path=self.requirement,
+            requirement_dir=self.root,
+        )
+        route_path = self.root / "route-impact.json"
+        requirement_sha = hashlib.sha256(
+            "修改首页、用户接口和本地数据。".encode("utf-8")
+        ).hexdigest()
         old_cwd = Path.cwd()
         try:
             with (
                 mock.patch("scripts.delivery.load_config", return_value={}),
-                mock.patch("scripts.delivery.resolve_config_paths", return_value=(self.root, None)),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
                 mock.patch("scripts.delivery.current_branch", return_value="feature"),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.root / "baseline.json"),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=self.root / "requirement-snapshot.json",
+                ),
+                mock.patch("scripts.delivery.route_impact_path_for_config", return_value=route_path),
+                mock.patch(
+                    "scripts.delivery.load_requirement_snapshot",
+                    return_value={
+                        "requirement_id": "requirement-1",
+                        "revision": 1,
+                        "status": "CONFIRMED",
+                        "pending_changes": [],
+                        "sha256": requirement_sha,
+                    },
+                ),
+                mock.patch(
+                    "scripts.delivery.current_delivery_snapshot",
+                    return_value={
+                        "baseline_id": "requirement-1",
+                        "baseline_head": "head-1",
+                        "head": "head-2",
+                        "snapshot_sha256": "a" * 64,
+                    },
+                ),
                 mock.patch(
                     "scripts.delivery.get_diff_changes",
                     return_value=([GitChange("M", path) for path in files], []),
@@ -1195,6 +1248,18 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("UI/A11y: 候选适用", text)
         self.assertIn("无真机时继续其他门禁", text)
         self.assertIn("动态能力未验证不得写成通过", text)
+        self.assertTrue(route_path.is_file())
+        route_payload = json.loads(route_path.read_text(encoding="utf-8"))
+        self.assertNotIn("impacts", route_payload)
+        route_gates = {
+            item["id"]: item for item in route_payload["conditional_gates"]
+        }
+        self.assertIn("android-verify-api-contract", route_gates)
+        self.assertIn("android-data-migration", route_gates)
+        self.assertIn(
+            "app/src/main/java/example/UserMapper.kt",
+            route_gates["android-verify-api-contract"]["basis_files"],
+        )
 
 
 if __name__ == "__main__":

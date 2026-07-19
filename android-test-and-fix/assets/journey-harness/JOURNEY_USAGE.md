@@ -1,6 +1,6 @@
 # Journey 使用场景与执行指南
 
-本文说明 `android-test-and-fix` 何时应该使用 Journey、何时必须跳过、如何从业务需求生成用例，以及独立 AGP 9 壳如何测试低 AGP 老项目。
+本文说明 `android-test-and-fix` 何时应该使用 Journey、何时必须跳过、如何从业务需求生成用例，以及如何优先用 Android CLI Agent 测试低 AGP 老项目；独立 AGP 9 壳只作为可选回退。
 
 Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试，定位是已安装 APK 的少量关键用户旅程冒烟。它擅长模拟用户在真实设备上的可见操作，但不能替代 Unit、API 契约、Espresso、Compose UI Test、UIAutomator、截图测试、性能测试或安全测试。
 
@@ -66,8 +66,8 @@ Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试，定位是�
 6. [不适合 Journey 的场景](#不适合-journey-的场景)
 7. [测试工具选择表](#测试工具选择表)
 8. [BDD 到 Journey 的转换](#bdd-到-journey-的转换)
-9. [共享壳与老项目隔离](#共享壳与老项目隔离)
-10. [一次性初始化](#一次性初始化)
+9. [默认 Android CLI Agent 与老项目隔离](#默认-android-cli-agent-与老项目隔离)
+10. [可选壳一次性初始化](#可选壳一次性初始化)
 11. [用例目录与跨项目隔离](#用例目录与跨项目隔离)
 12. [配置与执行](#配置与执行)
 13. [状态码和安全边界](#状态码和安全边界)
@@ -116,7 +116,8 @@ Journey 不能证明：
 - 用户负责确认业务需求、前置条件和预期结果。
 - `android-test-and-fix` 根据需求、BDD 和实际 diff 分配每个原子 Then 的证据，聚合整条 BDD 的 Journey `FULL/PARTIAL/NONE` 和完整需求证据。
 - 用户不需要选择 Journey，也不需要编写 XML、action/step、文件名或 Gradle task。
-- `run_journey.py` 只负责校验、暂存、构建、安装、执行、失败分类和报告。
+- 当前 AI 会话默认严格读取 Journey XML，使用 Android CLI/adb 逐个执行 action，并保存布局、截图、命令和统一专项结果。
+- `run_journey.py` 只负责明确选择后的可选壳校验、暂存、构建、安装、执行、失败分类和报告；未初始化壳不阻断默认路线。
 - `android-verify-ui` 只负责设计稿、截图、布局和视觉还原验收，不生成或执行 Journey。
 
 ## 两次判断一次执行
@@ -130,7 +131,7 @@ Journey 不能证明：
 - 前置条件是否可以准备。
 - 是否可能受验证码、支付或第三方系统阻塞。
 
-此时只按原子 Then 分配聚合整条 BDD 的候选 `FULL/PARTIAL/NONE`，可以为候选可覆盖部分生成测试用例草稿，但不得启动设备和壳项目。
+此时只按原子 Then 分配聚合整条 BDD 的候选 `FULL/PARTIAL/NONE`，可以为候选可覆盖部分生成测试用例草稿，但不得启动设备、Agent Journey 或壳项目。
 
 ### 第二次：编码完成后终判
 
@@ -145,13 +146,13 @@ Journey 不能证明：
 
 ### 只执行一次
 
-只要终判仍有验证义务分配给 Journey，才为这些义务生成最终 Journey XML，并使用：
+只要终判仍有验证义务分配给 Journey，才为这些义务生成最终 Journey XML。默认由当前 AI 会话使用 Android CLI/adb 执行；只有默认路线不可用且壳已经初始化时，才使用：
 
 ```text
 --ui-impact behavior --applicability FULL/PARTIAL --covered-then BDD-001/T1
 ```
 
-调用 Journey。终判为 `NONE` 时选择其他测试，不启动壳项目。`PARTIAL` 的非 Journey 验证义务必须独立执行和记录。
+调用可选壳。终判为 `NONE` 时选择其他测试，不启动任何 Journey 引擎。`PARTIAL` 的非 Journey 验证义务必须独立执行和记录。
 
 ## 适合 Journey 的场景
 
@@ -438,9 +439,9 @@ Then：显示搜索结果列表
 Then：列表中至少有一项标题包含“Android”
 ```
 
-XML 的准确 schema 必须以当前 Android Studio `New > Journey Test` 生成的官方模板为准，不要根据本文手写或猜测 DSL。
+默认 Agent 路线使用 Android CLI Journey 约定的最小 `journey/actions/action` 结构。只有选择预览壳时，XML schema 才必须以当前 Android Studio `New > Journey Test` 生成的官方模板为准；两种格式不兼容时不得强行复用或猜测预览 DSL。
 
-## 共享壳与老项目隔离
+## 默认 Android CLI Agent 与老项目隔离
 
 ```text
 低 AGP 目标项目
@@ -448,24 +449,30 @@ XML 的准确 schema 必须以当前 Android Studio `New > Journey Test` 生成�
           ↓
 从最终 APK 读取真实 applicationId
           ↓
-adb 安装并通过 pm path 校验
+android run / adb 安装并通过 pm path 校验
           ↓
-独立 AGP 9 journey-harness
-  └─ 注入 JOURNEYS_CUSTOM_APP_ID
+当前 AI 会话读取本需求 Journey XML
+  └─ android layout / screen + 必要 adb 输入
           ↓
-执行 Journey 并输出报告
+逐个 action 执行并输出统一专项结果
 ```
 
 安全要求：
 
 - 不修改目标项目的 AGP、Gradle 或 Kotlin 版本。
-- 壳项目把独立 `GRADLE_USER_HOME`、Gradle 项目缓存和构建输出都放在 Skill 目录外，避免旧 `~/.gradle/init.d` 污染，也避免运行产物撑大 Skill；默认位于用户缓存目录，可用 `ANDROID_DELIVERY_JOURNEY_GRADLE_HOME` 和 `ANDROID_DELIVERY_JOURNEY_BUILD_ROOT` 覆盖主要目录。
+- Android CLI 当前版本没有 `android journey` 或 `android agent` 子命令；“Agent”表示正在执行本 Skill 的 AI 会话使用受支持的 `android run/layout/screen` 和 adb，禁止脚本伪造不存在的调用。
 - 目标包名以 APK 为准，不依赖源码正则。
-- 壳、设备和认证失败不能触发目标代码修复。
+- 每个 action 只做一个操作或一个可见断言，严格按顺序独立判断；任一步失败、崩溃、退出或冻结时停止当前 Journey。
+- 每一步保存脱敏命令、布局或截图文件及 SHA-256；最终使用 `specialist-result.schema.json`，记录实际 Journey 数、action 数和覆盖的 BDD/Then。
+- Android CLI、设备和认证失败不能触发目标代码修复；先换项目已有 UI 测试，仍无等价能力时标未验证。
 
-## 一次性初始化
+### 可选 AGP 9 壳
 
-Journey 是 Studio Labs 预览能力。第一次使用共享壳时：
+已经完成官方初始化且希望得到 Gradle/JUnit 结构化结果时，可以改用独立 `journey-harness`。壳把 `GRADLE_USER_HOME`、项目缓存和构建输出放在 Skill 目录外，使用目标 APK 的真实 applicationId，不升级目标项目。
+
+## 可选壳一次性初始化
+
+只有决定长期使用 Studio Labs 预览壳时才执行：
 
 1. 使用当前 Android Studio 打开本目录。
 2. 确认 Studio Labs/Gemini 已启用并登录。
@@ -474,7 +481,7 @@ Journey 是 Studio Labs 预览能力。第一次使用共享壳时：
 5. 确认官方任务会在壳配置的外部 build 目录生成 JUnit XML 或等价的结构化测试结果；没有实际测试数量时执行器会拒绝判绿。
 6. 保留官方生成的结构，不手写猜测预览 DSL，也不通过放宽判绿条件绕过缺失结果。
 
-这一步只初始化共享壳一次，不要求每个目标项目重复执行。
+这一步只初始化可选共享壳一次，不要求每个目标项目重复执行，也不是默认 Agent Journey 的前置条件。
 
 ## 用例目录与跨项目隔离
 
@@ -533,7 +540,7 @@ testing:
 - `clear_app_data`：破坏性操作，必须明确需要才开启。
 - `deep_link` 与 `launch_activity` 只能二选一。
 
-只有模型终判 Journey 适用时才执行：
+只有模型终判 Journey 适用、默认 Agent 路线不可用且可选壳已经初始化时才执行：
 
 ```bash
 python3 android-test-and-fix/scripts/run_journey.py \
@@ -558,7 +565,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 | `SKIPPED_VISUAL_ONLY` | 纯视觉变化，改用截图或 UI 验收 | 否 |
 | `NO_JOURNEY_FOUND` | 已终判需要 Journey，但用例未成功物化 | 先生成用例，不改目标代码 |
 | `MALFORMED_JOURNEY` | XML 无效、无 action/step | 修用例，不改目标代码 |
-| `INITIALIZATION_REQUIRED` | 壳还没有官方 Journey task | 用当前 Android Studio 执行一次 `New > Journey Test`，不改目标项目 |
+| `INITIALIZATION_REQUIRED` | 可选壳还没有官方 Journey task | 改用默认 Agent/项目已有测试；只有选择壳时才用 Studio 初始化 |
 | `HARNESS_UNAVAILABLE` | SDK、设备、wrapper 等前置缺失 | 修环境或降级 |
 | `HARNESS_FAILED` | 壳、认证、task 或运行器失败 | 修环境或降级 |
 | `APP_ASSERTION_FAILED` | 连续两次出现明确 UI 断言失败 | 先分析根因 |
@@ -573,7 +580,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 ## 报告与证据
 
-默认输出：
+默认 Agent Journey 输出统一专项结果和布局/截图证据；路径由当前需求报告目录记录。可选壳默认输出：
 
 ```text
 <requirement_dir>/test-results/journey-harness/<需求作用域>/result.json
@@ -604,7 +611,8 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 ### 无法识别 Journey task
 
-- 确认已经用当前 Android Studio 执行 `New > Journey Test`。
+- 这是可选壳问题，不是默认 Journey 的阻断；优先改用 Android CLI Agent 或项目已有 UI 测试。
+- 确认仍选择壳后，再检查是否已经用当前 Android Studio 执行 `New > Journey Test`。
 - 读取官方生成的 task 或在配置中填写完整 task。
 - 不硬编码猜测预览版本的任务名。
 

@@ -1024,6 +1024,7 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertEqual(0, exit_code)
         self.assertIn("全部验证通过", summary)
+        self.assertIn("当前确认需求未登记需要修改或重点保护的已上线业务", summary)
         self.assertIn("点击重试后恢复", summary)
         self.assertIn("自动测试通过", summary)
         self.assertNotIn(self.snapshot, summary)
@@ -1056,6 +1057,57 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertIn("尚未完成", summary)
         self.assertIn("点击重试后恢复", summary)
         self.assertIn("需要合适设备完成点击验证", summary)
+
+    def test_unverified_existing_business_protection_blocks_passing(self) -> None:
+        """验证已确认的旧业务保护 Then 缺少证据时复用现有义务门禁阻断通过。"""
+        self.context["expected_obligations"]["BDD-001/T1"]["text"] = (
+            "【保护已上线业务】赠品订单：零金额仍然允许提交"
+        )
+        self.payload["obligations"][0].update({
+            "status": "UNVERIFIED",
+            "evidence_ids": [],
+        })
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("尚未覆盖" in error for error in errors))
+
+    def test_optional_existing_business_protection_cannot_bypass_gate(self) -> None:
+        """验证另有必需项通过时，旧业务保护项仍不能设为可选并标记不适用。"""
+        self.context["expected_obligations"]["BDD-002/T1"] = {
+            "required": False,
+            "sha256": "e" * 64,
+            "text": "【保护已上线业务】赠品订单：零金额仍然允许提交",
+        }
+        self.payload["obligations"].append({
+            "id": "BDD-002/T1",
+            "required": False,
+            "obligation_sha256": "e" * 64,
+            "status": "NOT_APPLICABLE",
+            "evidence_ids": [],
+        })
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("必须 required=true" in error for error in errors))
+
+    def test_existing_business_obligation_requires_traceability_entry(self) -> None:
+        """验证中文报告引用追溯表前，文件存在且包含对应旧业务义务。"""
+        traceability = self.temp_root / "traceability.md"
+        traceability.write_text("# 当前需求追溯表\n", encoding="utf-8")
+        self.context["traceability_path"] = str(traceability)
+        self.context["expected_obligations"]["BDD-001/T1"]["text"] = (
+            "【修改已上线业务】普通用户免运费门槛调整为 80 元"
+        )
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("没有登记已上线业务义务" in error for error in errors))
+        traceability.write_text(
+            "# 当前需求追溯表\n\nBDD-001/T1 | 实现 | 调用方 | TEST-001\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
 
     def test_cli_snapshot_outputs_json_serializable_route_context(self) -> None:
         """验证 route 条件门禁上下文可以直接供 AI 读取并生成最终报告。"""

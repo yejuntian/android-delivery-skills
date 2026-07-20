@@ -209,7 +209,13 @@ def read_requirement(path):
 
 def print_bdd_instruction():
     """打印中文需求验收指令，机器编号保留但不要求用户理解英文术语。"""
-    print("👉 AI 指令：先输出【当前需求理解】及 UI/API/业务/存储/系统能力影响，再输出 BDD 验收标准。")
+    print("👉 AI 指令：先形成初步需求理解，不要立即编码。")
+    print("读取项目代码前只读核对 project_path、Git 仓库和目标分支；首次需求尚无基线且工作区已有改动时停止。")
+    print("已有当前需求基线的中途修订保留原基线继续分析，不得重复执行 check-env。")
+    print("随后定向读取相关实现、调用方、共享边界和已有测试，不扫描无关源码，也不运行构建或设备任务。")
+    print("完整需求理解最前面展示【本次明确修改 / 必须保持不变 / 暂时无法确认 / 明确不修改范围】。")
+    print("旧业务修改和保护的原子预期结果分别以【修改已上线业务】、【保护已上线业务】开头，并且必须是必需项。")
+    print("👉 再输出【当前需求理解】及 UI/API/业务/存储/系统能力影响和 BDD 验收标准。")
     print("为需求、场景分配稳定 REQ-### / BDD-###；检查主流程、备选、异常、恢复和非功能场景。")
     print("BDD 面向用户使用【前提 / 操作 / 预期结果】，缺失类别标记待确认或不适用及原因，不得为凑数量脑补。")
     print("把复合预期结果拆成 BDD-001/T1 形式的原子验收项，并用中文说明一级、二级、三级或信息不足的风险结论。")
@@ -219,7 +225,8 @@ def print_bdd_instruction():
     print("正文不足时最多一次提出 5 个真正影响实现或验收的问题；不得补写不存在的需求。")
     print("同时输出【最小修改预览】和架构边界卡片：组件/文件、职责、输入、输出、依赖方向、复用点、不修改范围。")
     print("无法确认落点或边界时列为待确认项，不得创建猜测性文件。")
-    print("用户确认且 check-env 成功建立基线后，在 <requirement_dir>/test-cases/traceability.md 建立追溯表。")
+    print("首次需求在用户确认且 check-env 成功建立基线后建立 <requirement_dir>/test-cases/traceability.md；中途修订复用原文件和基线。")
+    print("追溯表顶部保存已确认的旧业务影响说明。")
     print("同时按 requirement-revision.schema.json 物化修订清单，并执行 confirm-requirement-update。")
     print("输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
 
@@ -495,9 +502,10 @@ def classify_conditional_gate_candidates(impacts):
 def print_route_instructions(skills_to_run):
     """打印路由审查指令，提示 AI 根据实际改动逐个触发对应 Skill。"""
     print("\n---")
-    print("👉 AI 指令：逐个调用以下 Skill。发现 P0/P1 或测试失败必须修复并重跑，不得止于报告：")
+    print("👉 AI 指令：逐个调用以下 Skill。已确认范围内的 P0/P1 技术问题或测试失败必须修复并重跑：")
     for skill in skills_to_run:
         print(f"  - {skill}")
+    print("计划外旧业务影响、需求冲突或业务预期不明确即使是 P0/P1 也必须先询问用户，不得自动修复。")
     print("注意：一次只调用一个。修复导致 diff 变化时重新执行 route，直到路由稳定。")
     print("候选分类必须结合已确认需求和真实 diff 复核，不得凭文件名脑补业务变化。")
     print("第二轮条件能力只在候选适用时执行；无真机继续其他门禁，动态能力未验证不得写成通过。")

@@ -123,9 +123,9 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 
 1. 读取 `profiles/local.yaml`。
 2. 读取 `requirement_file` 需求文档。
-3. 只做需求理解。
-4. 等你确认理解是否正确。
-5. 未确认前不进入最终方案、不改代码。
+3. 读取代码前只读核对项目路径、Git 仓库和目标分支，再定向分析本次相关项目代码、调用方和已有测试，不逐行扫描无关文件；已有当前需求基线的中途修订不会重复 `check-env`。
+4. 在完整需求说明最前面展示本次明确修改、必须保持不变、暂时无法确认和明确不修改的已上线业务范围。
+5. 等你确认理解是否正确；未确认前不改代码、不运行构建或设备任务。
 
 同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比最近确认修订和现有追溯表，输出增改删、替代及逐项确认状态。用户确认后由 AI 更新 `<requirement_dir>/test-cases/requirement-revision.json`，再执行 `confirm-requirement-update`；下次变化从最近确认版本继续比较。
 
@@ -188,7 +188,7 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
 
 1. 修改前校验项目路径、目标分支和干净工作区，并记录当前需求 Git 基线。
 2. 物化全部已确认 Then 的需求修订清单并执行 `confirm-requirement-update`。
-3. 读取相关代码并复用现有链路。
+3. 复用确认前已经识别的相关代码和现有链路，按需补充实现细节。
 4. 直接实现需求，不再固定输出一轮前置分析报告。
 5. 只有遇到关键资料缺失、高风险改动或分支/工作区异常时才暂停询问。
 6. 首次编码后先运行受影响测试和必要编译；后续完善、修改、删除或修复继续使用同一局部循环，不自动执行完整 route。
@@ -205,12 +205,15 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
 
 需求、变更、阶段提示、测试结果、失败原因、授权请求和最终报告全部使用自然中文。需求场景显示“前提 / 操作 / 预期结果”，不会要求你理解机器内部英文状态；失败时会同时说明原因、已完成范围、未完成范围、解除条件和你下一步需要做什么。
 
+需求涉及已有业务时，编码前说明最前面会显示“本次明确修改、必须保持不变、暂时无法确认、明确不修改范围”。最终中文报告最前面再次显示实际旧业务修改、保护项及回归结果；最终 diff 新发现计划外影响时先重新请你确认，不会直接提交。
+
 `REQ-001`、`BDD-001/T1`、文件路径、Gradle 命令、类名和接口路径属于稳定技术标识，可以保留并附中文说明。`requirement-revision.json`、`delivery-result.json` 等机器附件继续使用英文枚举供脚本解析，但最终回复只优先展示中文摘要，不会把机器 JSON 正文直接交给你阅读。
 
 ## 整体流程顺序(一图看懂)
 
 ```text
-① delivery.py init    读需求 → 输出 BDD（前提/操作/预期结果）
+① delivery.py init    读需求 → 只读分析相关项目代码/调用方/测试
+   └─ 置顶展示已上线业务影响 → 输出 BDD（前提/操作/预期结果）
    └─ 停,等你确认「理解正确,继续」
                           ↓
 ② delivery.py check-env   查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
@@ -219,9 +222,12 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
                           ↓
 ④ 编码后局部迭代（可以重复多次）
    ├─ 实现完善：最小修改 + 受影响测试 + 必要编译
-   └─ 需求语义变化：只确认受影响修订，再回到局部迭代
+   └─ 需求语义变化：init → 只确认受影响修订 → confirm-requirement-update
+      （复用原 Git 基线，不重复 check-env）→ 回到局部迭代
                           ↓ 你要求最终检查 / 完整交付 / 准备提交
 ⑤ delivery.py route   按当前需求基线后的最终 Git Diff 自动路由审查并保存条件门禁快照
+   └─ 新发现计划外旧业务影响 → 暂停交付 → init 补充说明
+      → confirm-requirement-update（不重复 check-env）→ 局部修复后重新 route
 
    【核心·业务逻辑层】(route 自动逐个调用,必先过)
      1. android-review-diff        ← 必跑:diff 影响范围
@@ -232,7 +238,7 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
    【独立·UI 校验】(route 只提示,用户单独调用)
      6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
 
-⑥ delivery_gate.py validate
+⑥ delivery_gate.py validate   中文报告置顶显示旧业务修改与保护结果
    └─ 核对确认修订、最终代码、route 条件门禁、执行收据和专项结果；退出码 0 才可声明通过
 ```
 
@@ -301,7 +307,7 @@ python3 ai-skills/android-delivery-skills/scripts/git_changes.py \
 | android-audit-stability | ✅ 必跑 | ✅ |
 | android-test-and-fix | ✅ 必跑 | ✅ |
 
-核心原则：**在已确认范围内最小修改；每个 Skill 恪守单一职责；BDD 必须物化为测试；测试或 P0/P1 失败必须修复重跑；必需门禁全绿才可交付**。每个 Skill 仍可脱离 route 单独运行。
+核心原则：**在已确认范围内最小修改；每个 Skill 恪守单一职责；BDD 必须物化为测试；已确认范围内的测试或 P0/P1 技术问题必须修复重跑；计划外旧业务影响和业务预期不明必须先询问；必需门禁全绿才可交付**。每个 Skill 仍可脱离 route 单独运行。
 
 第二轮条件能力不是每次全跑：接口变化查 OpenAPI，持久化变化查迁移，生命周期/热路径按语义判断泄漏和性能，UI 检查 A11y，权限/WebView/用户数据检查安全隐私。没有真机时继续构建、单测、lint、契约、静态审查和模拟器可执行项；真机专项写“未验证”，不能冒充通过，也不因此停止其他流程。
 

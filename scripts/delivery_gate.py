@@ -108,6 +108,19 @@ MANUAL_GATE_PROOFS = {
     "android-dynamic-leak",
     "android-performance",
 }
+BUSINESS_CHANGE_PREFIX = "【修改已上线业务】"
+BUSINESS_PROTECTION_PREFIX = "【保护已上线业务】"
+
+
+def _business_obligation_prefix(value: Any) -> str | None:
+    """识别已上线业务义务的固定前缀，供门禁和中文摘要共用。"""
+    text = str(value or "").strip()
+    for prefix in (BUSINESS_CHANGE_PREFIX, BUSINESS_PROTECTION_PREFIX):
+        if text.startswith(prefix):
+            return prefix
+    return None
+
+
 class DeliveryGateError(RuntimeError):
     """表示最终报告、配置或当前交付上下文无法可靠校验。"""
 
@@ -184,6 +197,9 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "expected_obligations": expected_obligations,
         "result_path": str(result_path),
         "summary_path": str(summary_path),
+        "traceability_path": str(
+            (paths.requirement_dir / "test-cases" / "traceability.md").resolve()
+        ),
     }
     route_path = route_impact_path_for_config(config_path)
     try:
@@ -325,6 +341,31 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             errors.append(f"最终报告漏掉当前确认义务: {', '.join(missing)}")
         if unexpected:
             errors.append(f"最终报告包含非当前义务: {', '.join(unexpected)}")
+
+    business_ids = [
+        identifier
+        for identifier, item in expected_obligations.items()
+        if _business_obligation_prefix(item.get("text"))
+    ]
+    if business_ids:
+        traceability_value = context.get("traceability_path")
+        if not isinstance(traceability_value, str) or not traceability_value.strip():
+            errors.append("已上线业务义务缺少当前需求追溯表路径")
+        else:
+            traceability_path = Path(traceability_value).expanduser().resolve()
+            if not traceability_path.is_file():
+                errors.append(f"当前需求追溯表不存在: {traceability_path}")
+            else:
+                try:
+                    traceability_text = traceability_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as exc:
+                    errors.append(f"当前需求追溯表无法读取: {traceability_path}: {exc}")
+                else:
+                    for identifier in business_ids:
+                        if identifier not in traceability_text:
+                            errors.append(
+                                f"当前需求追溯表没有登记已上线业务义务: {identifier}"
+                            )
 
     specialist_results: dict[str, dict[str, Any]] = {}
     valid_automated: set[str] = set()
@@ -509,6 +550,13 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             errors.append(f"obligation {identifier}.required 必须是 boolean")
         expected = expected_obligations.get(identifier)
         if expected:
+            if (
+                _business_obligation_prefix(expected.get("text"))
+                and expected.get("required") is not True
+            ):
+                errors.append(
+                    f"已上线业务原子验收项 {identifier} 必须 required=true（必需），不能设为可选"
+                )
             if item.get("required") != expected["required"]:
                 errors.append(f"obligation {identifier}.required 与当前确认修订不一致")
             if item.get("obligation_sha256") != expected["sha256"]:
@@ -654,6 +702,66 @@ def _single_line(value: Any) -> str:
     return " ".join(str(value or "").split())
 
 
+def _strip_business_prefix(text: str) -> str:
+    """仅在用户摘要中移除分类标记，保留需求快照中的原始语义和摘要。"""
+    prefix = _business_obligation_prefix(text)
+    if prefix:
+        return text.removeprefix(prefix).strip(" ：:")
+    return text
+
+
+def _render_business_impact_summary(
+    obligations: list[dict[str, Any]],
+    expected: dict[str, dict[str, Any]],
+) -> list[str]:
+    """把带固定中文标记的已有业务义务置顶显示，不引入第二套机器协议。"""
+    grouped: dict[str, list[tuple[str, str, str, bool]]] = {
+        BUSINESS_CHANGE_PREFIX: [],
+        BUSINESS_PROTECTION_PREFIX: [],
+    }
+    for item in obligations:
+        identifier = str(item.get("id") or "未知义务")
+        text = _single_line(expected.get(identifier, {}).get("text"))
+        for prefix in grouped:
+            if text.startswith(prefix):
+                behavior = _strip_business_prefix(text) or identifier
+                raw_status = item.get("status")
+                status = user_label(raw_status, OBLIGATION_STATUS_LABELS)
+                verified = raw_status in {"COVERED_AUTOMATED", "COVERED_MANUAL"}
+                grouped[prefix].append((identifier, behavior, status, verified))
+                break
+
+    lines = ["## 已上线业务变更与保护", ""]
+    if not any(grouped.values()):
+        lines.extend([
+            "- 当前确认需求未登记需要修改或重点保护的已上线业务；最终影响仍以实际代码差异审查为准。",
+            "",
+        ])
+        return lines
+
+    headings = {
+        BUSINESS_CHANGE_PREFIX: "### 本次明确修改",
+        BUSINESS_PROTECTION_PREFIX: "### 必须保持不变",
+    }
+    for prefix, rows in grouped.items():
+        if not rows:
+            continue
+        lines.extend([headings[prefix], ""])
+        for identifier, behavior, status, _ in rows:
+            lines.append(f"- `{identifier}` {behavior}（{status}）")
+        lines.append("")
+
+    protected = grouped[BUSINESS_PROTECTION_PREFIX]
+    verified = sum(is_verified for _, _, _, is_verified in protected)
+    lines.extend([
+        f"- 已登记旧业务保护项：{len(protected)} 项；已验证 {verified} 项；"
+        f"尚未验证或受阻 {len(protected) - verified} 项。",
+        "- 详细实现、调用方和测试映射请查看当前需求的 `test-cases/traceability.md`。",
+        "",
+    ])
+    return lines
+
+
 def render_delivery_summary(
     payload: dict[str, Any],
     context: dict[str, Any],
@@ -681,6 +789,9 @@ def render_delivery_summary(
         "",
         f"> 本文件供用户阅读；机器校验附件为 [{machine_report_name}]({machine_report_name})。",
         "",
+    ]
+    lines.extend(_render_business_impact_summary(obligations, expected))
+    lines.extend([
         "## 最终结论",
         "",
         f"**{user_label(conclusion, DELIVERY_CONCLUSION_LABELS)}**",
@@ -691,7 +802,7 @@ def render_delivery_summary(
         "",
         "## 交付门禁",
         "",
-    ]
+    ])
     for item in gates:
         status = item.get("status", "")
         reason = localize_machine_terms(_single_line(item.get("reason")))
@@ -705,7 +816,9 @@ def render_delivery_summary(
     if covered:
         for item in covered:
             identifier = item.get("id", "未知义务")
-            text = _single_line(expected.get(identifier, {}).get("text")) or identifier
+            text = _strip_business_prefix(
+                _single_line(expected.get(identifier, {}).get("text"))
+            ) or identifier
             status = user_label(item.get("status"), OBLIGATION_STATUS_LABELS)
             lines.append(f"- `{identifier}` {text}（{status}）")
     else:
@@ -715,7 +828,9 @@ def render_delivery_summary(
     if remaining:
         for item in remaining:
             identifier = item.get("id", "未知义务")
-            text = _single_line(expected.get(identifier, {}).get("text")) or identifier
+            text = _strip_business_prefix(
+                _single_line(expected.get(identifier, {}).get("text"))
+            ) or identifier
             reason = localize_machine_terms(
                 _single_line(item.get("reason")) or "机器报告未提供具体原因"
             )

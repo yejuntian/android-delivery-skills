@@ -175,6 +175,42 @@ class UserFacingLabelsTests(unittest.TestCase):
         for machine_term in ("INCOMPLETE", "UNVERIFIED", "SKIPPED", "BLOCKED"):
             self.assertNotIn(machine_term, summary)
 
+    def test_final_summary_prioritizes_existing_business_changes(self) -> None:
+        """验证旧业务修改和保护项在最终中文报告顶部按用户语义分组。"""
+        payload = {
+            "conclusion": "FULL_PASS",
+            "requirement_revision": 2,
+            "obligations": [
+                {"id": "BDD-001/T1", "status": "COVERED_AUTOMATED"},
+                {"id": "BDD-002/T1", "status": "COVERED_MANUAL"},
+            ],
+            "gates": [],
+            "pending_capabilities": [],
+        }
+        context = {
+            "expected_obligations": {
+                "BDD-001/T1": {
+                    "text": "【修改已上线业务】普通购物车：免运费门槛由 100 元调整为 80 元",
+                },
+                "BDD-002/T1": {
+                    "text": "【保护已上线业务】赠品订单：零金额仍然允许提交",
+                },
+            },
+        }
+
+        summary = render_delivery_summary(payload, context)
+
+        business_section = summary.index("## 已上线业务变更与保护")
+        conclusion_section = summary.index("## 最终结论")
+        self.assertLess(business_section, conclusion_section)
+        self.assertIn("### 本次明确修改", summary)
+        self.assertIn("### 必须保持不变", summary)
+        self.assertIn("普通购物车：免运费门槛由 100 元调整为 80 元", summary)
+        self.assertIn("赠品订单：零金额仍然允许提交", summary)
+        self.assertIn("已登记旧业务保护项：1 项；已验证 1 项", summary)
+        self.assertNotIn("【修改已上线业务】", summary)
+        self.assertNotIn("【保护已上线业务】", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

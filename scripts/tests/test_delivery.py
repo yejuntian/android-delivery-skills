@@ -53,7 +53,9 @@ from ..delivery import (  # noqa: E402
     cmd_route,
     format_requirement_change,
     load_config,
+    print_bdd_instruction,
     print_environment_rules,
+    print_route_instructions,
     read_requirement,
     resolve_config_paths,
 )
@@ -210,6 +212,37 @@ class RequirementReaderTests(unittest.TestCase):
         corrupt.write_bytes(b"not-a-docx")
         with self.assertRaisesRegex(DeliveryError, "DOCX 文件损坏"):
             read_requirement(corrupt)
+
+
+class UserInstructionTests(unittest.TestCase):
+    """验证终端交给其他 AI 的需求阶段指令与主流程保持一致。"""
+
+    def test_bdd_instruction_includes_existing_business_safety_rules(self) -> None:
+        """验证确认前只读检查、旧业务标记和基线复用都明确展示。"""
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            print_bdd_instruction()
+
+        text = output.getvalue()
+        self.assertIn("只读核对 project_path、Git 仓库和目标分支", text)
+        self.assertIn("不得重复执行 check-env", text)
+        self.assertIn("【本次明确修改 / 必须保持不变 / 暂时无法确认 / 明确不修改范围】", text)
+        self.assertIn("【修改已上线业务】、【保护已上线业务】", text)
+        self.assertIn("必须是必需项", text)
+
+    def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
+        """验证 P0/P1 自动修复授权不会越过未确认的旧业务处置。"""
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            print_route_instructions(["android-review-diff"])
+
+        text = output.getvalue()
+        self.assertIn("已确认范围内的 P0/P1 技术问题", text)
+        self.assertIn("计划外旧业务影响", text)
+        self.assertIn("必须先询问用户", text)
+        self.assertIn("不得自动修复", text)
 
 
 class RequirementSnapshotTests(unittest.TestCase):

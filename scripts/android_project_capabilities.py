@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """脚本名称：android_project_capabilities.py
 
-用途：在首次处理项目、构建配置变化或 task 未知时，按需只读发现 Gradle 能力。
+用途：在首次处理项目、构建配置变化或 task 未知时，只读发现 Gradle 能力及已有
+静态分析配置和 CI 信号。
 
 核心流程：读取 settings/wrapper 基本事实，使用项目外 Gradle 用户/项目缓存运行目标项目
-自己的 ``gradlew tasks --all``，保留完整任务列表并按稳定用途分组，结果写到项目之外。
+自己的 ``gradlew tasks --all``，再有界扫描构建、静态配置与 CI 文件，结果写到项目之外。
 
-职责边界：不判断业务影响、不选择最终命令、不执行构建或测试、不安装工具、不修改
-Gradle/AGP/JDK，也不把能力存在写成已经通过。Gradle 发现失败只记录错误并返回非零。
+职责边界：不读取普通业务源码、不判断扫描覆盖或业务影响、不选择最终命令、不执行构建
+或测试、不安装工具、不修改 Gradle/AGP/JDK，也不把能力存在写成已经通过。
 """
 
 from __future__ import annotations
 
-import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -31,11 +31,31 @@ if __package__ in {None, ""}:
 from .config_paths import capabilities_path_for_config, resolve_config_paths  # noqa: E402
 from .delivery import DeliveryError, load_config  # noqa: E402
 from .execution_evidence import redact_output  # noqa: E402
+from .user_facing_labels import ChineseArgumentParser, localize_machine_terms  # noqa: E402
 
 
 TASK_LINE = re.compile(r"^([^\s]+)\s+-\s+.+$")
 INCLUDE_CALL = re.compile(r"\binclude\s*\(?\s*([^\n]+)")
 QUOTED_MODULE = re.compile(r"['\"](:[^'\"]+)['\"]")
+STATIC_TOOL_TOKENS = {
+    "android-lint": ("lint",),
+    "detekt": ("detekt",),
+    "error-prone": ("errorprone", "error-prone"),
+    "infer": ("infer",),
+    "nullaway": ("nullaway",),
+    "pmd": ("pmd",),
+    "semgrep": ("semgrep",),
+    "codeql": ("codeql",),
+    "spotbugs": ("spotbugs",),
+    "checkstyle": ("checkstyle",),
+    "sonar": ("sonar",),
+}
+IGNORED_DISCOVERY_DIRS = {
+    ".git", ".gradle", ".idea", ".kotlin", "build", "out", "node_modules",
+}
+STATIC_CONFIG_DIRECTORIES = {".config", "config", "quality"}
+STATIC_CONFIG_EXTENSIONS = {".json", ".properties", ".xml", ".yaml", ".yml"}
+MAX_DISCOVERY_FILES = 50000
 
 
 class CapabilityDiscoveryError(RuntimeError):
@@ -151,6 +171,121 @@ def discover_variants(tasks: list[str]) -> list[str]:
     return sorted(variants)
 
 
+def _static_candidate_file(relative: Path) -> bool:
+    """只选择构建、CI 和静态工具配置，避免遍历读取普通源码与 Android 资源。"""
+    path = relative.as_posix().lower()
+    name = relative.name.lower()
+    if path.startswith(".github/workflows/") and relative.suffix.lower() in {".yml", ".yaml"}:
+        return True
+    if name in {
+        "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+        "libs.versions.toml", "lint.xml", "sonar-project.properties", ".inferconfig",
+        ".semgrep.yml", ".semgrep.yaml",
+    }:
+        return True
+    if path.startswith(("buildsrc/", "build-logic/")) and relative.suffix.lower() in {
+        ".gradle", ".kts", ".kt",
+    }:
+        return True
+    has_tool_token = any(
+        token in path for tokens in STATIC_TOOL_TOKENS.values() for token in tokens
+    )
+    in_config_directory = bool(
+        {part.lower() for part in relative.parts[:-1]} & STATIC_CONFIG_DIRECTORIES
+    )
+    return (
+        has_tool_token
+        and relative.suffix.lower() in {
+            ".xml", ".yml", ".yaml", ".json", ".properties", ".gradle", ".kts",
+        }
+    ) or (
+        in_config_directory and relative.suffix.lower() in STATIC_CONFIG_EXTENSIONS
+    )
+
+
+def _candidate_files(project: Path) -> tuple[list[Path], int, bool]:
+    """有界遍历项目配置，并显式返回扫描数量和是否截断，避免静默漏报。"""
+    candidates: list[Path] = []
+    visited = 0
+    for root, directories, files in os.walk(project):
+        directories[:] = sorted(
+            (name for name in directories if name.lower() not in IGNORED_DISCOVERY_DIRS),
+            key=lambda name: (
+                name.lower() not in {".github", ".config", "config", "quality", "buildsrc", "build-logic"},
+                name.lower(),
+            ),
+        )
+        root_path = Path(root)
+        for name in sorted(files):
+            visited += 1
+            if visited > MAX_DISCOVERY_FILES:
+                return sorted(candidates), visited - 1, True
+            path = root_path / name
+            try:
+                relative = path.relative_to(project)
+            except ValueError:
+                continue
+            if _static_candidate_file(relative):
+                candidates.append(path)
+    return sorted(candidates), visited, False
+
+
+def discover_static_analysis_signals(project: str | Path, tasks: list[str]) -> dict[str, Any]:
+    """合并 Gradle task、构建配置和 CI 信号；只证明能力存在，不推断实际覆盖范围。"""
+    root = Path(project).expanduser().resolve()
+    records: dict[str, dict[str, Any]] = {
+        tool: {
+            "id": tool,
+            "tasks": [],
+            "build_files": [],
+            "config_files": [],
+            "ci_files": [],
+        }
+        for tool in STATIC_TOOL_TOKENS
+    }
+    for task in tasks:
+        lowered = task.lower()
+        for tool, tokens in STATIC_TOOL_TOKENS.items():
+            if any(token in lowered for token in tokens):
+                records[tool]["tasks"].append(task)
+
+    control_files: set[str] = set()
+    candidate_files, visited_files, discovery_truncated = _candidate_files(root)
+    for path in candidate_files:
+        try:
+            if path.stat().st_size > 1024 * 1024:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            relative = path.relative_to(root).as_posix()
+        except OSError:
+            continue
+        haystack = f"{relative}\n{text}".lower()
+        is_ci = relative.lower().startswith(".github/workflows/")
+        is_build = path.name.lower() in {
+            "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+            "libs.versions.toml",
+        } or relative.lower().startswith(("buildsrc/", "build-logic/"))
+        for tool, tokens in STATIC_TOOL_TOKENS.items():
+            if not any(token in haystack for token in tokens):
+                continue
+            field = "ci_files" if is_ci else "build_files" if is_build else "config_files"
+            records[tool][field].append(relative)
+            control_files.add(relative)
+
+    tools = []
+    for record in records.values():
+        for field in ("tasks", "build_files", "config_files", "ci_files"):
+            record[field] = sorted(set(record[field]))
+        if any(record[field] for field in ("tasks", "build_files", "config_files", "ci_files")):
+            tools.append(record)
+    return {
+        "tools": sorted(tools, key=lambda item: item["id"]),
+        "control_files": sorted(control_files),
+        "visited_files": visited_files,
+        "discovery_truncated": discovery_truncated,
+    }
+
+
 def _wrapper_version(project: Path) -> str | None:
     """读取 wrapper distributionUrl 中的 Gradle 版本，不联网解析或更新。"""
     properties = project / "gradle" / "wrapper" / "gradle-wrapper.properties"
@@ -223,7 +358,7 @@ def discover_capabilities(project: str | Path, timeout_seconds: int = 120) -> di
         timed_out = False
     tasks = parse_gradle_tasks(stdout) if exit_code == 0 else []
     return {
-        "version": 1,
+        "version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_path": str(root),
         "wrapper": str(gradlew),
@@ -241,6 +376,7 @@ def discover_capabilities(project: str | Path, timeout_seconds: int = 120) -> di
         "modules": discover_modules(root, tasks),
         "variants": discover_variants(tasks),
         "tasks": classify_tasks(tasks),
+        "static_analysis": discover_static_analysis_signals(root, tasks),
     }
 
 
@@ -261,7 +397,7 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """从配置或显式项目路径发现能力，输出结果位置和发现摘要。"""
-    parser = argparse.ArgumentParser(description="只读发现 Android Gradle 项目能力")
+    parser = ChineseArgumentParser(description="只读发现 Android Gradle 项目能力")
     parser.add_argument("--config", default=None, help="配置文件路径")
     parser.add_argument("--project", default=None, help="Android 项目路径，优先于配置")
     parser.add_argument("--timeout", type=int, default=120, help="Gradle task 发现超时秒数")
@@ -284,11 +420,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         _write_result(output, result)
     except (DeliveryError, CapabilityDiscoveryError) as exc:
-        print(f"❌ {exc}", file=sys.stderr)
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
     print(f"能力结果: {output}")
     print(f"Gradle 任务: {len(result['tasks']['all'])}")
     print(f"模块候选: {len(result['modules'])}，variant 候选: {len(result['variants'])}")
+    static_signals = result["static_analysis"]
+    print(f"已有静态工具信号: {len(static_signals['tools'])}")
+    if static_signals["discovery_truncated"]:
+        print(
+            "⚠️ 静态配置扫描达到文件上限；当前结果不代表全仓发现完整，请只读核对需求影响范围。"
+        )
     if result["exit_code"] != 0:
         print(f"❌ Gradle 能力发现失败，退出码 {result['exit_code']}: {result['stderr']}", file=sys.stderr)
         return result["exit_code"] or 1

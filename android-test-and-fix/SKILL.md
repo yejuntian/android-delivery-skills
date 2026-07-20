@@ -79,7 +79,7 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 
 完整交付阶段必须根据最终 diff 自动发现目标项目已经具备的 Kotlin、Java 和 Android 静态能力，只执行与受影响语言、模块和 variant 相符的现有任务或配置。局部迭代复用已确认能力，只为本轮代码选择必要的最小编译；真实 task 未知或 Gradle/模块/variant 变化时才重新发现。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
 
-先执行 `../scripts/android_project_capabilities.py --config <配置>` 获取原始 Gradle task、模块和 variant 候选。该结果只证明能力存在，不证明任务已经执行或通过；发现器失败时保存错误，再读取项目 Gradle 配置做最小人工确认，禁止猜 task 名。
+先执行 `../scripts/android_project_capabilities.py --config <配置>` 获取原始 Gradle task、模块、variant，以及构建脚本、静态配置和 CI 中已有的工具信号。该结果只证明能力存在，不证明任务已经执行或通过；`static_analysis.discovery_truncated=true` 或发现器失败时，记录能力损失并只读核对需求影响范围内的明确配置，禁止猜 task 名或宣称全仓发现完整。
 
 执行顺序：
 
@@ -89,6 +89,8 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 4. **质量任务**：PMD、Checkstyle 等格式或风格任务只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
 5. **跨语言扫描**：Semgrep 只有本机/项目已有 binary 且仓库已有明确 config/rules 时执行；CodeQL 只有仓库、脚本或 CI 已配置 Kotlin/Java 流程时复用。不得自动下载未知规则、创建数据库或设计新查询套件。
 6. **公开契约**：公共 Java/Kotlin API 变化且项目已有 ABI/API validator 或兼容任务时执行；没有既有能力时做人工兼容审查并记录机器校验未验证。
+
+detekt、Semgrep、CodeQL 或其他已有工具能够输出 SARIF 时，使用 `execution_evidence.py --gate android-static-analysis --report <SARIF或SARIF.JSON>` 生成独立收据。收据从报告重新统计 Error/Warning、`baselineState` 和稳定问题编号；`new/updated/unknown` Error 即使命令退出码为零也不能通过，只有报告明确标记 `unchanged` 的历史 Error 才只记录不阻断。工具不支持 SARIF 时仍保存其原生报告或编译日志，由稳定性专项明确记录版本、实际范围、分析模式和能力损失，不伪造格式转换。
 
 发现与结论规则：
 

@@ -100,7 +100,7 @@ description: Android Git diff 范围与业务回归审查。用于最终交付�
 5. 上线和回滚风险
 6. 是否建议继续修复、测试或提交
 
-由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` v3 输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3、未关闭项和 `confirmed_impacts`。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。
+由 `android-implement-and-verify` 编排时，按 `../android-implement-and-verify/references/specialist-result.schema.json` v4 输出最小机器信封：负责 Skill、当前需求/代码、结论、摘要、P0-P3、未关闭项和 `confirmed_impacts`。命令、测试数和动态能力不是本 Review 的必填项；存在未关闭 P0/P1 时不得标记 `PASS`。
 
 `confirmed_impacts` 必须对 `ui/api/data/system/build/architecture/tests` 七类逐项输出且不得漏项：
 

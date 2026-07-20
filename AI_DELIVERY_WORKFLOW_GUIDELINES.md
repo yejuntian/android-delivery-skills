@@ -98,7 +98,8 @@
 | `scripts/requirement_snapshot.py` | 保存确认需求、原子 Then、修订清单和文本差异 |
 | `scripts/requirement_inputs.py` | 为需求正文及配置声明的 UI/API 资料生成稳定摘要 |
 | `scripts/route_impact.py` | 保存最终 diff 触发的最小条件门禁快照 |
-| `scripts/android_project_capabilities.py` | 只读发现模块、variant 和现有 Gradle task |
+| `scripts/android_project_capabilities.py` | 只读发现模块、variant、Gradle task 及已有静态配置/CI 信号 |
+| `scripts/static_analysis.py` | 规范化已有 SARIF、生成稳定问题编号并审计静态门禁控制面变化 |
 | `scripts/execution_evidence.py` | 执行一条已选择命令并生成单 gate、不可覆盖的机器收据 |
 | `scripts/specialist_result.py` | 校验专项结果、P0-P3、capability 和证据摘要 |
 | `scripts/delivery_gate.py` | 校验最终报告与当前需求、代码和全部证据是否一致 |
@@ -336,7 +337,7 @@ Journey 用例归 `android-test-and-fix`，默认保存在当前需求作用域�
 - 不可覆盖的 `attempt-001/002/...`；
 - 参数数组、执行目录和起止时间；
 - 命令退出码、脱敏 stdout/stderr；
-- JUnit testcase 或 Android Lint XML/SARIF；
+- JUnit testcase、Android Lint XML/SARIF，或项目已有 Kotlin/Java 工具的通用 SARIF；
 - 日志、报告和产物 SHA-256；
 - 当前需求、完整输入、Git 基线和最终代码摘要。
 
@@ -364,6 +365,8 @@ Journey 用例归 `android-test-and-fix`，默认保存在当前需求作用域�
 - 测试/迁移没有 JUnit、零测试、失败或全部 skipped；
 - Then 没有真实通过 testcase；
 - Lint 报告仍有 Fatal/Error；
+- 静态分析命令返回零，但 SARIF 仍有新增、更新或来源不明 Error；
+- 稳定性结果漏写六条静态不变量、与当前代码绑定的控制面审计/候选处置、实际文件范围或稳定问题编号；
 - 一份收据跨 gate 复用或任意命令冒充专项；
 - 同一 ID 重跑覆盖第一次失败；
 - 报告、日志或产物被修改；

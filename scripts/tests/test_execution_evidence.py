@@ -64,6 +64,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
             "requirement_file_sha256": "b" * 64,
             "requirement_inputs_sha256": "c" * 64,
             "result_path": str(self.root / "delivery-result.json"),
+            "project_path": str(self.repo),
         }
         self.receipt_dir = self.root / "receipts"
 
@@ -104,6 +105,35 @@ class ExecutionEvidenceTests(unittest.TestCase):
             "obligation_test_cases": {},
         }
         return receipt, receipt_path, evidence
+
+    def _write_static_sarif(
+        self,
+        level: str,
+        baseline_state: str | None = None,
+        filename: str = "static.sarif",
+    ) -> Path:
+        """写入模拟 detekt/Semgrep/CodeQL 均可采用的最小 SARIF 报告。"""
+        report = self.repo / "build" / "reports" / filename
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps({
+            "version": "2.1.0",
+            "runs": [{
+                "tool": {"driver": {"name": "detekt", "version": "2.0.0"}},
+                "results": [{
+                    "ruleId": "LifecycleLeak",
+                    "level": level,
+                    "message": {"text": "Lifecycle ownership issue"},
+                    "locations": [{
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": (self.repo / "App.kt").as_uri()},
+                            "region": {"startLine": 1},
+                        }
+                    }],
+                    **({"baselineState": baseline_state} if baseline_state else {}),
+                }],
+            }],
+        }), encoding="utf-8")
+        return report
 
     def test_redacts_sensitive_values_and_deep_link_queries(self) -> None:
         """验证收据不会泄漏 Token、密码或 DeepLink 查询参数。"""
@@ -353,6 +383,100 @@ class ExecutionEvidenceTests(unittest.TestCase):
                 self.context,
             ),
         )
+
+    def test_static_sarif_produces_stable_machine_receipt(self) -> None:
+        """验证项目已有静态工具可以通过统一 SARIF 形成独立、可复核的自动证据。"""
+        report = self._write_static_sarif("warning")
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id="E-STATIC",
+            gate_id="android-static-analysis",
+            command=[sys.executable, "-c", "print('static analysis complete')"],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[report],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        evidence = {
+            "id": "E-STATIC",
+            "gate_id": "android-static-analysis",
+            "command": receipt["command"],
+            "exit_code": 0,
+            "executed_tests": None,
+            "report_paths": [receipt["reports"][0]["path"]],
+            "obligation_test_cases": {},
+        }
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(1, receipt["reports"][0]["static_analysis"]["warnings"])
+        self.assertTrue(receipt["reports"][0]["static_analysis"]["findings"][0]["id"].startswith("FND-"))
+        self.assertEqual([], validate_execution_receipt(
+            receipt_path,
+            sha256_file(receipt_path),
+            evidence,
+            self.context,
+        ))
+
+    def test_static_sarif_error_blocks_zero_exit_command(self) -> None:
+        """验证静态工具即使命令返回零，SARIF 中的 Error 仍会让证据收集失败。"""
+        report = self._write_static_sarif("error")
+        receipt, _, exit_code = run_and_record(
+            evidence_id="E-STATIC-ERROR",
+            gate_id="android-static-analysis",
+            command=[sys.executable, "-c", "pass"],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[report],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+
+        self.assertEqual(3, exit_code)
+        self.assertEqual(1, receipt["reports"][0]["static_analysis"]["errors"])
+        self.assertEqual(1, receipt["reports"][0]["static_analysis"]["blocking_errors"])
+
+    def test_unchanged_historical_error_does_not_block_static_gate(self) -> None:
+        """验证明确 unchanged 的旧 Error 进入记录，但不阻断本次增量交付。"""
+        report = self._write_static_sarif(
+            "error",
+            baseline_state="unchanged",
+            filename="static.sarif.json",
+        )
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id="E-STATIC-HISTORY",
+            gate_id="android-static-analysis",
+            command=[sys.executable, "-c", "pass"],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[report],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        evidence = {
+            "id": "E-STATIC-HISTORY",
+            "gate_id": "android-static-analysis",
+            "command": receipt["command"],
+            "exit_code": 0,
+            "executed_tests": None,
+            "report_paths": [receipt["reports"][0]["path"]],
+            "obligation_test_cases": {},
+        }
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(1, receipt["reports"][0]["static_analysis"]["unchanged_errors"])
+        self.assertEqual(0, receipt["reports"][0]["static_analysis"]["blocking_errors"])
+        self.assertEqual([], validate_execution_receipt(
+            receipt_path,
+            sha256_file(receipt_path),
+            evidence,
+            self.context,
+        ))
 
     def test_malformed_lint_summary_returns_error_instead_of_crashing(self) -> None:
         """验证畸形 Lint 计数字段只会阻断证据，不会让最终门禁异常退出。"""

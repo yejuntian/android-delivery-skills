@@ -97,6 +97,7 @@ AUTOMATED_GATE_PROOFS = {
     "android-test-and-fix",
     "android-build",
     "android-lint",
+    "android-static-analysis",
     "android-data-migration",
 }
 MANUAL_GATE_PROOFS = {

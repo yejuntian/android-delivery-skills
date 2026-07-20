@@ -73,6 +73,7 @@ android-implement-and-verify
 | untracked | 未跟踪文件 | 新建但尚未纳入 Git 管理的文件 |
 | Route | 自动路由 | 根据最终代码差异判断需要调用哪些专项检查 |
 | Schema | 数据结构规则 | 规定机器文件必须有哪些字段、字段是什么类型 |
+| SARIF | 静态分析通用报告格式 | 让 Android Lint、detekt、Semgrep、CodeQL 等工具用统一结构提供告警证据 |
 | Snapshot | 当前状态快照 | 固定某一时刻的需求、代码或证据摘要，供后续核对 |
 | Hash | 内容指纹 | 用一段固定值判断文件或代码是否在检查后发生变化 |
 | P0 / P1 | 严重 / 高优先级问题 | 会阻断交付，需要优先处理的问题级别 |
@@ -243,6 +244,7 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
 - `scripts/requirement_inputs.py`：只对需求正文及配置声明的 UI/API 链接和本地资料生成输入摘要，不访问网络或判断业务。
 - `scripts/delivery_gate.py`：校验最终机器报告和证据新鲜度，并生成同目录中文摘要；不运行测试、不修改代码。
 - `scripts/android_project_capabilities.py`：首次处理项目、构建配置变化或 task 未知时，只读发现模块、variant 和 Gradle task；普通业务修改不必重复运行。
+- `scripts/static_analysis.py`：只规范化已有 SARIF、生成稳定问题编号并审计抑制、基线、排除和配置变化；不安装工具、不判断业务严重级别。
 - `scripts/execution_evidence.py`：只执行已经选择的单 gate 命令，按 attempt 保留日志、testcase 和报告摘要。
 - `scripts/specialist_result.py`：只校验专项统一结果、P0/P1 和证据文件摘要。
 
@@ -256,6 +258,8 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 第二条命令会同步生成 `<requirement_dir>/test-results/delivery-summary.md`。用户只需阅读中文摘要；JSON、哈希和证据路径属于机器附件。退出码为 `0` 才表示最终通过证据仍与当前需求和代码一致；未完成或受阻也会生成摘要，但不能写成通过。该命令不会自动提交 Git。
 
 `android-lint` 默认只执行目标项目自己的 Android Gradle Lint task。最终机器证据必须引用本轮 XML 或 SARIF；HTML 可保留给人查看。报告中的 Fatal/Error 即使因 `abortOnError=false` 得到零退出也会阻断。当前流程不安装或强制外部自定义 Lint，项目已有插件时保持原状。
+
+项目已经配置 detekt、Semgrep、CodeQL 等工具且能够输出 SARIF 时，使用独立的 Kotlin/Java 静态分析收据；本次新增、更新或来源不明的 Error 即使命令返回成功也会阻断。只有报告明确标记为未变化的历史 Error 才保留记录但不阻断，不能由 AI 自己猜成历史问题。稳定性专项同时逐项记录六条生命周期/资源原则；静态门禁配置审计绑定当前代码并核对全部候选，未关闭问题使用稳定 `FND-...` 编号，移动代码行不会把同一问题重新编号。
 
 首次处理项目、构建配置变化或 task 未知时先发现真实能力；普通业务修改直接使用已确认 task。最终命令通过收据执行，不要手填退出码和测试数：
 

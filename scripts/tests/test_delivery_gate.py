@@ -32,7 +32,7 @@ from ..delivery_gate import (  # noqa: E402
     main,
     validate_delivery_result,
 )
-from ..execution_evidence import RECEIPT_PRODUCER, sha256_file  # noqa: E402
+from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, sha256_file  # noqa: E402
 from ..git_changes import current_delivery_snapshot, write_baseline  # noqa: E402
 from ..requirement_snapshot import (  # noqa: E402
     apply_requirement_revision,
@@ -45,6 +45,7 @@ from ..specialist_result import (  # noqa: E402
     IMPACT_CATEGORIES,
     SPECIALIST_PRODUCER,
     SPECIALIST_RESULT_VERSION,
+    STABILITY_STATIC_CHECK_IDS,
 )
 
 
@@ -71,6 +72,19 @@ def passing_code_quality_checks() -> list[dict]:
             "summary": "已结合最终 diff 逐项检查。",
         }
         for check_id in sorted(CODE_QUALITY_CHECK_IDS)
+    ]
+
+
+def passing_stability_checks() -> list[dict]:
+    """生成最终门禁夹具所需的七项静态语义和控制面检查。"""
+    return [
+        {
+            "id": check_id,
+            "required": True,
+            "status": "PASS",
+            "summary": "已结合最终 diff 和必要调用链完成复核。",
+        }
+        for check_id in sorted(STABILITY_STATIC_CHECK_IDS)
     ]
 
 
@@ -112,6 +126,16 @@ class DeliveryGateTests(unittest.TestCase):
         )
         lint_report = self.temp_root / "lint-results.xml"
         lint_report.write_text("<issues/>\n", encoding="utf-8")
+        control_audit = self.temp_root / "static-control-audit.json"
+        control_audit.write_text(json.dumps({
+            "version": 1,
+            "producer": "android-static-control-audit",
+            "project_path": "/tmp/project",
+            "baseline_id": "baseline-1",
+            "snapshot_sha256": self.snapshot,
+            "warnings": [],
+            "control_changes": [],
+        }), encoding="utf-8")
 
         def create_receipt(
             evidence_id: str,
@@ -126,7 +150,7 @@ class DeliveryGateTests(unittest.TestCase):
             stdout.write_text("BUILD SUCCESSFUL\n", encoding="utf-8")
             stderr.write_text("", encoding="utf-8")
             receipt = {
-                "version": 2,
+                "version": RECEIPT_VERSION,
                 "producer": RECEIPT_PRODUCER,
                 "id": evidence_id,
                 "gate_id": gate_id,
@@ -234,7 +258,11 @@ class DeliveryGateTests(unittest.TestCase):
                 specialist_result["checks"] = passing_code_quality_checks()
                 specialist_result["executed_checks"] = len(specialist_result["checks"])
             if skill == "android-audit-stability":
-                specialist_result["capabilities"] = [
+                specialist_result["capabilities"] = [{
+                    "id": "android-static-semantics",
+                    "required": True,
+                    "status": "PASS",
+                }] + [
                     {
                         "id": capability_id,
                         "required": False,
@@ -247,6 +275,17 @@ class DeliveryGateTests(unittest.TestCase):
                         "android-security-privacy",
                     )
                 ]
+                specialist_result["checks"] = passing_stability_checks()
+                specialist_result["executed_checks"] = len(specialist_result["checks"])
+                specialist_result["static_analysis"] = {
+                    "languages": ["KOTLIN"],
+                    "scope_files": ["app/src/main/java/sample/Feature.kt"],
+                    "tools": [],
+                    "control_audit_path": str(control_audit),
+                    "control_audit_sha256": sha256_file(control_audit),
+                    "control_changes": [],
+                    "finding_ids": [],
+                }
             specialist_path = self.temp_root / f"{evidence_id}.specialist.json"
             specialist_path.write_text(json.dumps(specialist_result), encoding="utf-8")
             review_evidence.append({
@@ -669,7 +708,11 @@ class DeliveryGateTests(unittest.TestCase):
         evidence = next(item for item in self.payload["evidence"] if item["id"] == "E-STABILITY")
         result_path = Path(evidence["specialist_result_path"])
         result = json.loads(result_path.read_text(encoding="utf-8"))
-        result["capabilities"][0].update({
+        dynamic_leak = next(
+            item for item in result["capabilities"]
+            if item["id"] == "android-dynamic-leak"
+        )
+        dynamic_leak.update({
             "status": "UNVERIFIED",
             "reason": "当前没有设备执行动态泄漏验证。",
         })

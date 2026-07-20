@@ -186,10 +186,14 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M16 Kotlin / Java Android 静态语义分析
 
-- **来源**：kotlinx.coroutines 与 RxJava 的异步契约，AndroidX 的 Lifecycle/Compose/Lint 实现，LeakCanary 的引用链模型，以及 detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL 的静态能力。
+- **调研日期**：2026-07-20；相关候选按 GitHub Star 近似排序，但只采用与 Android/Kotlin/Java 静态语义、生命周期、并发或泄漏证据直接相关的能力。
+- **来源**：Kotlin 编译器、kotlinx.coroutines 与 RxJava 的语言/异步契约，AndroidX 的 Lifecycle/Compose/Lint 实现，LeakCanary 的引用链模型；detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL、PMD、Checkstyle、P3C、SonarJava 和 Slack Lints 的规则、类型/字节码/数据流、SARIF 与规则测试实践；Gradle、MobSF 和 OWASP MASTG 的可重复执行及静态/动态证据边界。
 - **决策**：不维护无限规则清单，统一用六条不变量审查：短生命周期不被长生命周期持有、注册/解绑成对、获取/释放成对、异步任务不超过宿主、清理路径可达、共享状态具有并发纪律。
 - **语言边界**：Kotlin 优先、Java 一等支持；混合调用额外核对 Nullability/platform type、primitive/boxed、异常、泛型、SAM/Callback、取消传播和公开 API/ABI，不复制第二套流程。
 - **执行**：`android-audit-stability` 建立资源所有权表和按需并发访问表、复核必要调用链并解释告警；`android-test-and-fix` 只发现和执行项目已有编译、Lint、语言专项、跨语言扫描、测试、release/R8 与 API/ABI 任务。
+- **机器门禁**：稳定性专项 version 4 固定要求 `android-static-semantics`、六条不变量和静态控制面七项检查；`static_analysis` 记录语言、实际文件、工具模式/范围、绑定当前代码的控制面审计、全部候选处置和稳定问题编号，防止换模型后只写自然语言结论或漏掉候选。
+- **报告与控制面**：项目已有工具能够输出 SARIF 时使用独立 `android-static-analysis` version 3 收据，直接解析报告 Error、`baselineState` 和稳定 `FND-...`；`new/updated/unknown` Error 阻断，明确 `unchanged` 的历史 Error 只记录不扩改。新增 suppress、baseline、exclude 或失败策略生成 `CTL-...` 并逐项说明，不因命令零退出或配置放宽造绿。
+- **模型评测**：使用 Kotlin、Java、混合语言、安全反例、闭源证据不足和控制面放宽样例评估所有权、调用链、契约和结论边界；评测答案不进入日常 Skill 上下文。
 - **历史债务**：告警区分 `NEW`、`AFFECTED`、`PRE_EXISTING`、`UNKNOWN_ORIGIN`；不更新 baseline 掩盖新增问题，也不借需求清理无关旧问题。
 - **证据边界**：生成代码、反射、AIDL、JNI、闭源 SDK 或 release 行为无法确认时标未验证；静态零告警只能写“未发现明确静态问题”，不能宣称无泄漏、线程安全或实机通过。
 - **原因**：项目配置变化只影响能力发现与证据，不要求修改路由脚本或强制迁移语言、AGP、Gradle、JDK 和测试框架。
@@ -217,7 +221,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **调研日期**：2026-07-19。
 - **来源**：JSON Schema、Gradle/JUnit/Android Lint 原生报告；[Now in Android Build](https://github.com/android/nowinandroid/blob/main/.github/workflows/Build.yaml) 的分层 Build/Lint/Roborazzi/Instrumentation、[Lottie Validate](https://github.com/airbnb/lottie-android/blob/master/.github/workflows/validate.yml) 的 Lint/Unit/API/Snapshot 独立 Job，以及 [Detekt Danger](https://github.com/detekt/detekt/blob/main/bots/dangerfile.js) 的 diff 缺测试提示。
-- **决策**：`route` 把四类条件门禁及直接依据保存到项目外快照，并绑定需求修订、UI/API 输入、Git 基线和代码摘要。Diff Reviewer 使用专项结果 version 3 逐项确认七类语义影响，最终门禁把它与脚本快照取并集。自动命令由独立执行器按单一 gate 保存不可覆盖 attempt、JUnit testcase、Lint 机器报告和脱敏日志；测试/迁移收据强制要求非零 JUnit，普通自动收据不能越权证明专项 gate。稳定性固定记录泄漏/性能/安全适用性，Journey 按需扩展。最终结果契约保持 version 4。
+- **决策**：`route` 把四类条件门禁及直接依据保存到项目外快照，并绑定需求修订、UI/API 输入、Git 基线和代码摘要。Diff Reviewer 使用专项结果 version 4 逐项确认七类语义影响，最终门禁把它与脚本快照取并集。自动命令由独立执行器按单一 gate 保存不可覆盖 attempt、JUnit testcase、Lint/通用 SARIF 机器报告和脱敏日志，执行收据升级为 version 3；测试/迁移收据强制要求非零 JUnit，普通自动收据不能越权证明专项 gate。稳定性固定记录静态语义、泄漏/性能/安全适用性，Journey 按需扩展。最终结果契约保持 version 4。
 - **职责边界**：路由快照只表达候选，不替代业务适用性终判；执行器只运行已经选定的命令，不选择 task、不修代码；最终门禁只校验，不运行命令。
 - **原因**：自然语言约束不能阻止条件专项被漏写，也不能证明 AI 填写的退出码和报告路径真实存在；但强迫普通 Review 填写 Journey 字段也会制造维护成本。最小信封加原生报告在关闭假绿的同时避免建立通用状态机。
 
@@ -276,7 +280,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 8. 没有新鲜执行证据时不能声明完成；没有动态证据时不能宣称无泄漏、无性能问题或实机通过。
 9. 缺少真机不停止其他可执行门禁；只限制对应动态能力和完整交付结论。
 10. 第二轮条件能力复用现有 Skill 和项目工具，不自动安装依赖或扩张为六个新 Skill。
-11. Kotlin/Java/Android 静态审查以六条不变量、语言边界和必要调用链为核心；工具零告警不能改写成无泄漏或线程安全。
+11. Kotlin/Java/Android 静态审查以六条不变量、语言边界和必要调用链为核心；机器结果逐项记录静态检查、工具覆盖、控制面变化和稳定问题编号，工具零告警不能改写成无泄漏或线程安全。
 12. 老项目历史债务与本次新增问题必须分离；不更新 baseline 造绿，也不扩大需求清理无关旧问题。
 13. 每个已确认 BDD 的必需原子 Then 必须有新鲜自动证据、实际人工证据或明确阻塞；任一工具的通过不得覆盖它没有断言的风险。
 14. `init` 永不删除需求 Git 基线，重复 `check-env` 永不覆盖当前起点；中途需求变化保留未变化 ID，最终通过必须绑定当前需求、基线和工作树摘要。

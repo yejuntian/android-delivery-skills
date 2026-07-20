@@ -4,7 +4,7 @@
 用途：执行一条 Android 交付命令并生成可复核的机器收据。
 
 核心流程：在当前确认需求和最新 route 快照上为一个 gate 运行命令，把标准输出、
-错误输出、testcase、Lint 报告和代码摘要写到不可覆盖 attempt；最终门禁重新校验收据。
+错误输出、testcase、Lint/通用 SARIF 报告和代码摘要写到不可覆盖 attempt；最终门禁重新校验收据。
 
 职责边界：只执行用户或 Skill 已经选择的命令，不选择 Gradle task、不判断业务、
 不修代码、不调用其他 Skill，也不执行 Git 写操作。退出码沿用命令结果；证据缺失返回 3，
@@ -41,6 +41,7 @@ from .config_paths import (  # noqa: E402
 )
 from .delivery import DeliveryError, load_config  # noqa: E402
 from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from .static_analysis import StaticAnalysisError, summarize_sarif  # noqa: E402
 from .user_facing_labels import (  # noqa: E402
     ChineseArgumentParser,
     gate_label,
@@ -49,11 +50,13 @@ from .user_facing_labels import (  # noqa: E402
 
 
 RECEIPT_PRODUCER = "android-delivery-execution-evidence"
+RECEIPT_VERSION = 3
 RECEIPT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 KNOWN_EVIDENCE_GATES = {
     "android-test-and-fix",
     "android-build",
     "android-lint",
+    "android-static-analysis",
     "android-verify-api-contract",
     "android-data-migration",
     "android-ui-a11y",
@@ -87,6 +90,12 @@ URL_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]+")
 
 class ExecutionEvidenceError(RuntimeError):
     """表示命令无法安全启动、收据无法写入或收据内容不可验证。"""
+
+
+def _is_sarif_report(path: Path) -> bool:
+    """识别常见 ``.sarif`` 与 ``.sarif.json``，不根据文件正文猜测格式。"""
+    lowered_name = path.name.lower()
+    return lowered_name.endswith(".sarif") or lowered_name.endswith(".sarif.json")
 
 
 def sha256_file(path: str | Path) -> str:
@@ -258,7 +267,7 @@ def _junit_summary(path: Path) -> dict[str, Any] | None:
 def _android_lint_summary(path: Path) -> dict[str, Any] | None:
     """解析 Android Lint XML 或 SARIF，防止 ``abortOnError=false`` 隐藏真实错误。"""
     try:
-        if path.suffix.lower() == ".sarif":
+        if _is_sarif_report(path):
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict) or not isinstance(payload.get("runs"), list):
                 return None
@@ -386,7 +395,7 @@ def validate_execution_receipt(
         return [str(exc)]
     if actual_receipt_sha != expected_sha256:
         errors.append(f"自动证据 {evidence.get('id')} 的执行收据摘要不一致")
-    if receipt.get("version") != 2 or receipt.get("producer") != RECEIPT_PRODUCER:
+    if receipt.get("version") != RECEIPT_VERSION or receipt.get("producer") != RECEIPT_PRODUCER:
         errors.append(f"自动证据 {evidence.get('id')} 的执行收据来源无效")
     if receipt.get("id") != evidence.get("id"):
         errors.append(f"自动证据 {evidence.get('id')} 与执行收据 id 不一致")
@@ -455,6 +464,8 @@ def validate_execution_receipt(
     passed_test_cases: set[str] = set()
     lint_records = 0
     lint_blocking = 0
+    static_records = 0
+    static_blocking = 0
     for record in receipt_reports:
         if not isinstance(record, dict):
             errors.append(f"自动证据 {evidence.get('id')} 包含无效报告记录")
@@ -508,6 +519,21 @@ def validate_execution_receipt(
                 lint_counts[field] = value
             if "fatal" in lint_counts and "errors" in lint_counts:
                 lint_blocking += lint_counts["fatal"] + lint_counts["errors"]
+        static_analysis = record.get("static_analysis")
+        if isinstance(static_analysis, dict):
+            static_records += 1
+            try:
+                actual_static = summarize_sarif(report_path, project_path)
+            except StaticAnalysisError as exc:
+                errors.append(f"自动证据 {evidence.get('id')} 的 SARIF 报告无法复核: {exc}")
+                actual_static = None
+            if actual_static != static_analysis:
+                errors.append(f"自动证据 {evidence.get('id')} 的静态分析汇总与报告不一致: {report_path}")
+            blocking = static_analysis.get("blocking_errors")
+            if not isinstance(blocking, int) or isinstance(blocking, bool) or blocking < 0:
+                errors.append(f"自动证据 {evidence.get('id')} 的静态分析 blocking_errors 字段无效")
+            else:
+                static_blocking += blocking
     receipt_test_count = receipt.get("executed_tests")
     if isinstance(receipt_test_count, int) and (
         junit_records == 0 or junit_executed != receipt_test_count
@@ -546,6 +572,13 @@ def validate_execution_receipt(
             errors.append(f"自动证据 {evidence.get('id')} 缺少 Android Lint XML/SARIF 机器报告")
         if lint_blocking > 0:
             errors.append(f"自动证据 {evidence.get('id')} 的 Android Lint 报告仍有 Fatal/Error")
+    if gate_id == "android-static-analysis":
+        if static_records == 0:
+            errors.append(f"自动证据 {evidence.get('id')} 缺少可解析的 SARIF 机器报告")
+        if static_blocking > 0:
+            errors.append(
+                f"自动证据 {evidence.get('id')} 的静态分析报告仍有新增、更新或来源不明 Error"
+            )
 
     for log_name in ("stdout", "stderr"):
         record = receipt.get(log_name)
@@ -695,11 +728,17 @@ def run_and_record(
             lint = _android_lint_summary(path)
             if lint is not None:
                 record["android_lint"] = lint
+            if _is_sarif_report(path):
+                try:
+                    record["static_analysis"] = summarize_sarif(path, project_path)
+                except StaticAnalysisError:
+                    # 显式静态 gate 会在下方因缺少可解析报告而失败；其他 gate 保留原始文件证据。
+                    pass
         report_records.append(record)
     executed_tests = sum(test_counts) if test_counts else None
     redacted_command = redact_command(command)
     receipt = {
-        "version": 2,
+        "version": RECEIPT_VERSION,
         "producer": RECEIPT_PRODUCER,
         "id": evidence_id,
         "gate_id": gate_id,
@@ -751,6 +790,16 @@ def run_and_record(
         if not lint_summaries or any(
             summary.get("fatal", 0) > 0 or summary.get("errors", 0) > 0
             for summary in lint_summaries
+        ):
+            collector_exit = 3
+    if exit_code == 0 and gate_id == "android-static-analysis":
+        static_summaries = [
+            record["static_analysis"]
+            for record in report_records
+            if isinstance(record.get("static_analysis"), dict)
+        ]
+        if not static_summaries or any(
+            summary.get("blocking_errors", 0) > 0 for summary in static_summaries
         ):
             collector_exit = 3
     if exit_code == 0 and after_snapshot != context["snapshot_sha256"]:

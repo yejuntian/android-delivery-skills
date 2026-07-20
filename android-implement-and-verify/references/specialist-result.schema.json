@@ -22,7 +22,7 @@
     "obligation_sha256s"
   ],
   "properties": {
-    "version": { "const": 3 },
+    "version": { "const": 4 },
     "producer": { "const": "android-delivery-specialist-result" },
     "id": { "type": "string", "minLength": 1 },
     "skill": { "type": "string", "minLength": 1 },
@@ -55,6 +55,87 @@
           "id": { "type": "string" },
           "severity": { "enum": ["P0", "P1", "P2", "P3"] },
           "summary": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "static_analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "languages",
+        "scope_files",
+        "tools",
+        "control_audit_path",
+        "control_audit_sha256",
+        "control_changes",
+        "finding_ids"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "items": { "enum": ["KOTLIN", "JAVA", "MIXED", "NONE"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "scope_files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status", "version", "mode", "scope", "cross_file"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "status": { "enum": ["PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"] },
+              "version": { "type": "string", "minLength": 1 },
+              "mode": { "enum": ["COMPILER", "TYPE_RESOLVED", "SYNTAX_ONLY", "BYTECODE", "DATAFLOW", "UNKNOWN"] },
+              "scope": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
+              "cross_file": { "type": ["boolean", "null"] },
+              "reason": { "type": "string", "minLength": 1 },
+              "evidence_path": { "type": "string", "minLength": 1 },
+              "evidence_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "status": { "const": "PASS" } },
+                  "required": ["status"]
+                },
+                "then": { "required": ["evidence_path", "evidence_sha256"] },
+                "else": { "required": ["reason"] }
+              }
+            ]
+          }
+        },
+        "control_audit_path": { "type": "string", "minLength": 1 },
+        "control_audit_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "control_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "path", "kind", "decision", "reason"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^CTL-[A-F0-9]{16}$" },
+              "path": { "type": "string", "minLength": 1 },
+              "kind": { "enum": ["SUPPRESSION", "BASELINE", "EXCLUSION", "CONFIG"] },
+              "decision": { "enum": ["JUSTIFIED", "REMOVED", "BLOCKING"] },
+              "reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "finding_ids": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^FND-[A-F0-9]{16}$" },
+          "uniqueItems": true
         }
       }
     },
@@ -217,15 +298,37 @@
         "required": ["skill"]
       },
       "then": {
-        "required": ["capabilities"],
+        "required": ["capabilities", "checks", "executed_checks", "static_analysis"],
         "properties": {
           "capabilities": {
-            "minItems": 3,
+            "minItems": 4,
             "allOf": [
+              { "contains": { "properties": { "id": { "const": "android-static-semantics" } }, "required": ["id"] } },
               { "contains": { "properties": { "id": { "const": "android-dynamic-leak" } }, "required": ["id"] } },
               { "contains": { "properties": { "id": { "const": "android-performance" } }, "required": ["id"] } },
               { "contains": { "properties": { "id": { "const": "android-security-privacy" } }, "required": ["id"] } }
             ]
+          },
+          "checks": {
+            "minItems": 7,
+            "allOf": [
+              { "contains": { "properties": { "id": { "const": "static-short-lifetime-ownership" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "static-registration-pairing" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "static-resource-pairing" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "static-async-lifetime" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "static-cleanup-reachability" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "static-concurrency-discipline" } }, "required": ["id"] } },
+              { "contains": { "properties": { "id": { "const": "static-control-changes" } }, "required": ["id"] } }
+            ]
+          },
+          "executed_checks": { "minimum": 7 },
+          "unresolved_findings": {
+            "items": {
+              "required": ["id"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^FND-[A-F0-9]{16}$" }
+              }
+            }
           }
         }
       }

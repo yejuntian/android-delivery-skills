@@ -18,7 +18,7 @@
 
 ## 共同原则
 
-- 同时结合已确认需求与最终 diff 判断适用性，路径和注解只提供候选证据。脚本候选与 `android-review-diff` v3 的七类 `confirmed_impacts` 取并集，任一来源确认的条件能力都必须进入最终门禁。
+- 同时结合已确认需求与最终 diff 判断适用性，路径和注解只提供候选证据。脚本候选与 `android-review-diff` v4 的七类 `confirmed_impacts` 取并集，任一来源确认的条件能力都必须进入最终门禁。
 - 不适用写明原因；需要但缺少工具、设备、契约、旧数据或基准时写“未验证”，不得改写成通过。
 - 先复用目标项目已有依赖、任务、测试框架和报告；不自动安装重型工具或升级 AGP/Gradle。
 - 外部工具只采集事实，AI 结合需求与代码判断根因；工具告警不自动等同于生产缺陷。
@@ -42,7 +42,7 @@
 
 `不适用` 表示该需求没有对应影响；`未验证` 表示本应检查但缺少条件。两者不得混用。
 
-机器结果中，Diff Reviewer 必须逐项确认 `ui/api/data/system/build/architecture/tests`，适用项绑定真实 diff 文件和原因；这些语义影响用于补充条件门禁，不直接证明专项通过。稳定性专项固定使用 `android-dynamic-leak`、`android-performance`、`android-security-privacy` 三个 capability ID；迁移和 UI/A11y 分别使用 `android-data-migration`、`android-ui-a11y` gate。适用但缺少设备时使用 `UNVERIFIED` 并进入 `pending_capabilities`，同时引用同能力的专项或实际人工阻塞证据；不得用无关构建、Unit 或 Review 证据占位。
+机器结果中，Diff Reviewer 必须逐项确认 `ui/api/data/system/build/architecture/tests`，适用项绑定真实 diff 文件和原因；这些语义影响用于补充条件门禁，不直接证明专项通过。稳定性专项固定使用必需的 `android-static-semantics`，以及 `android-dynamic-leak`、`android-performance`、`android-security-privacy` 三个条件 capability ID；迁移和 UI/A11y 分别使用 `android-data-migration`、`android-ui-a11y` gate。适用但缺少设备时使用 `UNVERIFIED` 并进入 `pending_capabilities`，同时引用同能力的专项或实际人工阻塞证据；不得用无关构建、Unit 或 Review 证据占位。
 
 ## 设备与降级
 

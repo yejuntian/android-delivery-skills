@@ -123,6 +123,8 @@ GATE_LABELS = {
     "android-test-and-fix": "自动化测试与修复",
     "android-build": "项目构建",
     "android-lint": "Android 静态检查（Lint）",
+    "android-static-analysis": "Kotlin/Java 静态分析",
+    "android-static-semantics": "Android 静态生命周期与资源检查",
     "android-verify-api-contract": "接口契约检查",
     "android-data-migration": "数据迁移检查",
     "android-ui-a11y": "界面与无障碍检查",

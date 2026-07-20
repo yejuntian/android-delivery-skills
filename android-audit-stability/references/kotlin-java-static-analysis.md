@@ -95,6 +95,8 @@
 
 读取项目已有配置、报告和可比较基线，确认规则是否实际启用、报告是否来自最终代码，并区分新增、受影响、历史和来源不明告警。
 
+同时执行 `scripts/static_analysis.py audit-controls`，审查本次新增的抑制、baseline、排除、失败策略和静态工具配置。审计文件绑定当前 Git 基线与代码摘要，专项结果保存其路径和摘要，并与全部 `CTL-...` 候选逐项对齐；候选不直接等于生产缺陷，但漏写、证据过期或仍用于隐藏本次问题时保持阻断。
+
 ### 7. 给出有边界的结论
 
 明确区分“明确静态问题”“未发现明确静态问题”“证据不足”和“动态未验证”。
@@ -294,6 +296,8 @@ Stream、Cursor、Socket、File、ParcelFileDescriptor、Camera、Media、WebVie
 - 不自动安装、不修改版本、不接入新插件。
 - 不自动创建或更新 baseline，不批量 suppress 告警。
 - 先确认规则配置、扫描范围、退出码和报告时间，再使用结果。
+- 工具支持 SARIF 时优先使用 `execution_evidence.py --gate android-static-analysis`；机器收据必须从报告本身重新统计 Error/Warning、`baselineState` 和稳定 `FND-...` 编号。`new/updated/unknown` Error 阻断；只有报告明确标记 `unchanged` 的历史 Error 不阻断本次增量交付，但仍保留在报告和剩余风险中。
+- 每个已执行工具记录版本、`COMPILER/TYPE_RESOLVED/SYNTAX_ONLY/BYTECODE/DATAFLOW/UNKNOWN` 模式、实际模块或 source set、是否跨文件以及新鲜证据文件。无法确认时显式写 unknown 或未验证。
 - Semgrep 社区能力或单文件规则不能冒充完整跨函数/跨模块证明。
 - CodeQL 支持 Kotlin/Java 也不代表项目已配置或查询覆盖当前框架语义。
 - 工具无告警只能说明其已启用规则未发现命中，不能证明无泄漏。
@@ -312,7 +316,9 @@ Stream、Cursor、Socket、File、ParcelFileDescriptor、Camera、Media、WebVie
 - 不更新 baseline、改规则或加 suppress 掩盖 `NEW`。
 - 不为了清理 `PRE_EXISTING` 扩大需求范围，也不能用历史告警数量忽略 `NEW`。
 - 没有可靠基线时只能按当前 diff 和调用链判断；无法归因的告警不自动算通过或生产缺陷。
+- SARIF 未提供或提供未知 `baselineState` 时归为来源不明并保持阻断；不得仅凭文件位置或模型判断把 Error 降为历史问题。
 - 完成声明必须关闭本次新增和直接受影响的 P0/P1；无关历史债务进入剩余风险，不混入本次修复。
+- 未关闭发现使用 `scripts/static_analysis.py finding-id` 根据工具/不变量、项目相对路径、符号和稳定语义生成 `FND-...`；行号变化不重新编号，同一编号不得在一份结果中重复计数。
 
 ## 静态与动态结论边界
 
@@ -347,10 +353,13 @@ Kotlin/Java/Android 静态语义审查：
 - 并发访问表：适用时见表格
 - 混合语言/公开契约：适用性、调用方和 ABI/API 证据
 - 项目已有工具：命令、配置、退出码、报告路径；未执行时说明原因
+- 工具覆盖：版本、分析模式、实际模块/source set、是否跨文件、报告摘要
+- 静态控制面：绑定当前代码的审计文件路径/摘要，以及全部 CTL 编号、抑制/baseline/排除/配置、处置和理由
 - 告警归因：NEW / AFFECTED / PRE_EXISTING / UNKNOWN_ORIGIN
 - 生成/反射/JNI/闭源边界：已确认事实与证据缺口
 - release/R8：适用性、variant、命令与结论
 - 明确静态问题：位置、触发路径、违反的不变量、影响
+- 稳定问题编号：每个未关闭项的 FND 编号
 - 静态结论：明确静态问题 / 未发现明确静态问题 / 静态证据不足
 - 动态适用性：适用 / 不适用
 - 动态证据：设备、路径、工具和结果
@@ -364,3 +373,4 @@ Kotlin/Java/Android 静态语义审查：
 - 不把一次项目缺陷扩写成全局强制规则；先记录其 API 契约和适用条件。
 - 工具列表变化时只调整发现和执行策略，不改变“项目已有工具优先、缺失不安装”的边界。
 - 更新本文后，同步稳定性 Skill、测试执行 Skill、行为评测场景和开源设计依据。
+- 更换模型或修改规则后，使用 `static-analysis-eval-scenarios.md` 的 Kotlin、Java、混合、安全反例和证据不足场景重新评分；不得把预期答案提前提供给被测模型。

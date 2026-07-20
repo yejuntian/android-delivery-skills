@@ -4,8 +4,8 @@
 用途：校验 Android 专项审查的最小机器信封、Diff 语义影响、代码质量核心检查，
 以及按需附加的动态/Agent 证据。
 
-核心流程：统一核对上下文、结论、P0-P3 和未关闭项；Diff Reviewer 逐项确认七类
-工程影响，代码质量审查固定确认分层、职责、核心注释和可测试性，其他专项按需扩展。
+核心流程：统一核对上下文、结论、P0-P3 和稳定未关闭项；Diff Reviewer 逐项确认七类
+工程影响，代码质量固定确认四项质量检查，稳定性固定确认静态语义、工具范围和控制面。
 
 职责边界：不执行专项 Skill、不生成审查结论、不运行工程命令、不修代码，只定位
 项目外结果目录并验证其他执行者已经产出的结构化结果及其证据文件。
@@ -26,11 +26,14 @@ if __package__ in {None, ""}:
 
 from .config_paths import specialist_directory_for_config  # noqa: E402
 from .execution_evidence import redact_command, sha256_file  # noqa: E402
+from .static_analysis import (  # noqa: E402
+    CONTROL_AUDIT_PRODUCER as STATIC_CONTROL_AUDIT_PRODUCER,
+)
 from .user_facing_labels import ChineseArgumentParser, localize_machine_terms  # noqa: E402
 
 
 SPECIALIST_PRODUCER = "android-delivery-specialist-result"
-SPECIALIST_RESULT_VERSION = 3
+SPECIALIST_RESULT_VERSION = 4
 SPECIALIST_CONCLUSIONS = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 CAPABILITY_STATUSES = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 SEVERITIES = {"P0", "P1", "P2", "P3"}
@@ -52,14 +55,282 @@ IMPACT_CONDITIONAL_GATES = {
     "system": {"android-security-privacy"},
 }
 STABILITY_CAPABILITIES = {
+    "android-static-semantics",
     "android-dynamic-leak",
     "android-performance",
     "android-security-privacy",
 }
+STABILITY_STATIC_CHECK_IDS = {
+    "static-short-lifetime-ownership",
+    "static-registration-pairing",
+    "static-resource-pairing",
+    "static-async-lifetime",
+    "static-cleanup-reachability",
+    "static-concurrency-discipline",
+    "static-control-changes",
+}
+FINDING_ID_PATTERN = re.compile(r"FND-[A-F0-9]{16}")
+CONTROL_ID_PATTERN = re.compile(r"CTL-[A-F0-9]{16}")
+STATIC_LANGUAGES = {"KOTLIN", "JAVA", "MIXED", "NONE"}
+STATIC_TOOL_MODES = {
+    "COMPILER", "TYPE_RESOLVED", "SYNTAX_ONLY", "BYTECODE", "DATAFLOW", "UNKNOWN",
+}
+STATIC_CONTROL_KINDS = {"SUPPRESSION", "BASELINE", "EXCLUSION", "CONFIG"}
+STATIC_CONTROL_DECISIONS = {"JUSTIFIED", "REMOVED", "BLOCKING"}
 
 
 class SpecialistResultError(RuntimeError):
     """表示专项结果文件无法读取或不符合统一结果契约。"""
+
+
+def _project_relative_path(value: Any) -> bool:
+    """专项范围只接受项目相对路径，避免报告绑定其他机器上的任意位置。"""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    path = Path(value)
+    return not path.is_absolute() and ".." not in path.parts
+
+
+def _has_unique_values(value: Any) -> bool:
+    """安全判断数组唯一性，畸形 object/list 元素只返回失败而不抛出异常。"""
+    if not isinstance(value, list):
+        return False
+    try:
+        return len(value) == len(set(value))
+    except TypeError:
+        return False
+
+
+def _validate_static_analysis(
+    value: Any,
+    conclusion: str,
+    unresolved: list[Any],
+    context: dict[str, Any],
+) -> list[str]:
+    """校验稳定性专项的语言范围、工具覆盖、控制面处置和稳定问题编号。"""
+    errors: list[str] = []
+    if not isinstance(value, dict):
+        return ["稳定性专项缺少 static_analysis 机器摘要"]
+    expected_fields = {
+        "languages",
+        "scope_files",
+        "tools",
+        "control_audit_path",
+        "control_audit_sha256",
+        "control_changes",
+        "finding_ids",
+    }
+    if set(value) != expected_fields:
+        errors.append(
+            "static_analysis 必须只包含 languages、scope_files、tools、control_audit_path、"
+            "control_audit_sha256、control_changes、finding_ids"
+        )
+
+    languages = value.get("languages")
+    if (
+        not isinstance(languages, list)
+        or not languages
+        or not _has_unique_values(languages)
+        or any(language not in STATIC_LANGUAGES for language in languages)
+        or ("NONE" in languages and len(languages) != 1)
+    ):
+        errors.append("static_analysis.languages 必须是有效且不重复的 Kotlin/Java/混合/无代码范围")
+        languages = []
+    scope_files = value.get("scope_files")
+    if not _has_unique_values(scope_files) or not all(
+        _project_relative_path(path) for path in scope_files
+    ):
+        errors.append("static_analysis.scope_files 必须是唯一的项目相对路径")
+        scope_files = []
+    if languages and languages != ["NONE"] and not scope_files:
+        errors.append("存在 Kotlin/Java 静态范围时必须记录 scope_files")
+    if languages == ["NONE"] and scope_files:
+        errors.append("languages=NONE 时 scope_files 必须为空")
+
+    tools = value.get("tools")
+    if not isinstance(tools, list):
+        errors.append("static_analysis.tools 必须是数组")
+        tools = []
+    seen_tools: set[str] = set()
+    allowed_tool_fields = {
+        "id", "status", "version", "mode", "scope", "cross_file",
+        "reason", "evidence_path", "evidence_sha256",
+    }
+    for index, tool in enumerate(tools):
+        if not isinstance(tool, dict):
+            errors.append(f"static_analysis.tools[{index}] 必须是 object")
+            continue
+        if not set(tool).issubset(allowed_tool_fields):
+            errors.append(f"static_analysis.tools[{index}] 包含未知字段")
+        tool_id = tool.get("id")
+        if not isinstance(tool_id, str) or not tool_id.strip():
+            errors.append(f"static_analysis.tools[{index}] 缺少 id")
+        elif tool_id in seen_tools:
+            errors.append(f"static_analysis.tools 存在重复工具: {tool_id}")
+        else:
+            seen_tools.add(tool_id)
+        status = tool.get("status")
+        if status not in CAPABILITY_STATUSES:
+            errors.append(f"static_analysis.tools[{index}].status 无效")
+        if not isinstance(tool.get("version"), str) or not tool["version"].strip():
+            errors.append(f"static_analysis.tools[{index}] 缺少 version，未知时显式写 unknown")
+        if tool.get("mode") not in STATIC_TOOL_MODES:
+            errors.append(f"static_analysis.tools[{index}].mode 无效")
+        scope = tool.get("scope")
+        if not _has_unique_values(scope) or not all(
+            isinstance(item, str) and item.strip() for item in scope
+        ):
+            errors.append(f"static_analysis.tools[{index}].scope 必须是唯一字符串数组")
+        if tool.get("cross_file") is not None and not isinstance(tool.get("cross_file"), bool):
+            errors.append(f"static_analysis.tools[{index}].cross_file 必须是 boolean 或 null")
+        if status == "PASS":
+            evidence_path = Path(str(tool.get("evidence_path", ""))).expanduser()
+            digest = tool.get("evidence_sha256")
+            if not evidence_path.is_file() or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+                errors.append(f"static_analysis.tools[{index}] 通过时缺少有效证据文件和摘要")
+            else:
+                try:
+                    if sha256_file(evidence_path) != digest:
+                        errors.append(f"static_analysis.tools[{index}] 证据文件摘要已变化")
+                except OSError as exc:
+                    errors.append(f"static_analysis.tools[{index}] 证据文件无法读取: {exc}")
+        elif not isinstance(tool.get("reason"), str) or not tool["reason"].strip():
+            errors.append(f"static_analysis.tools[{index}] 非通过时必须说明能力损失")
+
+    controls = value.get("control_changes")
+    if not isinstance(controls, list):
+        errors.append("static_analysis.control_changes 必须是数组")
+        controls = []
+    seen_controls: set[str] = set()
+    for index, control in enumerate(controls):
+        if not isinstance(control, dict) or set(control) != {"id", "path", "kind", "decision", "reason"}:
+            errors.append(f"static_analysis.control_changes[{index}] 结构无效")
+            continue
+        identifier = control.get("id")
+        if not isinstance(identifier, str) or not CONTROL_ID_PATTERN.fullmatch(identifier):
+            errors.append(f"static_analysis.control_changes[{index}].id 无效")
+        elif identifier in seen_controls:
+            errors.append(f"static_analysis.control_changes 存在重复 id: {identifier}")
+        else:
+            seen_controls.add(identifier)
+        if not _project_relative_path(control.get("path")):
+            errors.append(f"static_analysis.control_changes[{index}].path 必须是项目相对路径")
+        if control.get("kind") not in STATIC_CONTROL_KINDS:
+            errors.append(f"static_analysis.control_changes[{index}].kind 无效")
+        if control.get("decision") not in STATIC_CONTROL_DECISIONS:
+            errors.append(f"static_analysis.control_changes[{index}].decision 无效")
+        if not isinstance(control.get("reason"), str) or not control["reason"].strip():
+            errors.append(f"static_analysis.control_changes[{index}] 必须说明处置理由")
+        if conclusion == "PASS" and control.get("decision") == "BLOCKING":
+            errors.append(f"静态控制面变化 {identifier or index} 仍阻断时不能标记 PASS")
+
+    audit_path_value = value.get("control_audit_path")
+    audit_digest = value.get("control_audit_sha256")
+    audit_path = Path(str(audit_path_value or "")).expanduser()
+    audit_payload: Any = None
+    if (
+        not isinstance(audit_path_value, str)
+        or not audit_path_value.strip()
+        or not audit_path.is_absolute()
+        or not isinstance(audit_digest, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", audit_digest)
+        or not audit_path.is_file()
+    ):
+        errors.append("static_analysis 缺少有效的控制面审计文件和摘要")
+    else:
+        try:
+            if sha256_file(audit_path) != audit_digest:
+                errors.append("static_analysis 控制面审计文件摘要已变化")
+            audit_payload = json.loads(audit_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            errors.append(f"static_analysis 控制面审计文件无法读取: {exc}")
+
+    if isinstance(audit_payload, dict):
+        expected_audit_fields = {
+            "version",
+            "producer",
+            "project_path",
+            "baseline_id",
+            "snapshot_sha256",
+            "warnings",
+            "control_changes",
+        }
+        if set(audit_payload) != expected_audit_fields:
+            errors.append("static_analysis 控制面审计字段不完整或包含未知字段")
+        if (
+            audit_payload.get("version") != 1
+            or audit_payload.get("producer") != STATIC_CONTROL_AUDIT_PRODUCER
+        ):
+            errors.append("static_analysis 控制面审计来源或版本无效")
+        if audit_payload.get("baseline_id") != context.get("baseline_id"):
+            errors.append("static_analysis 控制面审计不属于当前 Git 基线")
+        if audit_payload.get("snapshot_sha256") != context.get("snapshot_sha256"):
+            errors.append("static_analysis 控制面审计不是基于当前代码摘要")
+        project_path = context.get("project_path")
+        if project_path and Path(str(audit_payload.get("project_path", ""))).resolve() != Path(
+            str(project_path)
+        ).resolve():
+            errors.append("static_analysis 控制面审计不属于当前 Android 项目")
+        warnings = audit_payload.get("warnings")
+        if not isinstance(warnings, list) or any(
+            not isinstance(warning, str) for warning in warnings
+        ):
+            errors.append("static_analysis 控制面审计 warnings 无效")
+        elif conclusion == "PASS" and warnings:
+            errors.append("static_analysis 控制面审计存在未解决的 Git 收集警告")
+
+        audited_controls = audit_payload.get("control_changes")
+        audited_identity: set[tuple[str, str, str]] = set()
+        if not isinstance(audited_controls, list):
+            errors.append("static_analysis 控制面审计缺少 control_changes")
+        else:
+            for index, candidate in enumerate(audited_controls):
+                if not isinstance(candidate, dict) or set(candidate) != {
+                    "id", "path", "kind", "summary",
+                }:
+                    errors.append(f"控制面审计候选[{index}] 结构无效")
+                    continue
+                identity = (
+                    str(candidate.get("id", "")),
+                    str(candidate.get("path", "")),
+                    str(candidate.get("kind", "")),
+                )
+                if (
+                    not CONTROL_ID_PATTERN.fullmatch(identity[0])
+                    or not _project_relative_path(identity[1])
+                    or identity[2] not in STATIC_CONTROL_KINDS
+                    or not isinstance(candidate.get("summary"), str)
+                    or not candidate["summary"].strip()
+                ):
+                    errors.append(f"控制面审计候选[{index}] 内容无效")
+                if identity in audited_identity:
+                    errors.append(f"控制面审计候选重复: {identity[0]}")
+                audited_identity.add(identity)
+            reported_identity = {
+                (str(item.get("id", "")), str(item.get("path", "")), str(item.get("kind", "")))
+                for item in controls
+                if isinstance(item, dict)
+            }
+            if audited_identity != reported_identity:
+                errors.append("static_analysis.control_changes 与控制面审计候选不一致")
+    elif audit_payload is not None:
+        errors.append("static_analysis 控制面审计根节点必须是 object")
+
+    finding_ids = value.get("finding_ids")
+    if not _has_unique_values(finding_ids) or not all(
+        isinstance(identifier, str) and FINDING_ID_PATTERN.fullmatch(identifier)
+        for identifier in finding_ids
+    ):
+        errors.append("static_analysis.finding_ids 必须是唯一的稳定问题编号数组")
+        finding_ids = []
+    unresolved_ids = {
+        item.get("id") for item in unresolved
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    missing_ids = sorted(unresolved_ids - set(finding_ids))
+    if missing_ids:
+        errors.append("static_analysis.finding_ids 缺少未关闭问题: " + ", ".join(missing_ids))
+    return errors
 
 
 def conditional_gates_from_confirmed_impacts(payload: dict[str, Any]) -> set[str]:
@@ -236,6 +507,15 @@ def validate_specialist_result(
             errors.append(
                 "稳定性专项缺少能力适用性结论: " + ", ".join(missing_capabilities)
             )
+        static_capability = next(
+            (
+                item for item in capabilities
+                if isinstance(item, dict) and item.get("id") == "android-static-semantics"
+            ),
+            None,
+        )
+        if not static_capability or static_capability.get("required") is not True:
+            errors.append("稳定性专项必须把 android-static-semantics 标记为必需能力")
 
     commands = payload.get("commands", [])
     if not isinstance(commands, list) or not all(
@@ -288,6 +568,35 @@ def validate_specialist_result(
             errors.append(
                 "代码质量专项缺少必需检查: " + ", ".join(missing_quality_checks)
             )
+    if payload.get("skill") == STABILITY_SKILL:
+        for index, item in enumerate(unresolved):
+            if isinstance(item, dict) and (
+                not isinstance(item.get("id"), str)
+                or not FINDING_ID_PATTERN.fullmatch(item["id"])
+            ):
+                errors.append(
+                    f"稳定性 unresolved_findings[{index}].id 必须是稳定问题编号 FND-加16位十六进制"
+                )
+        missing_static_checks = sorted(STABILITY_STATIC_CHECK_IDS - seen_checks)
+        if missing_static_checks:
+            errors.append(
+                "稳定性专项缺少静态语义检查: " + ", ".join(missing_static_checks)
+            )
+        for item in checks:
+            if (
+                isinstance(item, dict)
+                and item.get("id") in STABILITY_STATIC_CHECK_IDS
+                and item.get("required") is not True
+            ):
+                errors.append(f"稳定性静态语义检查 {item.get('id')} 必须 required=true")
+        errors.extend(
+            _validate_static_analysis(
+                payload.get("static_analysis"),
+                str(conclusion),
+                unresolved,
+                context or payload,
+            )
+        )
     executed_tests = payload.get("executed_tests")
     if executed_tests is not None and (
         not isinstance(executed_tests, int) or executed_tests < 0

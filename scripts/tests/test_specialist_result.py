@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -30,6 +31,7 @@ from ..specialist_result import (  # noqa: E402
     IMPACT_CATEGORIES,
     SPECIALIST_PRODUCER,
     SPECIALIST_RESULT_VERSION,
+    STABILITY_STATIC_CHECK_IDS,
     conditional_gates_from_confirmed_impacts,
     main,
     validate_specialist_result,
@@ -62,6 +64,53 @@ def passing_code_quality_checks() -> list[dict]:
     ]
 
 
+def passing_stability_checks() -> list[dict]:
+    """生成六条静态不变量和控制面审计均已实际复核的机器检查。"""
+    return [
+        {
+            "id": check_id,
+            "required": True,
+            "status": "PASS",
+            "summary": "已结合最终 diff、必要调用链和项目配置完成复核。",
+        }
+        for check_id in sorted(STABILITY_STATIC_CHECK_IDS)
+    ]
+
+
+def passing_static_analysis(audit_path: Path, audit_sha256: str) -> dict:
+    """生成不依赖外部扫描器的最小 Kotlin 静态语义范围摘要。"""
+    return {
+        "languages": ["KOTLIN"],
+        "scope_files": ["app/src/main/java/sample/Feature.kt"],
+        "tools": [],
+        "control_audit_path": str(audit_path),
+        "control_audit_sha256": audit_sha256,
+        "control_changes": [],
+        "finding_ids": [],
+    }
+
+
+def stability_capabilities() -> list[dict]:
+    """生成必需静态能力通过、三项动态能力明确不适用的稳定性能力集。"""
+    return [{
+        "id": "android-static-semantics",
+        "required": True,
+        "status": "PASS",
+    }] + [
+        {
+            "id": capability_id,
+            "required": False,
+            "status": "SKIPPED",
+            "reason": "需求与最终 diff 均未涉及。",
+        }
+        for capability_id in (
+            "android-dynamic-leak",
+            "android-performance",
+            "android-security-privacy",
+        )
+    ]
+
+
 class SpecialistResultTests(unittest.TestCase):
     """验证自然语言专项报告必须同时满足机器阻断和证据完整性。"""
 
@@ -80,6 +129,8 @@ class SpecialistResultTests(unittest.TestCase):
             "baseline_id": "baseline-1",
             "snapshot_sha256": "a" * 64,
         }
+        self.control_audit = self.root / "static-control-audit.json"
+        self._write_control_audit()
         self.payload = {
             "version": SPECIALIST_RESULT_VERSION,
             "producer": SPECIALIST_PRODUCER,
@@ -94,6 +145,24 @@ class SpecialistResultTests(unittest.TestCase):
             "obligation_sha256s": {},
         }
 
+    def _write_control_audit(self, controls: list[dict] | None = None) -> str:
+        """写入绑定当前基线和代码摘要的确定性控制面候选。"""
+        payload = {
+            "version": 1,
+            "producer": "android-static-control-audit",
+            "project_path": str(self.root),
+            "baseline_id": self.context["baseline_id"],
+            "snapshot_sha256": self.context["snapshot_sha256"],
+            "warnings": [],
+            "control_changes": controls or [],
+        }
+        self.control_audit.write_text(json.dumps(payload), encoding="utf-8")
+        return sha256_file(self.control_audit)
+
+    def _passing_static_analysis(self) -> dict:
+        """引用当前测试已写入且摘要未变化的控制面审计文件。"""
+        return passing_static_analysis(self.control_audit, sha256_file(self.control_audit))
+
     def test_accepts_current_pass_result(self) -> None:
         """验证普通 Review 只填写公共阻断字段也能形成有效结果。"""
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
@@ -102,7 +171,7 @@ class SpecialistResultTests(unittest.TestCase):
         """验证自然语言写 PASS 不能覆盖仍未关闭的 P1。"""
         self.payload["findings"]["P1"] = 1
         self.payload["unresolved_findings"] = [{
-            "id": "F-1",
+            "id": "FND-0123456789ABCDEF",
             "severity": "P1",
             "summary": "公共 API 行为不兼容。",
         }]
@@ -110,9 +179,9 @@ class SpecialistResultTests(unittest.TestCase):
         self.assertTrue(any("存在 P0/P1" in error for error in errors))
         self.assertTrue(any("未关闭 P0/P1" in error for error in errors))
 
-    def test_rejects_legacy_version_two_result(self) -> None:
-        """验证新增语义影响契约后，旧 v2 专项结果不能继续通过。"""
-        self.payload["version"] = 2
+    def test_rejects_legacy_version_three_result(self) -> None:
+        """验证新增静态机器门禁后，旧 v3 专项结果不能继续通过。"""
+        self.payload["version"] = 3
 
         errors = validate_specialist_result(self.payload, self.context)
 
@@ -223,26 +292,116 @@ class SpecialistResultTests(unittest.TestCase):
         self.assertTrue(any("必需能力 dynamic-leak" in error for error in errors))
 
     def test_stability_requires_all_capability_decisions(self) -> None:
-        """验证稳定性 PASS 必须记录泄漏、性能和安全隐私适用性。"""
+        """验证稳定性 PASS 必须记录静态语义和三项条件能力，并逐项执行固定检查。"""
         self.payload["skill"] = "android-audit-stability"
         self.payload.pop("confirmed_impacts")
         errors = validate_specialist_result(self.payload, self.context)
         self.assertTrue(any("稳定性专项缺少能力适用性结论" in error for error in errors))
+        self.assertTrue(any("稳定性专项缺少静态语义检查" in error for error in errors))
 
-        self.payload["capabilities"] = [
-            {
-                "id": capability_id,
-                "required": False,
-                "status": "SKIPPED",
-                "reason": "需求与最终 diff 均未涉及。",
-            }
-            for capability_id in (
-                "android-dynamic-leak",
-                "android-performance",
-                "android-security-privacy",
-            )
-        ]
+        self.payload["capabilities"] = stability_capabilities()
+        self.payload["checks"] = passing_stability_checks()
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.payload["static_analysis"] = self._passing_static_analysis()
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
+
+    def test_stability_rejects_blocking_static_control_change(self) -> None:
+        """验证新增抑制或排除尚未解释完成时，稳定性摘要不能写成通过。"""
+        self.payload["skill"] = "android-audit-stability"
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = stability_capabilities()
+        self.payload["checks"] = passing_stability_checks()
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.payload["static_analysis"] = self._passing_static_analysis()
+        audit_candidate = {
+            "id": "CTL-0123456789ABCDEF",
+            "path": "config/detekt/detekt.yml",
+            "kind": "EXCLUSION",
+            "summary": "静态检查排除发生变化，需要确认没有缩小范围。",
+        }
+        self.payload["static_analysis"]["control_audit_sha256"] = self._write_control_audit(
+            [audit_candidate]
+        )
+        self.payload["static_analysis"]["control_changes"] = [{
+            "id": "CTL-0123456789ABCDEF",
+            "path": "config/detekt/detekt.yml",
+            "kind": "EXCLUSION",
+            "decision": "BLOCKING",
+            "reason": "尚未确认为什么排除本次修改目录。",
+        }]
+
+        errors = validate_specialist_result(self.payload, self.context)
+
+        self.assertTrue(any("仍阻断时不能标记 PASS" in error for error in errors))
+
+    def test_stability_rejects_omitted_or_stale_control_audit_candidates(self) -> None:
+        """验证模型不能漏写候选，也不能复用其他代码摘要上的审计结果。"""
+        self.payload["skill"] = "android-audit-stability"
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = stability_capabilities()
+        self.payload["checks"] = passing_stability_checks()
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        candidate = {
+            "id": "CTL-0123456789ABCDEF",
+            "path": "config/detekt/detekt.yml",
+            "kind": "CONFIG",
+            "summary": "静态工具配置发生变化。",
+        }
+        audit_sha = self._write_control_audit([candidate])
+        self.payload["static_analysis"] = passing_static_analysis(self.control_audit, audit_sha)
+
+        omitted = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("审计候选不一致" in error for error in omitted))
+
+        audit_payload = json.loads(self.control_audit.read_text(encoding="utf-8"))
+        audit_payload["snapshot_sha256"] = "c" * 64
+        self.control_audit.write_text(json.dumps(audit_payload), encoding="utf-8")
+        self.payload["static_analysis"]["control_audit_sha256"] = sha256_file(self.control_audit)
+        stale = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("不是基于当前代码摘要" in error for error in stale))
+
+    def test_stability_tool_coverage_requires_unchanged_evidence(self) -> None:
+        """验证声明工具通过时必须绑定版本、模式、真实范围和未变化的证据文件。"""
+        self.payload["skill"] = "android-audit-stability"
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = stability_capabilities()
+        self.payload["checks"] = passing_stability_checks()
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.payload["static_analysis"] = self._passing_static_analysis()
+        self.payload["static_analysis"]["tools"] = [{
+            "id": "detekt",
+            "status": "PASS",
+            "version": "2.0.0",
+            "mode": "TYPE_RESOLVED",
+            "scope": [":app/main"],
+            "cross_file": False,
+            "evidence_path": str(self.artifact),
+            "evidence_sha256": sha256_file(self.artifact),
+        }]
+
+        self.assertEqual([], validate_specialist_result(self.payload, self.context))
+        self.artifact.write_text("changed static evidence\n", encoding="utf-8")
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("证据文件摘要已变化" in error for error in errors))
+
+    def test_unresolved_finding_requires_stable_id(self) -> None:
+        """验证换模型或需求修订后，未关闭问题不能继续使用临时顺序编号。"""
+        self.payload["skill"] = "android-audit-stability"
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = stability_capabilities()
+        self.payload["checks"] = passing_stability_checks()
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.payload["static_analysis"] = self._passing_static_analysis()
+        self.payload["findings"]["P2"] = 1
+        self.payload["unresolved_findings"] = [{
+            "id": "F-1",
+            "severity": "P2",
+            "summary": "清理路径无法确认。",
+        }]
+
+        errors = validate_specialist_result(self.payload, self.context)
+
+        self.assertTrue(any("稳定问题编号" in error for error in errors))
 
     def test_path_command_uses_current_requirement_scope(self) -> None:
         """验证专项结果目录按当前需求、修订和代码摘要隔离。"""

@@ -33,6 +33,8 @@ description: Android 运行时稳定性、性能、安全隐私与兼容性风�
 
 当需求或实际 diff 涉及 Kotlin、Java、混合调用、生命周期对象、异步任务、共享状态、监听器、回调或可关闭资源时，必须按需读取 `references/kotlin-java-static-analysis.md`，不得只靠文件名、关键词或固定泄漏清单判断。
 
+维护本规则、更换执行模型或评估泛化能力时读取 `references/static-analysis-eval-scenarios.md`，只把场景输入交给被测模型，完成后再按评分标准核对；日常需求审查不得固定加载评测答案。
+
 - 围绕“短生命周期不能被长生命周期持有、注册与解绑成对、获取与释放成对、异步任务不超过宿主、清理路径真实可达、共享状态具有并发纪律”六条不变量审查。
 - 存在生命周期或资源候选时，必须输出“对象/资源、创建位置、持有者、预期生命周期、释放/取消位置、引用逃逸、证据/风险”资源所有权表。
 - 存在共享可变状态、锁或多调度器候选时，必须输出写入者、读取者、线程/调度器、同步或串行保证和证据/风险并发访问表。
@@ -41,6 +43,9 @@ description: Android 运行时稳定性、性能、安全隐私与兼容性风�
 - Android Lint、detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL 等告警是复核入口，不直接等于生产缺陷；无告警也不能证明没有泄漏或竞态。
 - 老项目告警区分 `NEW`、`AFFECTED`、`PRE_EXISTING`、`UNKNOWN_ORIGIN`；不清理无关历史债务，也不允许历史噪声掩盖本次新增问题。
 - 不自动安装工具或依赖，不自动创建/更新 baseline，不批量添加 suppress。
+- 最终稳定性审查运行 `python3 ../scripts/static_analysis.py audit-controls --config <配置> --output <外部证据路径>`，把该文件路径和摘要写入 `static_analysis`；逐项处置全部 `CTL-...` 候选，没有候选也要保留绑定当前 Git 基线和代码摘要的审计证据。
+- 项目已有 detekt、Semgrep、CodeQL 等工具能够输出 SARIF 时，使用 `execution_evidence.py --gate android-static-analysis` 保存独立收据；记录工具版本、分析模式、实际范围和是否跨文件。`new/updated/unknown` Error 阻断，只有工具明确标记 `unchanged` 的历史 Error 才保留记录但不阻断，不用零退出码或自行归因代替报告判断。
+- 所有未关闭发现必须使用 `static_analysis.py finding-id` 生成稳定 `FND-...` 编号；行号只作定位，不参与身份，需求修订后同一问题不得重新编号或重复计数。
 - 静态未发现问题时只能写“在指定 diff、调用链和已执行规则中未发现明确静态问题”；没有动态证据时必须另写“动态泄漏未验证”。
 
 ## 严重级别
@@ -158,4 +163,6 @@ Firebase / Crashlytics 重点关注：崩溃堆栈、非致命异常、受影响
 
 存在生命周期或资源候选时，汇总中必须同时包含资源所有权表、静态结论和独立的动态结论；存在并发候选时再包含并发访问表。不得把“未发现明确静态问题”改写为“无泄漏”或“线程安全”。
 
-由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果。`capabilities` 必须包含 `android-dynamic-leak`、`android-performance`、`android-security-privacy`，分别记录 `required`、`PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED` 和非通过原因；P0/P1 未关闭或必需动态能力未验证时不得把专项结论标记 `PASS`。
+统一专项结果必须使用 version 4：`android-static-semantics` 是必需能力，逐项填写六条静态不变量和 `static-control-changes` 七项检查，并在 `static_analysis` 中记录语言、实际文件范围、工具覆盖、控制面审计路径/摘要、全部候选处置和稳定问题编号。任一候选漏写、审计与当前代码不一致、检查省略、静态能力未通过、工具证据变化或控制面仍为 `BLOCKING` 时不得标记 `PASS`。
+
+由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果。`capabilities` 必须包含必需的 `android-static-semantics`，以及 `android-dynamic-leak`、`android-performance`、`android-security-privacy` 三项条件能力，分别记录 `required`、`PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED` 和非通过原因；P0/P1 未关闭、静态能力未通过或必需动态能力未验证时不得把专项结论标记 `PASS`。

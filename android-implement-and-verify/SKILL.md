@@ -318,7 +318,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
-- `android-review-diff` 必须按 `specialist-result.schema.json` v3 对 UI、API、数据、系统、构建、架构和测试七类影响逐项输出 `confirmed_impacts`。适用项绑定项目相对路径和原因，不适用项也说明需求/diff 依据；该语义结果与脚本候选取并集，新增的条件能力必须继续执行，不能因文件名或正则漏检而省略。
+- `android-review-diff` 必须按 `specialist-result.schema.json` v4 对 UI、API、数据、系统、构建、架构和测试七类影响逐项输出 `confirmed_impacts`。适用项绑定项目相对路径和原因，不适用项也说明需求/diff 依据；该语义结果与脚本候选取并集，新增的条件能力必须继续执行，不能因文件名或正则漏检而省略。
 - P0/P1 发现后立即修复，并从受影响的最小测试集开始重跑；低风险 P2/P3 可修复时一并关闭。
 - 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
 - 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更时在报告中提示用户另行调用 `android-verify-ui`，不得在自动 route 中执行。
@@ -327,7 +327,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
 - `route` 或 Diff Reviewer 语义确认的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
 - 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；用于覆盖原子 Then 的证据还必须把 obligation 映射到真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
-- 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须分别记录动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
+- 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须记录必需静态语义能力、七项静态检查，以及动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
 - `android-lint` 只要求目标项目自己的 Android Gradle Lint task；最终证据必须包含本轮 XML 或 SARIF 机器报告，Fatal/Error 即使零退出也阻断。HTML 只作人类报告；本轮不新增、安装或强制外部自定义 Lint。
 - 人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
 

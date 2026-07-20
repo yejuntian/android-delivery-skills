@@ -231,6 +231,21 @@ class UserInstructionTests(unittest.TestCase):
         self.assertIn("【修改已上线业务】、【保护已上线业务】", text)
         self.assertIn("必须是必需项", text)
 
+    def test_bdd_instruction_converges_changes_before_first_confirmation(self) -> None:
+        """验证首次确认前的多轮增删改先汇总到文件，不会误建基线或正式修订。"""
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            print_bdd_instruction()
+
+        text = output.getvalue()
+        self.assertIn("先展示本轮变化", text)
+        self.assertIn("合并为最新完整需求并同步 requirement_file", text)
+        self.assertIn("重新执行 init", text)
+        self.assertIn("同时还有新变化时仍按需求变化处理", text)
+        self.assertIn("不带新变化的明确确认", text)
+        self.assertIn("不要求实现删除处置", text)
+
     def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
         """验证 P0/P1 自动修复授权不会越过未确认的旧业务处置。"""
         output = io.StringIO()

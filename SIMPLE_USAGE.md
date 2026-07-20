@@ -127,6 +127,8 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 4. 在完整需求说明最前面展示本次明确修改、必须保持不变、暂时无法确认和明确不修改的已上线业务范围。
 5. 等你确认理解是否正确；未确认前不改代码、不运行构建或设备任务。
 
+首次确认过程中，你可以继续新增、修改、删除或纠正。AI 必须先展示本轮变化，把它们合并进最新完整需求并同步 `requirement_file`，重新执行 `init` 读取后，只重分析受影响范围，再把“本轮变化 + 最新完整需求”一起交给你确认。你说“确认，但再增加一项”仍按需求变化处理；只有不带新变化的明确确认才能进入 `check-env`。首次确认前撤回的草稿项不会进入正式 R1，也不要求删除实现。
+
 同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比最近确认修订和现有追溯表，输出增改删、替代及逐项确认状态。用户确认后由 AI 更新 `<requirement_dir>/test-cases/requirement-revision.json`，再执行 `confirm-requirement-update`；下次变化从最近确认版本继续比较。
 
 修订规则：`PENDING/CONFLICT` 不推进版本，`REJECTED` 不进入总需求；删除项必须选择删除实现、保留兼容或停止未完成工作。只在聊天中补充的内容必须先同步到 `requirement_file`。
@@ -215,8 +217,12 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
 ① delivery.py init    读需求 → 只读分析相关项目代码/调用方/测试
    └─ 置顶展示已上线业务影响 → 输出 BDD（前提/操作/预期结果）
    └─ 停,等你确认「理解正确,继续」
+   └─ 你有增删改：分类本轮变化 → 合并并同步 requirement_file
+      → 重新 init → 只分析受影响范围 → 展示本轮变化和最新完整需求
+      → 再次等待确认（可以循环多次）
                           ↓
-② delivery.py check-env   查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
+② 无新变化的明确确认后，delivery.py check-env
+   └─ 查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
 ③ delivery.py confirm-requirement-update   确认最新总需求和全部原子验收项 → 开始编码
    └─ 首次编码
                           ↓

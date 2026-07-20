@@ -267,6 +267,7 @@ Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、�
 - 把 `Given` 转成可复现前置条件：启动入口、DeepLink、登录/数据、权限、语言、主题、字体和方向。壳只负责启动应用，不能隐式满足前置条件。
 - 把每个 `When` 拆成独立 action，避免一个 action 包含多个操作。
 - 把每个 `Then` 写成独立 verify/check action，不得只隐含在操作描述中。
+- Journey 的用例名称、说明和 action 自然语言统一使用中文，方便用户直接审阅；界面真实文案、资源标识、包名、类名和 XML schema 保持原值，并在中文步骤中明确引用，不得为了翻译改变实际查找目标。
 - XML 和最终报告必须标明覆盖的 `BDD/Then`；同一 BDD 中未分配给 Journey 的 Then 保持自己的测试与状态，不因 Journey 通过而改变。
 - 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线、确认修订和需求正文/UI/API 输入摘要，单独调用时来自当前完整输入摘要。默认 Agent 路线使用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须使用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
 - 不把需求用例长期保存在共享壳源码中。默认 Agent 直接读取当前作用域；可选壳每次只同步当前用例集并清除上一次残留 XML，防止跨项目串用测试。

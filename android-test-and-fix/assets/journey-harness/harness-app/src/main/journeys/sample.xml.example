@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<journey name="Sample UI verification">
-    <description>Copy this file to a .xml file and replace every action.</description>
+<journey name="首页界面验证示例">
+    <description>复制为 .xml 文件，并根据已确认需求替换每个操作和断言。</description>
     <actions>
-        <action>Tap the "Home" icon.</action>
-        <action>Verify that the Home screen is visible.</action>
+        <action>点击界面上真实显示的“Home”图标。</action>
+        <action>验证首页已经显示。</action>
     </actions>
 </journey>

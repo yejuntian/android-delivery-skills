@@ -208,7 +208,11 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
 - `android-review-diff` 必须按 `specialist-result.schema.json` v4 对 UI、API、数据、系统、构建、架构和测试七类影响逐项输出 `confirmed_impacts`。适用项绑定项目相对路径和原因，不适用项也说明需求/diff 依据；该语义结果与脚本候选取并集，新增的条件能力必须继续执行，不能因文件名或正则漏检而省略。
-- `android-review-diff` 还必须用最终 diff 复核已确认的旧业务影响。发现未登记的已有业务调用方或可观察行为变化时，立即暂停最终交付，把影响同步到 `requirement_file`，重新展示置顶提醒并让用户确认，再修订受影响 Then、实现和测试；已有当前需求 Git 基线时不得重复执行 `check-env`，也不得只在最终报告追加说明。
+- `android-review-diff` 还必须用最终 diff 复核已确认的旧业务影响。发现未登记的已有业务调用方或可观察行为变化时，立即暂停最终交付，按以下固定顺序只恢复受影响需求，不重新执行完整编码前准备：
+  1. 把新影响作为“暂时无法确认”同步到 `requirement_file`，执行 `init`，展示置顶影响提醒和最新完整需求，请用户选择修改或保护。
+  2. 用户补充处置时继续同步 `requirement_file` 并重新执行 `init`；只有用户看到最新完整需求并作出不带新变化的明确确认，才继续下一步。
+  3. 把受影响 Then 写入 `requirement-revision.json` 并执行 `confirm-requirement-update`；复用当前需求最初 Git 基线，不得执行 `check-env`。
+  4. 确认命令退出码为 `0` 后，按确认结果最小修改实现和测试，再重新执行 `route`；不得只在最终报告追加说明或复用变化前的证据。
 - 已确认需求范围内的 P0/P1 技术问题发现后立即修复，并从受影响的最小测试集开始重跑；计划外已上线业务影响、需求冲突或业务预期不明确即使评为 P0/P1 也必须先重新确认。低风险 P2/P3 可修复时一并关闭。
 - 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
 - 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更时在报告中提示用户另行调用 `android-verify-ui`，不得在自动 route 中执行。

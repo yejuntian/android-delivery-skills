@@ -306,7 +306,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 1. 完整需求只有一个总入口：`android-implement-and-verify`。
 2. 需求确认前不修改代码；首次确认前的变化必须收敛到 `requirement_file`。用户纯确认后先完成 `check-env` 和 `confirm-requirement-update` 再直接编码，不固定增加冗长方案会。
-3. 当前项目事实优先，不脑补接口、字段、设计、架构或测试结果。
+3. 当前项目事实优先；允许依据已确认需求建立标记待对齐的业务模型和 UI，但不把它们冒充正式接口、传输字段、设计基准、架构事实或测试结果。
 4. 当前需求 Git 基线隔离串行需求；工作区不干净时停止，不自动处理用户改动。
 5. 最小修改和单一职责是全局默认，不需要用户重复提醒。
 6. `android-verify-ui` 保持手动独立；Journey 测试归 `android-test-and-fix`，只覆盖 `FULL/PARTIAL` 中实际分配给它的关键用户旅程。

@@ -283,6 +283,7 @@ def audit_control_changes(changes: Iterable[GitChange]) -> list[dict[str, str]]:
     candidates: dict[str, dict[str, str]] = {}
 
     def add(path: str, kind: str, detail: str, summary: str) -> None:
+        """按稳定标识合并同一控制面变化，避免重复候选进入专项审查。"""
         identifier = stable_control_id(path, kind, detail)
         candidates[identifier] = {
             "id": identifier,

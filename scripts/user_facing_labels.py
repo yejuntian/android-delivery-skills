@@ -139,6 +139,7 @@ class ChineseArgumentParser(argparse.ArgumentParser):
     """让命令参数保持稳定，同时把 Python 默认帮助标题转换为中文。"""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """初始化解析器并把 argparse 默认分组及帮助入口转换为中文。"""
         super().__init__(*args, **kwargs)
         self._positionals.title = "位置参数"
         self._optionals.title = "可选参数"

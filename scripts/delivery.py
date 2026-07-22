@@ -270,10 +270,12 @@ def print_bdd_instruction():
 
 
 def print_confirmed_fact_sources(requirement_path: Path, revision_file: Path, traceability_file: Path, *, action: str):
-    """给用户只展示主需求文件；机器事实源由 AI 按配置重新读取。"""
-    _ = (revision_file, traceability_file)
-    print(f"📄 最新需求文件: {requirement_path}")
-    print("✅ 内部机器文件路径默认不展开；仅在调试、阻塞、最终证据或用户要求时展示。")
+    """只展示事实源路径，不把正文、JSON 或追溯表内容塞进聊天。"""
+    print("📄 你主要看:")
+    print(f"  - 需求文件: {requirement_path}")
+    print("🤖 AI 执行前必须读取（只展示路径，不展示正文）:")
+    print(f"  - 需求修订清单: {revision_file}")
+    print(f"  - 追溯表: {traceability_file}")
     print(
         f"👉 AI 指令：{action}前必须重新读取已确认的 requirement_file、"
         "需求修订清单和追溯表；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"

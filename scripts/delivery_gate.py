@@ -342,15 +342,15 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         if unexpected:
             errors.append(f"最终报告包含非当前义务: {', '.join(unexpected)}")
 
-    business_ids = [
+    business_ids = {
         identifier
         for identifier, item in expected_obligations.items()
         if _business_obligation_prefix(item.get("text"))
-    ]
-    if business_ids:
+    }
+    if expected_ids:
         traceability_value = context.get("traceability_path")
         if not isinstance(traceability_value, str) or not traceability_value.strip():
-            errors.append("已上线业务义务缺少当前需求追溯表路径")
+            errors.append("当前确认义务缺少当前需求追溯表路径")
         else:
             traceability_path = Path(traceability_value).expanduser().resolve()
             if not traceability_path.is_file():
@@ -361,10 +361,16 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 except (OSError, UnicodeError) as exc:
                     errors.append(f"当前需求追溯表无法读取: {traceability_path}: {exc}")
                 else:
-                    for identifier in business_ids:
-                        if identifier not in traceability_text:
+                    for identifier in sorted(expected_ids):
+                        if identifier in traceability_text:
+                            continue
+                        if identifier in business_ids:
                             errors.append(
                                 f"当前需求追溯表没有登记已上线业务义务: {identifier}"
+                            )
+                        else:
+                            errors.append(
+                                f"当前需求追溯表没有登记当前确认义务: {identifier}"
                             )
 
     specialist_results: dict[str, dict[str, Any]] = {}

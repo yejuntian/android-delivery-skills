@@ -85,6 +85,7 @@
 - `init` 只读取和比较需求，不得创建、覆盖或删除 Git 基线；`check-env` 只在干净工作区建立首次起点，重复调用必须复用。后续需求修订不得重建该基线；只有用户明确的新串行需求可以使用 `--new-requirement` 更换起点。
 - 同一需求中途变化时，必须对比最近确认修订与当前正文，逐项记录 `ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED` 和 `CONFIRMED/PENDING/REJECTED/CONFLICT`；待定或冲突不得推进修订，拒绝项不得进入总需求。
 - 未变化 BDD/Then 保留 ID；删除已实现义务必须明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`，不得把文本删除直接等同于删除公共代码。
+- 凡是已经和用户确认、会影响实现、测试、验收或旧业务保护的内容，必须落到对应文件；没有落文件的聊天内容只能算临时草稿，不能作为后续执行依据。
 - 用户确认的聊天补充必须同步到 `requirement_file`；需求确认命令只更新需求修订和有效义务，不修改 Git。用户确认最新完整需求后，编码、测试、route 和最终报告前必须重新读取已确认的 `requirement_file`、需求修订清单和追溯表；确认前聊天里的旧理解、旧总结或旧方案不得作为执行依据。最终报告义务集合必须与最近确认修订完全一致。
 - 仅排版或 DOCX 元数据变化时使用修订清单 `format_only=true` 并保持全部 Then 为 `UNCHANGED`；不得借此掩盖业务文字变化。
 - 把每条已确认 BDD 的复合 Then 拆成可独立证明的验证义务；每项必须映射到自动测试、实际人工证据、未验证或阻塞，不得被单一工具的笼统通过静默覆盖。

@@ -22,7 +22,7 @@ description: Android API 实现与接口契约核验。用于涉及 Retrofit、O
 - 实际 diff 中涉及的 API service、DTO、mapper、Repository、DataSource、缓存、mock、sampledata 和测试。
 - Swagger / OpenAPI 链接或 JSON 文件。
 - Apifox、YApi、Postman、Markdown 接口文档。
-- 后端口头说明、聊天记录摘要、字段表。
+- 后端口头说明、聊天记录摘要、字段表；这些只能作为待固定线索，成为实现、测试或验收依据前，必须固化到 `<requirement_dir>/api/` 并登记到 `api.files`，或同步进 `requirement_file` 的接口说明。
 - 项目已有网络封装、统一 Response、错误处理、鉴权刷新和日志脱敏逻辑。
 
 接口资料缺失但需求已经明确时，允许根据需求建立业务字段、领域模型、Repository / DataSource 抽象、Mock / Fake 和标记待对齐的临时契约；这些内容不等于正式后端契约。不得把推测的接口地址、请求方式、JSON 字段名、字段类型、枚举值或错误码写成已确认事实。

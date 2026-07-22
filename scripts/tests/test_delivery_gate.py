@@ -100,6 +100,11 @@ class DeliveryGateTests(unittest.TestCase):
         self.requirement = "b" * 64
         self.requirement_inputs = "c" * 64
         self.obligation = "d" * 64
+        self.traceability = self.temp_root / "traceability.md"
+        self.traceability.write_text(
+            "# 当前需求追溯表\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
+            encoding="utf-8",
+        )
         self.context = {
             "requirement_id": "baseline-1",
             "requirement_revision": 2,
@@ -110,10 +115,15 @@ class DeliveryGateTests(unittest.TestCase):
             "requirement_file_sha256": self.requirement,
             "requirement_inputs_sha256": self.requirement_inputs,
             "expected_obligations": {
-                "BDD-001/T1": {"required": True, "sha256": self.obligation},
+                "BDD-001/T1": {
+                    "required": True,
+                    "sha256": self.obligation,
+                    "text": "显示错误提示",
+                },
             },
             "expected_conditional_gates": [],
             "result_path": "/tmp/result.json",
+            "traceability_path": str(self.traceability),
         }
         test_command = ["./gradlew", ":app:testDebugUnitTest"]
         test_report = self.temp_root / "TEST-result.xml"
@@ -1090,6 +1100,19 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("必须 required=true" in error for error in errors))
+
+    def test_all_confirmed_obligations_require_traceability_entry(self) -> None:
+        """验证普通已确认验收项也必须落到当前需求追溯表。"""
+        self.traceability.write_text("# 当前需求追溯表\n", encoding="utf-8")
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("没有登记当前确认义务: BDD-001/T1" in error for error in errors))
+        self.traceability.write_text(
+            "# 当前需求追溯表\n\nBDD-001/T1 | 实现 | TEST-001\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
 
     def test_existing_business_obligation_requires_traceability_entry(self) -> None:
         """验证中文报告引用追溯表前，文件存在且包含对应旧业务义务。"""

@@ -95,9 +95,11 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M01 需求质量门禁
 
-- **来源**：Spec Kit 的 clarification、spec 场景和 requirement quality checklist。
-- **决策**：只引入稳定 `REQ-###`、五类场景检查和最多 5 个高影响问题，不引入完整 Spec Kit 文件体系。
-- **原因**：需求遗漏往往发生在编码前；先检查完整性、清晰度、可衡量性和冲突，比编码后补测试成本更低。
+- **来源**：[GitHub Spec Kit clarification](https://github.com/github/spec-kit/blob/main/templates/commands/clarify.md) 的结构化歧义扫描、互斥候选和增量写回，[Superpowers brainstorming](https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md) 的单问题、优先选择题和推荐取舍，[OpenSpec editing changes](https://github.com/Fission-AI/OpenSpec/blob/main/docs/editing-changes.md) 的实时事实文件与用户/AI 双向编辑，[Cucumber Example Mapping](https://cucumber.io/docs/bdd/example-mapping/) 的规则、例子、问题与测试映射；高风险技术取舍参考 [MADR](https://github.com/adr/madr/blob/develop/template/adr-template.md) 的决策依据、候选与后果。
+- **决策**：保留稳定 `REQ-###`、五类场景检查和最多 5 个高影响问题；按“影响程度 × 不确定程度”排序并一次只展示一个。能形成真实方案时提供 2～4 个互斥候选、直接影响和可选建议，始终允许补充、组合、修改或自行填写；最终只把合并后的业务语义写回 `requirement_file` 并同步 BDD/测试，不保存选项字母。
+- **证据边界**：候选和建议必须来自当前需求、代码、测试、契约或已确认资料；通用最佳实践只能解释取舍，不能替用户决定产品规则。用户回答不完整、候选冲突或新项目事实推翻已选方案时继续澄清受影响范围，不静默选择。
+- **原因**：需求遗漏往往发生在编码前；预选项降低用户表达成本，自定义入口避免把用户锁进 AI 方案，逐项写回防止聊天丢失，同时沿用现有需求修订和测试追溯关闭下游返工。
+- **拒绝**：不引入完整 Spec Kit/OpenSpec 文件体系，不为普通问题新增 ADR、Schema、脚本或状态机，也不把每个小需求扩张成长时间方案会。
 
 ### M02 需求追溯矩阵
 

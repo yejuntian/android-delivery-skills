@@ -132,7 +132,7 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 
 首次确认过程中，你可以继续新增、修改、删除或纠正。AI 必须先展示本轮变化，把它们合并进最新完整需求并同步 `requirement_file`，重新执行 `init` 读取后，只重分析受影响范围，再把“本轮变化 + 最新完整需求”一起交给你确认。你说“确认，但再增加一项”仍按需求变化处理；只有不带新变化的明确确认才能进入 `check-env`。首次确认前撤回的草稿项不会进入正式 R1，也不要求删除实现。
 
-同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比最近确认修订和现有追溯表，输出增改删、替代及逐项确认状态。用户确认后由 AI 更新 `<requirement_dir>/test-cases/requirement-revision.json`，再执行 `confirm-requirement-update`；下次变化从最近确认版本继续比较。
+同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比最近确认修订和现有追溯表，输出增改删、替代及逐项确认状态。用户确认后由 AI 更新 `<requirement_dir>/test-cases/requirement-revision.json`，再执行 `confirm-requirement-update`；确认后编码、测试、route 和最终报告前必须重新读取已确认的 `requirement_file`、需求修订清单和追溯表，旧聊天理解不能再当执行依据。下次变化从最近确认版本继续比较。
 
 修订规则：`PENDING/CONFLICT` 不推进版本，`REJECTED` 不进入总需求；删除项必须选择删除实现、保留兼容或停止未完成工作。只在聊天中补充的内容必须先同步到 `requirement_file`。
 
@@ -194,7 +194,7 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
 1. 修改前校验项目路径、目标分支和干净工作区，并记录当前需求 Git 基线。
 2. 物化全部已确认 Then 的需求修订清单并执行 `confirm-requirement-update`。
 3. 复用确认前已经识别的相关代码和现有链路，按需补充实现细节。
-4. 直接实现需求，不再固定输出一轮前置分析报告。
+4. 重新读取已确认的需求文档、修订清单和追溯表，再直接实现需求，不再固定输出一轮前置分析报告。
 5. 只有遇到关键资料缺失、高风险改动或分支/工作区异常时才暂停询问。
 6. 首次编码后先运行受影响测试和必要编译；后续完善、修改、删除或修复继续使用同一局部循环，不自动执行完整 route。
 7. 只有你当前或最初明确要求最终检查、完整交付或准备提交时，才执行接口、测试、稳定性和代码质量完整门禁；检测到 UI 变更时提示单独运行 UI 验收。
@@ -230,8 +230,9 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
                           ↓
 ② 无新变化的明确确认后，delivery.py check-env
    └─ 查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
-③ delivery.py confirm-requirement-update   确认最新总需求和全部原子验收项 → 开始编码
-   └─ 首次编码
+③ delivery.py confirm-requirement-update   确认最新总需求和全部原子验收项
+   └─ 重新读取 requirement_file / requirement-revision.json / traceability.md
+   └─ 丢弃确认前旧聊天理解 → 开始编码
                           ↓
 ④ 编码后局部迭代（可以重复多次）
    ├─ 实现完善：最小修改 + 受影响测试 + 必要编译

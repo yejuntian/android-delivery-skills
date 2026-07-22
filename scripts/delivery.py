@@ -233,13 +233,26 @@ def print_bdd_instruction():
     print("首次需求在用户确认且 check-env 成功建立基线后建立 <requirement_dir>/test-cases/traceability.md；中途修订复用原文件和基线。")
     print("追溯表顶部保存已确认的旧业务影响说明。")
     print("同时按 requirement-revision.schema.json 物化修订清单，并执行 confirm-requirement-update。")
+    print("confirm-requirement-update 成功后，编码、测试、route 和最终报告前必须重新读取已确认的 requirement_file、需求修订清单和追溯表；确认前旧聊天理解不得作为执行依据。")
     print("输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
+
+
+def print_confirmed_fact_sources(requirement_path: Path, revision_file: Path, traceability_file: Path, *, action: str):
+    """把确认后的唯一事实源显式交给下游 AI，避免继续沿用聊天记忆。"""
+    print(
+        f"👉 AI 指令：{action}前必须重新读取以下已确认事实；"
+        "确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"
+    )
+    print(f"  - requirement_file: {requirement_path}")
+    print(f"  - 需求修订清单: {revision_file}")
+    print(f"  - 追溯表: {traceability_file}")
 
 
 def print_environment_rules():
     """打印通用编码约束，明确局部迭代与最终交付的执行边界。"""
     print("\n---")
     print("👉 AI 指令：环境检查完成。你已获准开始编码。")
+    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求修订清单和追溯表；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
     print("【强制规约】:")
     print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
@@ -319,7 +332,11 @@ def _reuse_existing_requirement_start(
         and content_matches
     )
     if requirement_confirmed:
-        print("👉 AI 指令：继续当前需求的编码或局部迭代；不得重建需求起点或重复完整交付流程。")
+        print(
+            "👉 AI 指令：继续当前需求的编码或局部迭代前，先重新读取已确认的 "
+            "requirement_file、需求修订清单和追溯表；不得沿用确认前旧聊天理解，"
+            "不得重建需求起点或重复完整交付流程。"
+        )
     else:
         print(
             "👉 AI 指令：继续完成当前需求确认；未成功执行 "
@@ -700,6 +717,12 @@ def cmd_confirm_requirement_update(args):
         required = "必需" if obligation["required"] else "可选"
         print(f"  - {obligation['id']} [{required}] {obligation['text']}")
     print("✅ Git 基线未修改；后续 route 仍覆盖本需求起点后的全部代码变化。")
+    print_confirmed_fact_sources(
+        requirement_path,
+        revision_file,
+        (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
+        action="编码、测试、route 和最终报告",
+    )
     print_environment_rules()
     return 0
 
@@ -760,6 +783,12 @@ def cmd_route(args):
         raise DeliveryError("需求修订仍有待定或冲突项，不能生成最终路由影响快照")
     if requirement_snapshot["sha256"] != requirement_sha256:
         raise DeliveryError("当前需求正文尚未确认为最新修订，不能生成最终路由影响快照")
+    print_confirmed_fact_sources(
+        paths.requirement_path.resolve(),
+        (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),
+        (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
+        action="route、专项审查和最终报告",
+    )
 
     result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
     excluded: set[str] = set()

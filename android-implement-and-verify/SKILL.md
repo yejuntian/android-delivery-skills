@@ -47,7 +47,7 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 - `<requirement_dir>/test-cases/requirement-revision.json` 是 AI 物化、用户审阅的修订清单；结构必须符合 `references/requirement-revision.schema.json`，并绑定脚本输出的 `requirement_id` 和 `base_revision`。
 - 同一需求逐项使用 `ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED`；决策使用 `CONFIRMED/PENDING/REJECTED/CONFLICT`。`PENDING/CONFLICT` 只保存候选且不推进版本，`REJECTED` 不进入当前总需求。
 - `REMOVED + CONFIRMED` 必须明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`；`SUPERSEDED` 必须在同轮指向一个已确认的新增 Then。
-- 每轮必须分类全部既有有效 Then 和上轮待定项；未变化项保留 ID。只在聊天中确认的变化先同步到 `requirement_file`，不得让聊天成为唯一事实来源。
+- 每轮必须分类全部既有有效 Then 和上轮待定项；未变化项保留 ID。只在聊天中确认的变化先同步到 `requirement_file`，不得让聊天成为唯一事实来源。用户确认后，后续编码、测试、route 和最终报告必须重新读取已确认的 `requirement_file`、需求修订清单和追溯表；确认前旧聊天理解不得作为执行依据。
 - 只有用户确认正文语义完全不变时才允许 `format_only=true`，并要求全部 Then 为 `UNCHANGED`；该操作同步正文摘要但不推进语义修订号。
 - `confirm-requirement-update` 只更新最近确认正文、修订号、有效义务和修订历史，不读取或修改 Git。重复 `check-env` 只复用当前起点；新的串行需求必须完成当前需求并获得用户明确确认后，在干净工作区执行 `check-env --new-requirement`。
 
@@ -183,7 +183,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
 ```
 
-退出码 `0` 才表示最新版总需求已确认并允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。编码中途只有业务行为、边界或验收结果发生变化时，才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update`；实现层完善不创建需求修订。两种情况都保留最初 Git 基线。修订确认后遵守以下规约：
+退出码 `0` 才表示最新版总需求已确认并允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。编码中途只有业务行为、边界或验收结果发生变化时，才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update`；实现层完善不创建需求修订。两种情况都保留最初 Git 基线。修订确认后先重新读取已确认的 `requirement_file`、需求修订清单和追溯表，丢弃确认前旧聊天理解，再遵守以下规约：
 1. **先物化测试**：先把全部已确认 `BDD/Then` 映射为测试清单，再按一个原子 Then 或不可分割的 BDD 切片逐项生成可编译测试和断言，完成 `Red -> 最小实现 -> Green` 后才进入下一项，不采用“批量写完全部测试、再批量实现”的横向方式。`【保护已上线业务】` 优先复用并先运行已有测试；缺少测试时只为本次可能波及的可观察旧行为补最小保护测试，业务含义不明时重新确认，不机械固化当前实现。`【修改已上线业务】` 允许按已确认新预期更新对应测试，但不得删除或弱化未授权旧业务断言。纯业务逻辑至少覆盖正常、边界、异常和回归路径；UI 与业务混合场景拆给能够证明行为的最低且足够测试层。Journey 此时只根据原子 Then 分配做整条 BDD 的 `FULL/PARTIAL/NONE` 候选初判，并为可覆盖部分生成用例草稿，不启动设备或 Journey 引擎；编码后结合实际 diff 终判，仍有分配项才执行。`android-verify-ui` 只负责后续视觉验收，不得只输出 BDD 文本。
 2. **主动检索与共享边界保护**：动笔前，主动寻找同类组件、Base 类和测试范式，并复核拟修改共享边界的每个已上线业务调用方已归入“明确修改、必须保护、暂时无法确认”。新发现项按中途需求修订同步确认；未明确授权且旧行为有可靠依据时默认保护，依据不足或与新需求冲突时暂停。按上一条先运行或补齐保护测试，闭环前不得修改共享边界；能够局部实现时优先新增语义明确的入口、overload 或策略，保持旧入口默认语义不变。
 3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。

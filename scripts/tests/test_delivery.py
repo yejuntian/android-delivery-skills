@@ -245,6 +245,8 @@ class UserInstructionTests(unittest.TestCase):
         self.assertIn("同时还有新变化时仍按需求变化处理", text)
         self.assertIn("不带新变化的明确确认", text)
         self.assertIn("不要求实现删除处置", text)
+        self.assertIn("重新读取已确认的 requirement_file、需求修订清单和追溯表", text)
+        self.assertIn("确认前旧聊天理解不得作为执行依据", text)
 
     def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
         """验证 P0/P1 自动修复授权不会越过未确认的旧业务处置。"""
@@ -312,6 +314,8 @@ class RequirementSnapshotTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("局部迭代", text)
         self.assertIn("不自动 route 或全量审查", text)
+        self.assertIn("重新读取已确认的 requirement_file、需求修订清单和追溯表", text)
+        self.assertIn("旧聊天理解、旧总结或旧方案不得作为执行依据", text)
         self.assertIn("最终交付", text)
         self.assertIn("最终检查、完整交付或准备提交", text)
         self.assertNotIn("编译后：", text)
@@ -840,6 +844,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             requirement_path=self.requirement,
             requirement_dir=self.requirement_dir,
         )
+        output = io.StringIO()
         with (
             mock.patch("scripts.delivery.load_config", return_value={}),
             mock.patch("scripts.delivery.resolve_paths", return_value=paths),
@@ -847,7 +852,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 "scripts.delivery.requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
-            redirect_stdout(io.StringIO()),
+            redirect_stdout(output),
         ):
             result = cmd_confirm_requirement_update(SimpleNamespace(
                 config=str(self.root / "local.yaml"),
@@ -856,6 +861,12 @@ class RequirementSnapshotTests(unittest.TestCase):
 
         self.assertEqual(0, result)
         self.assertEqual('{"id":"keep-me"}\n', self.baseline.read_text(encoding="utf-8"))
+        text = output.getvalue()
+        self.assertIn("编码、测试、route 和最终报告前必须重新读取", text)
+        self.assertIn("requirement_file:", text)
+        self.assertIn("requirement-revision.json", text)
+        self.assertIn("traceability.md", text)
+        self.assertIn("确认前旧聊天理解、旧总结或旧方案不得作为执行依据", text)
 
 
 class ConfigReaderTests(unittest.TestCase):
@@ -1463,6 +1474,10 @@ class RouteCommandTests(unittest.TestCase):
             os.chdir(old_cwd)
 
         text = output.getvalue()
+        self.assertIn("route、专项审查和最终报告前必须重新读取", text)
+        self.assertIn("requirement_file:", text)
+        self.assertIn("requirement-revision.json", text)
+        self.assertIn("traceability.md", text)
         self.assertIn("android-verify-api-contract", text)
         self.assertIn("[建议单独执行] android-verify-ui", text)
         self.assertIn("数据存储 | 检测到", text)

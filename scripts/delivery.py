@@ -97,6 +97,38 @@ def format_requirement_change(change):
     return f"{change['id']}：{change_type}，{decision}{suffix}"
 
 
+def summarize_revision_manifest(manifest):
+    """把机器修订清单压缩成用户能扫一眼的中文数量摘要。"""
+    counts = {"ADDED": 0, "CHANGED": 0, "REMOVED": 0, "SUPERSEDED": 0, "UNCHANGED": 0}
+    rejected = 0
+    unresolved = 0
+    for item in manifest.get("changes", []):
+        decision = item.get("decision")
+        change_type = item.get("change_type")
+        if decision in {"PENDING", "CONFLICT"}:
+            unresolved += 1
+        elif decision == "REJECTED":
+            rejected += 1
+        elif change_type in counts:
+            counts[change_type] += 1
+    parts = []
+    labels = {
+        "ADDED": "新增",
+        "CHANGED": "修改",
+        "REMOVED": "删除",
+        "SUPERSEDED": "替代",
+        "UNCHANGED": "未变化",
+    }
+    for key in ("ADDED", "CHANGED", "REMOVED", "SUPERSEDED", "UNCHANGED"):
+        if counts[key]:
+            parts.append(f"{labels[key]} {counts[key]} 项")
+    if rejected:
+        parts.append(f"已撤回/拒绝 {rejected} 项")
+    if unresolved:
+        parts.append(f"待确认/冲突 {unresolved} 项")
+    return "，".join(parts) if parts else "无语义变化"
+
+
 def parse_args(argv=None):
     """
     解析命令行参数，定义三大生命周期命令和独立需求修订确认命令。
@@ -222,11 +254,11 @@ def print_bdd_instruction():
     print("检测到变化时，面向用户只用中文展示：新增、修改、删除、未变化、已被新要求替代。")
     print("确认决策只展示：已确认、待确认、已撤回/拒绝、存在冲突；删除项使用中文说明实现处置。")
     print("英文枚举只写入 requirement-revision.json 机器字段，不得原样展示给用户。")
-    print("首次确认前用户每次新增、修改、删除或纠正时，先展示本轮变化，再合并为最新完整需求并同步 requirement_file。")
-    print("同步后重新执行 init 读取文件，只重分析受影响范围，再同时展示本轮变化和最新完整需求。")
+    print("首次确认前用户每次新增、修改、删除或纠正时，先展示本轮变化摘要，再合并为最新完整需求并同步 requirement_file。")
+    print("同步后重新执行 init 读取文件，只重分析受影响范围，再展示本轮变化摘要、最新 requirement_file 路径和待确认点；默认不在聊天重贴完整需求。")
     print("用户回复包含“确认”但同时还有新变化时仍按需求变化处理，不得执行 check-env。")
     print("首次确认前撤回的草稿项不进入正式需求，也不要求实现删除处置。")
-    print("只有用户看到最新完整需求并作出不带新变化的明确确认，才执行 check-env 和 confirm-requirement-update。")
+    print("只有用户收到最新 requirement_file 路径与变更摘要，并作出不带新变化的明确确认，才执行 check-env 和 confirm-requirement-update。")
     print("正文不足时最多一次提出 5 个真正影响实现或验收的问题；不得补写不存在的需求。")
     print("同时输出【最小修改预览】和架构边界卡片：组件/文件、职责、输入、输出、依赖方向、复用点、不修改范围。")
     print("无法确认落点或边界时列为待确认项，不得创建猜测性文件。")
@@ -238,14 +270,14 @@ def print_bdd_instruction():
 
 
 def print_confirmed_fact_sources(requirement_path: Path, revision_file: Path, traceability_file: Path, *, action: str):
-    """把确认后的唯一事实源显式交给下游 AI，避免继续沿用聊天记忆。"""
+    """给用户只展示主需求文件；机器事实源由 AI 按配置重新读取。"""
+    _ = (revision_file, traceability_file)
+    print(f"📄 最新需求文件: {requirement_path}")
+    print("✅ 内部机器文件路径默认不展开；仅在调试、阻塞、最终证据或用户要求时展示。")
     print(
-        f"👉 AI 指令：{action}前必须重新读取以下已确认事实；"
-        "确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"
+        f"👉 AI 指令：{action}前必须重新读取已确认的 requirement_file、"
+        "需求修订清单和追溯表；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"
     )
-    print(f"  - requirement_file: {requirement_path}")
-    print(f"  - 需求修订清单: {revision_file}")
-    print(f"  - 追溯表: {traceability_file}")
 
 
 def print_environment_rules():
@@ -710,12 +742,9 @@ def cmd_confirm_requirement_update(args):
 
     print(
         f"✅ 需求修订已确认: {snapshot['requirement_id']} "
-        f"第 {snapshot['revision']} 版（内容摘要 {snapshot['sha256'][:12]}）"
+        f"第 {snapshot['revision']} 版"
     )
-    print("✅ 当前有效原子验收项:")
-    for obligation in snapshot["obligations"]:
-        required = "必需" if obligation["required"] else "可选"
-        print(f"  - {obligation['id']} [{required}] {obligation['text']}")
+    print(f"✅ 本轮变化摘要: {summarize_revision_manifest(manifest)}")
     print("✅ Git 基线未修改；后续 route 仍覆盖本需求起点后的全部代码变化。")
     print_confirmed_fact_sources(
         requirement_path,

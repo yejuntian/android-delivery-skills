@@ -130,13 +130,13 @@ python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
 4. 在完整需求说明最前面展示本次明确修改、必须保持不变、暂时无法确认和明确不修改的已上线业务范围。
 5. 等你确认理解是否正确；未确认前不改代码、不运行构建或设备任务。
 
-首次确认过程中，你可以继续新增、修改、删除或纠正。AI 必须先展示本轮变化，把它们合并进最新完整需求并同步 `requirement_file`，重新执行 `init` 读取后，只重分析受影响范围，再把“本轮变化 + 最新完整需求”一起交给你确认。你说“确认，但再增加一项”仍按需求变化处理；只有不带新变化的明确确认才能进入 `check-env`。首次确认前撤回的草稿项不会进入正式 R1，也不要求删除实现。
+首次确认过程中，你可以继续新增、修改、删除或纠正。AI 必须先展示本轮变化摘要，把它们合并进最新完整需求并同步 `requirement_file`，重新执行 `init` 读取后，只重分析受影响范围，再把“本轮变化摘要 + 最新需求文件路径 + 待确认点”交给你确认，默认不在聊天重贴完整需求。你说“确认，但再增加一项”仍按需求变化处理；只有不带新变化的明确确认才能进入 `check-env`。首次确认前撤回的草稿项不会进入正式 R1，也不要求删除实现。
 
 同一需求编码中途修改了 `requirement_file` 时，可以再次执行 `delivery.py init`。它不会删除 Git 基线，而是对比最近确认修订和现有追溯表，输出增改删、替代及逐项确认状态。用户确认后由 AI 更新 `<requirement_dir>/test-cases/requirement-revision.json`，再执行 `confirm-requirement-update`；确认后编码、测试、route 和最终报告前必须重新读取已确认的 `requirement_file`、需求修订清单和追溯表，旧聊天理解不能再当执行依据。下次变化从最近确认版本继续比较。
 
 修订规则：`PENDING/CONFLICT` 不推进版本，`REJECTED` 不进入总需求；删除项必须选择删除实现、保留兼容或停止未完成工作。只在聊天中补充的内容必须先同步到 `requirement_file`。
 
-`requirement-revision.json` 由 AI 根据已经确认的 BDD 自动生成，用户不需要手写 JSON、修订号或 Then 摘要；用户只确认业务变化和删除处置。文件结构以 `android-implement-and-verify/references/requirement-revision.schema.json` 为准。
+`requirement-revision.json` 由 AI 根据已经确认的 BDD 自动生成，用户不需要手写 JSON、修订号或 Then 摘要；用户只确认业务变化和删除处置。面向用户默认只展示中文需求文件路径和中文变化摘要，机器文件路径只在调试、阻塞、最终证据或用户要求时展示。
 
 英文枚举只属于 `requirement-revision.json` 的机器协议。AI 给用户展示需求修订时必须转换为中文，例如“修改 / 已确认”“新增 / 已确认”“未变化 / 已确认”；待确认、冲突、撤回和删除处置也必须使用中文，不能要求用户理解英文状态。
 
@@ -225,7 +225,7 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
    └─ 置顶展示已上线业务影响 → 输出 BDD（前提/操作/预期结果）
    └─ 停,等你确认「理解正确,继续」
    └─ 你有增删改：分类本轮变化 → 合并并同步 requirement_file
-      → 重新 init → 只分析受影响范围 → 展示本轮变化和最新完整需求
+      → 重新 init → 只分析受影响范围 → 展示变化摘要和最新需求文件路径
       → 再次等待确认（可以循环多次）
                           ↓
 ② 无新变化的明确确认后，delivery.py check-env

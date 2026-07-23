@@ -112,6 +112,38 @@ class SkillRuleOwnershipTests(unittest.TestCase):
         """验证文档主动同步要求由共享规则统一约束，无需用户重复提醒。"""
         self.assertIn(DOCUMENTATION_SYNC_RULE, read_text(SHARED_RULES))
 
+    def test_llm_coding_error_reduction_stays_in_shared_rules(self) -> None:
+        """验证降低 AI 编程错误率的通用准则只落在共享编程规则。"""
+        shared_rules = read_text(SHARED_RULES)
+        required_rules = [
+            "AI 编码十二条强制约束",
+            "适用于总入口、专项 Skill、独立调用、自修复和测试补齐",
+            "用户不需要重复提醒",
+            "CODING-01 先思考再编码",
+            "CODING-02 简单优先",
+            "CODING-03 只改任务相关代码",
+            "CODING-04 只说最终验收标准",
+            "CODING-05 只做判断不写死逻辑",
+            "CODING-06 严格控制 token 消耗",
+            "CODING-07 代码冲突先读源码不妥协",
+            "CODING-08 拒绝假测试",
+            "CODING-09 分阶段设检查点",
+            "CODING-10 遵守原有代码风格",
+            "CODING-11 有问题不隐瞒",
+            "CODING-12 遇不合理结构主动说明",
+            "必须遵守的强制门禁",
+            "关键假设和可验证成功标准",
+            "生产逻辑只表达已确认业务规则和项目事实",
+            "增加未请求抽象/配置化或处理不可能场景",
+            "每行改动都应能追溯到用户请求、已确认计划或失败证据",
+            "用户只需确认业务目标、验收标准和边界，不要求指定技术实现",
+        ]
+        for rule in required_rules:
+            self.assertIn(rule, shared_rules)
+            for skill_file in SKILL_FILES:
+                with self.subTest(rule=rule, skill=skill_file.parent.name):
+                    self.assertNotIn(rule, read_text(skill_file))
+
     def test_documentation_sync_policy_is_explained(self) -> None:
         """验证整体说明和设计依据均已解释文档同步边界。"""
         for guide in DOCUMENTATION_SYNC_GUIDES:

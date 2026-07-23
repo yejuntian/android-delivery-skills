@@ -120,7 +120,13 @@ Harness 由总入口、共享规则、脚本、专项 Skill 和证据门禁共�
 | `scripts/execution_evidence.py` | 执行一条已选择命令并生成单 gate、不可覆盖的机器收据 |
 | `scripts/specialist_result.py` | 校验专项结果、P0-P3、capability 和证据摘要 |
 | `scripts/delivery_gate.py` | 校验最终报告与当前需求、代码和全部证据是否一致 |
+| `scripts/user_facing_labels.py` | 把稳定机器枚举转换为自然中文，不修改 JSON、Schema、业务状态或退出码 |
+| `android-test-and-fix/scripts/detect_package.py` | 仅在源码诊断阶段嗅探候选 applicationId；正式 Journey 仍以 APK 内真实包名为准 |
 | `android-test-and-fix/scripts/run_journey.py` | 执行已经判定适用的可选壳 Journey，并生成结构化结果 |
+| `../figma-android-xml/scripts/figma_workflow.py` | 外部按需下载 Figma PNG 视觉基准；不生成结构化设计数据、HTML 或 XML |
+| `scripts/tests/test_skill_rule_ownership.py` | 维护 Skill 时检查规则归属、文档同步、脚本职责表和上下文预算；不进入普通 Android 需求流程 |
+
+表中覆盖本仓库全部非测试生产脚本，以及流程直接调用的外部或维护脚本。`__init__.py` 仅声明 Python 包；其余 `scripts/tests/test_*.py` 和 `*/scripts/tests/test_*.py` 是隔离单元测试，不承担运行时职责。
 
 所有基线、route 快照、执行日志和专项结果默认保存在目标 Android 项目之外，避免证据文件本身改变项目 diff。
 
@@ -559,17 +565,18 @@ Journey 用例归 `android-test-and-fix`，默认保存在当前需求作用域�
 
 ## 十五、规则来源与维护方式
 
-### 15.1 唯一规则来源
+### 15.1 运行时规则唯一归属
 
-1. `_shared/android-global-rules.md`：所有 Android Skill 共用的最小修改、单一职责、安全和证据规则。
-2. `android-implement-and-verify/SKILL.md`：完整需求交付的唯一流程来源。
-3. 各专项 `SKILL.md`：专项触发条件、职责边界、检查方法和报告格式。
-4. `SIMPLE_USAGE.md`：面向使用者的名称和命令速查。
-5. `references/open-source-design-rationale.md`：开源参考、采用/拒绝原因和长期不变量。
-6. `android-implement-and-verify/references/delivery-eval-scenarios.md`：修改 Skill、路由或门禁后的行为评测集。
-7. `android-implement-and-verify/references/conditional-capability-gates.md`：条件能力和无真机降级边界。
-8. `android-test-and-fix/references/adaptive-test-routing.md`：风险分层、测试路由和 Journey 适用性。
-9. `android-implement-and-verify/references/*.schema.json`：需求修订、route、执行收据、专项和最终结果机器契约。
+| 规则范围 | 唯一运行时来源 |
+| --- | --- |
+| 跨 Skill 底线 | `_shared/android-global-rules.md` |
+| 需求确认、用户可见五步、内部三阶段、Git 基线、需求修订和最终交付 | `android-implement-and-verify/SKILL.md` |
+| 测试选择、Red-Green 小闭环和 Journey | `android-test-and-fix/SKILL.md` |
+| 专项检查 | 对应专项目录的 `SKILL.md` |
+
+`SIMPLE_USAGE.md`、本文、`references/open-source-design-rationale.md`、行为评测和其他 `references/` 只负责使用说明、设计取舍、导航或验证，不是第二运行时规则来源。`android-implement-and-verify/references/*.schema.json` 只定义稳定机器契约。
+
+仓库级 `.agents/AGENTS.md` 是 AI 维护入口，只强制维护者读取本项目共享规则并执行项目声明的验证，不保存第二套 Android 运行规则。
 
 规则冲突时按以下顺序处理：目标项目更严格的 `AGENTS.md` / `CONTRIBUTING.md` → `_shared/android-global-rules.md` → 当前 Skill。无法确定时暂停说明，不自行选择宽松规则。
 
@@ -581,7 +588,8 @@ Journey 用例归 `android-test-and-fix`，默认保存在当前需求作用域�
 - 专项细节只写入对应 Skill，低频细节放入 `references/` 或 `assets/`。
 - 本文档只维护整体理解和导航，不代替机器契约或专项规则。
 - 新增或修改 Python 文件时，主动补齐中文文件简介、类/函数/测试方法用途和必要的核心逻辑注释；简单赋值和显而易见分支不添加废注释，注释必须与实现同步更新。
-- 修改脚本行为时同步修改同职责文档和测试。
+- 修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、整体说明、使用导航、设计依据和测试；不相关文档不改，说明文档不复制第二套执行规则。
+- 修改共享规则、任一 Skill、本文、`SIMPLE_USAGE.md` 或设计依据后，必须从本仓库根目录运行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；失败不得完成维护。该检查阻止第二运行时来源和上下文无边界膨胀，不接入普通 Android 需求流程。
 - 修改 Skill、路由或门禁后运行行为评测、单元测试、Schema 校验和 Skill 结构校验。
 - 只有真实需求暴露可复现问题时再做最小修复，不进行没有证据的无限扩展。
 

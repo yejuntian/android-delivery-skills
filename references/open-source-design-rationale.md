@@ -301,6 +301,18 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **边界**：五步是呈现契约，不是新状态机、脚本协议或第二套事实源。业务语义变化仍更新受影响需求和测试，实现完善仍只做局部验证，最终完整门禁仍由用户交付意图触发。
 - **拒绝**：不为简化界面删除安全门禁，不要求用户手动选择专项，不把所有局部修改升级为完整交付，也不新增五步专用配置、Schema 或脚本。
 
+### 运行时规则唯一归属
+
+| 规则范围 | 唯一运行时来源 |
+| --- | --- |
+| 跨 Skill 底线 | `_shared/android-global-rules.md` |
+| 需求确认、用户可见五步、内部三阶段、Git 基线、需求修订和最终交付 | `android-implement-and-verify/SKILL.md` |
+| 测试选择、Red-Green 小闭环和 Journey | `android-test-and-fix/SKILL.md` |
+| 专项检查 | 对应专项目录的 `SKILL.md` |
+| 使用说明、设计取舍和行为评测 | 现有说明、本文和评测文件；仅解释或验证，不作为第二运行时来源 |
+
+维护时先修改唯一运行时来源，再同步必要导航、设计依据和测试；不得把完整执行规则复制到其他运行时文件。仓库级 `.agents/AGENTS.md` 只负责强制 AI 进入本项目维护规则，不保存第二套 Android 运行规则。
+
 ## 明确不照搬
 
 - 不为每个小需求自动生成并提交多份设计、计划和任务文档。
@@ -341,6 +353,8 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ## 维护规则
 
+- 每次修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、整体说明、使用导航、设计依据和测试；不相关文档不改，说明文档只摘要或链接。
+- 修改共享规则、任一 Skill、`SIMPLE_USAGE.md`、整体流程说明或本文后，必须从本仓库根目录运行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；失败不得完成维护。该门禁不接入 `delivery.py`，普通 Android 需求没有修改 Skill 仓库时不运行。
 - 修改跨 Skill 原则时，同步 `_shared/android-global-rules.md` 和本文对应决策。
 - 修改完整流程时，同步 `android-implement-and-verify/SKILL.md`、导航文档和行为评测场景。
 - 修改路由逻辑时，同步 `scripts/delivery.py`、`scripts/tests/test_delivery.py` 和相关场景预期。

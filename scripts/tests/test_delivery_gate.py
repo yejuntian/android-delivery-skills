@@ -928,6 +928,7 @@ class DeliveryGateTests(unittest.TestCase):
                 config,
                 root / "local.yaml",
                 confirmed["sha256"],
+                implementation_plan_sha256="d" * 64,
             )
             git_snapshot = current_delivery_snapshot(repo, baseline)
             route_path = root / "route-impact.json"
@@ -940,6 +941,8 @@ class DeliveryGateTests(unittest.TestCase):
                         "requirement_revision": 1,
                         "requirement_file_sha256": confirmed["sha256"],
                         "requirement_inputs_sha256": inputs_sha256,
+                        "implementation_plan_sha256": "d" * 64,
+                        "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                     {category: [] for category in (
                         "ui", "api", "data", "system", "build", "architecture", "tests",
@@ -958,6 +961,13 @@ class DeliveryGateTests(unittest.TestCase):
                     "scripts.delivery_gate.requirement_snapshot_path_for_config",
                     return_value=requirement_snapshot,
                 ),
+                mock.patch(
+                    "scripts.delivery_gate.validate_plan_confirmation",
+                    return_value={
+                        "implementation_plan_sha256": "d" * 64,
+                        "plan_confirmation_receipt_sha256": "e" * 64,
+                    },
+                ),
                 mock.patch("scripts.delivery_gate.route_impact_path_for_config", return_value=route_path),
             ):
                 context = current_context(root / "local.yaml", config)
@@ -969,6 +979,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(64, len(context["snapshot_sha256"]))
         self.assertEqual(64, len(context["requirement_file_sha256"]))
         self.assertEqual(64, len(context["requirement_inputs_sha256"]))
+        self.assertEqual("d" * 64, context["implementation_plan_sha256"])
         self.assertEqual(confirmed["requirement_id"], context["requirement_id"])
         self.assertEqual(1, context["requirement_revision"])
         self.assertIn("BDD-001/T1", context["expected_obligations"])

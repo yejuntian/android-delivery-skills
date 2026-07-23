@@ -49,6 +49,13 @@ from scripts.config_paths import (  # noqa: E402
 )
 from scripts.delivery import DeliveryError, read_requirement  # noqa: E402
 from scripts.git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from scripts.implementation_plan import (  # noqa: E402
+    ImplementationPlanError,
+    implementation_plan_digest,
+    implementation_plan_path,
+    read_implementation_plan,
+    validate_plan_confirmation,
+)
 from scripts.requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     load_requirement_snapshot,
@@ -347,9 +354,11 @@ def resolve_journeys_dir(
 
 
 def requirement_scope_id(config_path: Path, config: dict[str, Any]) -> str:
-    """优先使用确认修订及 UI/API 输入摘要隔离用例，避免外部资料串用。"""
-    requirement_path = resolve_config_paths(config, config_path).requirement_path
+    """使用确认修订、计划及 UI/API 输入摘要隔离用例，避免跨上下文串用。"""
+    paths = resolve_config_paths(config, config_path)
+    requirement_path = paths.requirement_path
     content_digest: str | None = None
+    plan_digest: str | None = None
     revision: int | None = None
     try:
         snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(config_path))
@@ -369,8 +378,21 @@ def requirement_scope_id(config_path: Path, config: dict[str, Any]) -> str:
             except DeliveryError:
                 pass
 
+    # 用例目录按计划内容隔离；是否已经获得用户确认由执行上下文单独校验。
+    try:
+        plan_content = read_implementation_plan(implementation_plan_path(paths.requirement_dir))
+    except ImplementationPlanError:
+        pass
+    else:
+        plan_digest = implementation_plan_digest(plan_content)
+
     digest = (
-        requirement_inputs_digest(config, config_path, content_digest)[:16]
+        requirement_inputs_digest(
+            config,
+            config_path,
+            content_digest,
+            implementation_plan_sha256=plan_digest,
+        )[:16]
         if content_digest
         else None
     )
@@ -698,12 +720,13 @@ def missing_task_status(discovery: CommandResult | None) -> tuple[str, str]:
 
 
 def delivery_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
-    """读取确认修订、Git 基线和最终代码摘要，失败时保留其他 Journey 证据。"""
+    """读取确认需求、实施计划、Git 基线和代码摘要，失败时保留其他证据。"""
     context: dict[str, Any] = {}
     paths = resolve_config_paths(config, config_path)
     if paths.requirement_path and paths.requirement_path.is_file():
         try:
-            current_digest = requirement_digest(read_requirement(paths.requirement_path))
+            requirement_content = read_requirement(paths.requirement_path)
+            current_digest = requirement_digest(requirement_content)
             requirement_snapshot = load_requirement_snapshot(
                 requirement_snapshot_path_for_config(config_path)
             )
@@ -711,17 +734,32 @@ def delivery_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any
             pass
         else:
             context["requirement_file_sha256"] = current_digest
+            plan_digest: str | None = None
+            status: str | None = None
+            if requirement_snapshot:
+                status = requirement_snapshot["status"]
+                if requirement_snapshot["sha256"] != current_digest:
+                    status = "UNCONFIRMED_CHANGE"
+                elif status == "CONFIRMED":
+                    try:
+                        plan_context = validate_plan_confirmation(
+                            requirement_snapshot,
+                            requirement_content,
+                            paths.requirement_dir,
+                        )
+                    except (DeliveryError, ImplementationPlanError):
+                        status = "UNCONFIRMED_PLAN"
+                    else:
+                        plan_digest = plan_context["implementation_plan_sha256"]
             context["requirement_inputs_sha256"] = requirement_inputs_digest(
                 config,
                 config_path,
                 current_digest,
+                implementation_plan_sha256=plan_digest,
             )
             if requirement_snapshot:
                 context["requirement_id"] = requirement_snapshot["requirement_id"]
                 context["requirement_revision"] = requirement_snapshot["revision"]
-                status = requirement_snapshot["status"]
-                if requirement_snapshot["sha256"] != current_digest:
-                    status = "UNCONFIRMED_CHANGE"
                 context["requirement_status"] = status
     if paths.project_path and paths.project_path.is_dir():
         excluded: set[str] = set()
@@ -1128,7 +1166,7 @@ def main(argv: list[str] | None = None) -> int:
         return complete(
             JourneyResult(
                 HARNESS_UNAVAILABLE,
-                "当前需求修订尚未全部确认，拒绝生成或执行可能过期的界面流程测试",
+                "当前需求或实施计划尚未全部确认，拒绝生成或执行可能过期的界面流程测试",
                 1,
             ),
             fallback_result_path,

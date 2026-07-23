@@ -11,7 +11,8 @@
 1. `init`: 负责首次需求提炼，或对比最近确认修订汇总中途需求变化并制定 BDD。
 2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求起点建立。
 3. `confirm-requirement-update`: 负责确认原子义务修订，不修改 Git 基线。
-4. `route`: 识别七类工程影响和第二轮条件能力候选，保存绑定当前代码的路由快照，
+4. `confirm-plan`: 负责把用户确认的实施计划绑定当前需求修订，不修改业务文件。
+5. `route`: 识别七类工程影响和第二轮条件能力候选，保存绑定当前代码的路由快照，
    再负责编码后的动态审查、测试与自修复闭环分发；泄漏和性能仍由 AI 语义终判。
 
 通过输出带 "👉 AI 指令" 的终端文本，强制 AI 采取“走一步看一步”的精准执行策略，
@@ -48,6 +49,12 @@ from .git_changes import (  # noqa: E402
     load_baseline,
     write_baseline,
     working_tree_status,
+)
+from .implementation_plan import (  # noqa: E402
+    ImplementationPlanError,
+    confirm_implementation_plan,
+    implementation_plan_path,
+    validate_plan_confirmation,
 )
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
@@ -161,6 +168,17 @@ def parse_args(argv=None):
         help="需求修订清单；默认 <requirement_dir>/test-cases/requirement-revision.json",
     )
 
+    # 计划确认：只在用户明确确认已经展示的实施计划后执行。
+    parser_confirm_plan = subparsers.add_parser(
+        "confirm-plan",
+        help="确认实施计划并生成绑定当前需求的机器收据",
+    )
+    parser_confirm_plan.add_argument(
+        "--config",
+        default=DEFAULT_CONFIG_PATH,
+        help="配置文件路径",
+    )
+
     # 阶段三：route (动态路由审查阶段)
     parser_route = subparsers.add_parser("route", help="分析代码改动并调用对应审查能力")
     parser_route.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
@@ -265,28 +283,38 @@ def print_bdd_instruction():
     print("首次需求在用户确认且 check-env 成功建立基线后建立 <requirement_dir>/test-cases/traceability.md；中途修订复用原文件和基线。")
     print("追溯表顶部保存已确认的旧业务影响说明。")
     print("同时按 requirement-revision.schema.json 物化修订清单，并执行 confirm-requirement-update。")
-    print("confirm-requirement-update 成功后，编码、测试、route 和最终报告前必须重新读取已确认的 requirement_file、需求修订清单和追溯表；确认前旧聊天理解不得作为执行依据。")
+    print("confirm-requirement-update 成功后进入只读计划阶段；先生成实施计划并等待确认，不得直接编码。")
     print("输出完毕后必须停止输出，等待用户确认！不要直接开写代码！")
 
 
-def print_confirmed_fact_sources(requirement_path: Path, revision_file: Path, traceability_file: Path, *, action: str):
+def print_confirmed_fact_sources(
+    requirement_path: Path,
+    revision_file: Path,
+    traceability_file: Path,
+    *,
+    action: str,
+    plan_path: Path | None = None,
+):
     """只展示事实源路径，不把正文、JSON 或追溯表内容塞进聊天。"""
     print("📄 你主要看:")
     print(f"  - 需求文件: {requirement_path}")
+    if plan_path is not None:
+        print(f"  - 已确认实施计划: {plan_path}")
     print("🤖 AI 执行前必须读取（只展示路径，不展示正文）:")
     print(f"  - 需求修订清单: {revision_file}")
     print(f"  - 追溯表: {traceability_file}")
+    sources = "需求修订清单、追溯表和实施计划" if plan_path else "需求修订清单和追溯表"
     print(
-        f"👉 AI 指令：{action}前必须重新读取已确认的 requirement_file、"
-        "需求修订清单和追溯表；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"
+        f"👉 AI 指令：{action}前必须重新读取已确认的 requirement_file、{sources}；"
+        "确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"
     )
 
 
 def print_environment_rules():
     """打印通用编码约束，明确局部迭代与最终交付的执行边界。"""
     print("\n---")
-    print("👉 AI 指令：环境检查完成。你已获准开始编码。")
-    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求修订清单和追溯表；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
+    print("👉 AI 指令：实施计划确认完成。你已获准开始编码。")
+    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求修订清单、追溯表和实施计划；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
     print("【强制规约】:")
     print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
@@ -297,7 +325,8 @@ def print_environment_rules():
     print("  7. 真实任务：根据实际模块、variant 和项目已有任务选择命令，不得写死 assembleDebug 或 lintDebug。")
     print("  8. 追溯与证据：局部结果只证明本轮范围；最终代码必须重新执行全部必需命令，需求映射率为 100%。")
     print("  9. 闭环：失败时定位根因并重跑受影响项；同一根因连续 3 轮失败才暂停。")
-    print(" 10. 不得自动提交 Git；只有用户明确要求时才提交。")
+    print(" 10. 计划门禁：需求或实施计划变化后，旧计划确认自动失效；重新展示并确认前不得继续受影响编码。")
+    print(" 11. 不得自动提交 Git；只有用户明确要求时才提交。")
 
 
 def _restore_local_state(path: Path, previous: bytes | None) -> None:
@@ -367,9 +396,9 @@ def _reuse_existing_requirement_start(
     )
     if requirement_confirmed:
         print(
-            "👉 AI 指令：继续当前需求的编码或局部迭代前，先重新读取已确认的 "
-            "requirement_file、需求修订清单和追溯表；不得沿用确认前旧聊天理解，"
-            "不得重建需求起点或重复完整交付流程。"
+            "👉 AI 指令：继续当前需求前，先重新读取已确认的 requirement_file、"
+            "需求修订清单、追溯表和实施计划，并验证计划确认收据；不得沿用确认前"
+            "旧聊天理解，不得重建需求起点或重复完整交付流程。"
         )
     else:
         print(
@@ -752,7 +781,43 @@ def cmd_confirm_requirement_update(args):
         requirement_path,
         revision_file,
         (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
+        action="拆分测试并生成实施计划",
+    )
+    plan_path = implementation_plan_path(paths.requirement_dir)
+    print("\n---")
+    print("👉 AI 指令：进入只读计划阶段，暂时不得修改 Android 代码或运行构建/设备任务。")
+    print(f"请把实施计划写入: {plan_path}")
+    print("计划必须包含：实现范围、已上线业务影响、预计修改文件、测试方案、明确不修改范围。")
+    print("聊天只展示简短计划摘要和上述 Markdown 路径，然后停止并等待用户确认。")
+    print("只有用户明确确认该计划后，才执行 delivery.py confirm-plan；确认前不得编码。")
+    return 0
+
+
+def cmd_confirm_plan(args):
+    """确认用户已经审阅的实施计划；成功后才输出编码授权与执行约束。"""
+    config = load_config(args.config)
+    paths = resolve_paths(config, args.config)
+    requirement_path = paths.requirement_path
+    if not requirement_path:
+        raise DeliveryError("未配置 requirement_file，无法确认实施计划")
+    content = read_requirement(requirement_path)
+    snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(args.config))
+    if snapshot is None:
+        raise DeliveryError("尚未建立需求修订，请先执行 check-env 和 confirm-requirement-update")
+    if Path(str(snapshot["requirement_path"])).resolve() != requirement_path.resolve():
+        raise DeliveryError("当前 requirement_file 与需求修订记录路径不一致")
+
+    _, receipt_path = confirm_implementation_plan(snapshot, content, paths.requirement_dir)
+    plan_path = implementation_plan_path(paths.requirement_dir)
+    print(f"✅ 实施计划已确认: {plan_path}")
+    print(f"✅ 计划确认收据: {receipt_path}")
+    print("✅ 收据已绑定当前需求修订、需求摘要和计划摘要；任一内容变化后自动失效。")
+    print_confirmed_fact_sources(
+        requirement_path.resolve(),
+        (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),
+        (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
         action="编码、测试、route 和最终报告",
+        plan_path=plan_path,
     )
     print_environment_rules()
     return 0
@@ -796,12 +861,8 @@ def cmd_route(args):
 
     if not paths.requirement_path or not paths.requirement_path.is_file():
         raise DeliveryError(f"需求文件无效: {paths.requirement_path}")
-    requirement_sha256 = requirement_digest(read_requirement(paths.requirement_path))
-    requirement_inputs_sha256 = requirement_inputs_digest(
-        config,
-        args.config,
-        requirement_sha256,
-    )
+    requirement_content = read_requirement(paths.requirement_path)
+    requirement_sha256 = requirement_digest(requirement_content)
     try:
         requirement_snapshot = load_requirement_snapshot(
             requirement_snapshot_path_for_config(args.config)
@@ -814,11 +875,23 @@ def cmd_route(args):
         raise DeliveryError("需求修订仍有待定或冲突项，不能生成最终路由影响快照")
     if requirement_snapshot["sha256"] != requirement_sha256:
         raise DeliveryError("当前需求正文尚未确认为最新修订，不能生成最终路由影响快照")
+    plan_context = validate_plan_confirmation(
+        requirement_snapshot,
+        requirement_content,
+        paths.requirement_dir,
+    )
+    requirement_inputs_sha256 = requirement_inputs_digest(
+        config,
+        args.config,
+        requirement_sha256,
+        implementation_plan_sha256=plan_context["implementation_plan_sha256"],
+    )
     print_confirmed_fact_sources(
         paths.requirement_path.resolve(),
         (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),
         (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
         action="route、专项审查和最终报告",
+        plan_path=implementation_plan_path(paths.requirement_dir),
     )
 
     result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
@@ -840,6 +913,7 @@ def cmd_route(args):
                 "requirement_revision": requirement_snapshot["revision"],
                 "requirement_file_sha256": requirement_sha256,
                 "requirement_inputs_sha256": requirement_inputs_sha256,
+                **plan_context,
             },
             impacts,
             conditional_gates,
@@ -946,9 +1020,16 @@ def main(argv=None):
             cmd_check_env(args)
         elif args.command == "confirm-requirement-update":
             return cmd_confirm_requirement_update(args)
+        elif args.command == "confirm-plan":
+            return cmd_confirm_plan(args)
         elif args.command == "route":
             cmd_route(args)
-    except (DeliveryError, GitInspectionError, RequirementSnapshotError) as exc:
+    except (
+        DeliveryError,
+        GitInspectionError,
+        ImplementationPlanError,
+        RequirementSnapshotError,
+    ) as exc:
         print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
     return 0

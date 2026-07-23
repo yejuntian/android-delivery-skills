@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """脚本名称：test_requirement_inputs.py
 
-用途：验证需求正文、UI 与 API 资料共同形成稳定输入摘要，并忽略执行环境配置。
+用途：验证需求正文、实施计划、UI 与 API 资料共同形成稳定输入摘要，并忽略执行环境配置。
 
 覆盖范围：配置字段变化、本地文件内容变化、缺失文件和与需求无关的 testing 配置。
 测试只使用临时目录，不访问远程链接或真实 Android 项目。
@@ -93,6 +93,22 @@ class RequirementInputsTests(unittest.TestCase):
         missing_digest = self.digest(missing_config)
         (self.requirement_dir / "future-openapi.json").write_text("{}\n", encoding="utf-8")
         self.assertNotEqual(missing_digest, self.digest(missing_config))
+
+    def test_confirmed_plan_change_invalidates_input_digest(self) -> None:
+        """验证计划变化会让旧 route、测试收据和专项证据失效。"""
+        first = requirement_inputs_digest(
+            self.config,
+            self.config_path,
+            "a" * 64,
+            implementation_plan_sha256="b" * 64,
+        )
+        second = requirement_inputs_digest(
+            self.config,
+            self.config_path,
+            "a" * 64,
+            implementation_plan_sha256="c" * 64,
+        )
+        self.assertNotEqual(first, second)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@
 2. Word、Markdown、TXT 需求正文读取及明确失败行为。
 3. 七类工程影响、第二轮条件能力候选、route 外部快照和输出，不把模糊子串当成业务结论。
 4. 当前需求 Git 基线、连续需求修订、部分确认、撤回、删除处置和重复 init 安全性。
-5. 重复 check-env 复用且校验配对起点，未确认需求不放行编码，只有明确的新串行需求才允许更换起点。
+5. 重复 check-env 复用且校验配对起点，需求和计划未确认时不放行编码，只有明确的新串行需求才允许更换起点。
 6. 四类 Git 变化、增删改状态、真实片段、最终代码摘要和独立 JSON 输出。
 
 测试原则：
@@ -48,6 +48,7 @@ from ..delivery import (  # noqa: E402
     classify_route_files,
     classify_route_impacts,
     cmd_check_env,
+    cmd_confirm_plan,
     cmd_confirm_requirement_update,
     cmd_init,
     cmd_route,
@@ -77,6 +78,10 @@ from ..git_changes import (  # noqa: E402
     load_baseline,
     write_baseline,
     working_tree_status,
+)
+from ..implementation_plan import (  # noqa: E402
+    implementation_plan_path,
+    plan_confirmation_receipt_path,
 )
 from ..requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
@@ -247,8 +252,8 @@ class UserInstructionTests(unittest.TestCase):
         self.assertIn("同时还有新变化时仍按需求变化处理", text)
         self.assertIn("收到最新 requirement_file 路径与变更摘要", text)
         self.assertIn("不要求实现删除处置", text)
-        self.assertIn("重新读取已确认的 requirement_file、需求修订清单和追溯表", text)
-        self.assertIn("确认前旧聊天理解不得作为执行依据", text)
+        self.assertIn("进入只读计划阶段", text)
+        self.assertIn("不得直接编码", text)
 
     def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
         """验证 P0/P1 自动修复授权不会越过未确认的旧业务处置。"""
@@ -316,7 +321,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("局部迭代", text)
         self.assertIn("不自动 route 或全量审查", text)
-        self.assertIn("重新读取已确认的 requirement_file、需求修订清单和追溯表", text)
+        self.assertIn("重新读取已确认的 requirement_file、需求修订清单、追溯表和实施计划", text)
         self.assertIn("旧聊天理解、旧总结或旧方案不得作为执行依据", text)
         self.assertIn("最终交付", text)
         self.assertIn("最终检查、完整交付或准备提交", text)
@@ -868,15 +873,76 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("需求文件:", text)
         self.assertIn(str(self.requirement), text)
         self.assertIn("本轮变化摘要: 新增 1 项", text)
-        self.assertIn("编码、测试、route 和最终报告前必须重新读取", text)
+        self.assertIn("拆分测试并生成实施计划前必须重新读取", text)
         self.assertIn("AI 执行前必须读取（只展示路径，不展示正文）", text)
         self.assertIn("需求修订清单:", text)
         self.assertIn("requirement-revision.json", text)
         self.assertIn("追溯表:", text)
         self.assertIn("traceability.md", text)
+        self.assertIn("进入只读计划阶段", text)
+        self.assertIn("实施计划.md", text)
+        self.assertIn("等待用户确认", text)
+        self.assertNotIn("已获准开始编码", text)
         self.assertNotIn("显示登录错误", text)
         self.assertNotIn("内容摘要", text)
         self.assertIn("确认前旧聊天理解、旧总结或旧方案不得作为执行依据", text)
+
+    def test_confirm_plan_is_the_only_step_that_authorizes_coding(self) -> None:
+        """验证需求确认只进入只读计划，用户确认计划后才输出编码授权。"""
+        write_requirement_snapshot(
+            self.snapshot,
+            self.requirement,
+            "登录失败显示错误",
+            requirement_id="baseline-1",
+        )
+        manifest = self._manifest(0, [
+            self._change("BDD-001/T1", "ADDED", text="显示登录错误", required=True),
+        ])
+        apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            "登录失败显示错误",
+            manifest,
+        )
+        implementation_plan_path(self.requirement_dir).write_text(
+            """# 实施计划
+
+## 实现范围
+- 修改错误提示。
+## 已上线业务影响
+- 成功登录保持不变。
+## 预计修改文件
+- `LoginViewModel.kt`
+## 测试方案
+- 增加失败分支测试。
+## 明确不修改范围
+- 不修改接口。
+""",
+            encoding="utf-8",
+        )
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        output = io.StringIO()
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(output),
+        ):
+            result = cmd_confirm_plan(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        self.assertEqual(0, result)
+        self.assertTrue(plan_confirmation_receipt_path(self.requirement_dir).is_file())
+        text = output.getvalue()
+        self.assertIn("实施计划已确认", text)
+        self.assertIn("你已获准开始编码", text)
+        self.assertIn("已确认实施计划", text)
 
 
 class ConfigReaderTests(unittest.TestCase):
@@ -1474,6 +1540,13 @@ class RouteCommandTests(unittest.TestCase):
                     },
                 ),
                 mock.patch(
+                    "scripts.delivery.validate_plan_confirmation",
+                    return_value={
+                        "implementation_plan_sha256": "d" * 64,
+                        "plan_confirmation_receipt_sha256": "e" * 64,
+                    },
+                ),
+                mock.patch(
                     "scripts.delivery.get_diff_changes",
                     return_value=([GitChange("M", path) for path in files], []),
                 ),
@@ -1490,6 +1563,7 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("AI 执行前必须读取（只展示路径，不展示正文）", text)
         self.assertIn("requirement-revision.json", text)
         self.assertIn("traceability.md", text)
+        self.assertIn("实施计划.md", text)
         self.assertIn("android-verify-api-contract", text)
         self.assertIn("[建议单独执行] android-verify-ui", text)
         self.assertIn("数据存储 | 检测到", text)
@@ -1504,6 +1578,7 @@ class RouteCommandTests(unittest.TestCase):
         self.assertTrue(route_path.is_file())
         route_payload = json.loads(route_path.read_text(encoding="utf-8"))
         self.assertNotIn("impacts", route_payload)
+        self.assertEqual("d" * 64, route_payload["implementation_plan_sha256"])
         route_gates = {
             item["id"]: item for item in route_payload["conditional_gates"]
         }

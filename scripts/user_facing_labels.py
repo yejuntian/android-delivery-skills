@@ -35,6 +35,7 @@ SNAPSHOT_STATUS_LABELS = {
     "PENDING_CONFIRMATION": "存在等待确认的变化",
     "CONFIRMED": "已确认",
     "UNCONFIRMED_CHANGE": "需求变化尚未确认",
+    "UNCONFIRMED_PLAN": "实施计划尚未确认或已经失效",
 }
 REMOVAL_DISPOSITION_LABELS = {
     "REMOVE_IMPLEMENTATION": "整个功能彻底删除",

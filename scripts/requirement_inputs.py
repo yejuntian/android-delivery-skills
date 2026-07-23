@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """脚本名称：requirement_inputs.py
 
-用途：为需求正文及本次配置声明的 UI/API 资料生成稳定输入摘要。
+用途：为需求正文、已确认实施计划及本次配置声明的 UI/API 资料生成稳定输入摘要。
 
 核心流程：规范化 ``ui``、``api`` 配置，流式摘要本地截图、资源、接口文件和 UI
-目录内容，再与需求正文摘要一起生成单一 SHA-256。远程链接只绑定 URL；实际远程
-内容仍由对应专项记录版本、抓取时间和产物摘要。
+目录内容，再与需求正文和实施计划摘要一起生成单一 SHA-256。远程链接只绑定 URL；
+实际远程内容仍由对应专项记录版本、抓取时间和产物摘要。
 
 职责边界：不访问网络、不读取 Android 源码、不判断资料是否适用、不修改任何文件。
 ``testing``、设备和重试等执行环境不属于需求输入，变化时不会制造需求修订。
@@ -110,6 +110,8 @@ def requirement_inputs_manifest(
     config: dict[str, Any],
     config_path: str | Path,
     requirement_file_sha256: str,
+    *,
+    implementation_plan_sha256: str | None = None,
 ) -> dict[str, Any]:
     """构造不含资料正文的规范清单，供摘要、诊断和测试共同使用。"""
     paths = resolve_config_paths(config, config_path)
@@ -127,22 +129,32 @@ def requirement_inputs_manifest(
                 continue
             seen.add(key)
             records.extend(_source_record(paths.requirement_dir, key[0], declaration))
-    return {
+    manifest = {
         "version": 1,
         "requirement_file_sha256": requirement_file_sha256,
         "ui": ui,
         "api": api,
         "local_sources": records,
     }
+    if implementation_plan_sha256 is not None:
+        manifest["implementation_plan_sha256"] = implementation_plan_sha256
+    return manifest
 
 
 def requirement_inputs_digest(
     config: dict[str, Any],
     config_path: str | Path,
     requirement_file_sha256: str,
+    *,
+    implementation_plan_sha256: str | None = None,
 ) -> str:
-    """返回需求正文、UI/API 配置与本地资料共同形成的稳定 SHA-256。"""
-    manifest = requirement_inputs_manifest(config, config_path, requirement_file_sha256)
+    """返回需求、计划、UI/API 配置与本地资料共同形成的稳定 SHA-256。"""
+    manifest = requirement_inputs_manifest(
+        config,
+        config_path,
+        requirement_file_sha256,
+        implementation_plan_sha256=implementation_plan_sha256,
+    )
     canonical = json.dumps(
         manifest,
         ensure_ascii=False,

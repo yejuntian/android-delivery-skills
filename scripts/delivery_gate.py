@@ -35,6 +35,11 @@ from .execution_evidence import (  # noqa: E402
     validate_execution_receipt,
 )
 from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from .implementation_plan import (  # noqa: E402
+    ImplementationPlanError,
+    implementation_plan_path,
+    validate_plan_confirmation,
+)
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     load_requirement_snapshot,
@@ -140,12 +145,11 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         raise DeliveryGateError(f"项目路径无效: {paths.project_path}")
     if not paths.requirement_path or not paths.requirement_path.is_file():
         raise DeliveryGateError(f"需求文件无效: {paths.requirement_path}")
-    requirement_sha256 = requirement_file_digest(paths.requirement_path)
-    requirement_inputs_sha256 = requirement_inputs_digest(
-        config,
-        config_path,
-        requirement_sha256,
-    )
+    try:
+        requirement_content = read_requirement(paths.requirement_path)
+    except DeliveryError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    requirement_sha256 = requirement_digest(requirement_content)
     try:
         requirement_snapshot = load_requirement_snapshot(
             requirement_snapshot_path_for_config(config_path)
@@ -160,6 +164,20 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         raise DeliveryGateError("需求修订仍有待定或冲突项，不能进入最终交付门禁")
     if requirement_snapshot["sha256"] != requirement_sha256:
         raise DeliveryGateError("requirement_file 尚未确认为当前需求修订")
+    try:
+        plan_context = validate_plan_confirmation(
+            requirement_snapshot,
+            requirement_content,
+            paths.requirement_dir,
+        )
+    except ImplementationPlanError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    requirement_inputs_sha256 = requirement_inputs_digest(
+        config,
+        config_path,
+        requirement_sha256,
+        implementation_plan_sha256=plan_context["implementation_plan_sha256"],
+    )
 
     expected_obligations = {
         item["id"]: {
@@ -194,12 +212,14 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "requirement_revision": requirement_snapshot["revision"],
         "requirement_file_sha256": requirement_sha256,
         "requirement_inputs_sha256": requirement_inputs_sha256,
+        **plan_context,
         "expected_obligations": expected_obligations,
         "result_path": str(result_path),
         "summary_path": str(summary_path),
         "traceability_path": str(
             (paths.requirement_dir / "test-cases" / "traceability.md").resolve()
         ),
+        "implementation_plan_path": str(implementation_plan_path(paths.requirement_dir)),
     }
     route_path = route_impact_path_for_config(config_path)
     try:
@@ -211,6 +231,8 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "requirement_revision",
         "requirement_file_sha256",
         "requirement_inputs_sha256",
+        "implementation_plan_sha256",
+        "plan_confirmation_receipt_sha256",
         "baseline_id",
         "snapshot_sha256",
     ):

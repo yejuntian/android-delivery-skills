@@ -11,7 +11,7 @@
 4. 重试前置、skip-build、截图过滤、超时和敏感命令脱敏。
 5. 同步当前需求用例时清理壳暂存 XML，避免串用缓存。
 6. Gradle 用户缓存、项目缓存、壳构建输出和兜底报告位于 Skill 目录外，并支持显式环境变量覆盖。
-7. Journey 初始化缺失、确认需求修订、FULL/PARTIAL 适用性和原子证据不会被静默忽略。
+7. Journey 初始化缺失、确认需求与实施计划、FULL/PARTIAL 适用性和原子证据不会被静默忽略。
 
 隔离说明：所有目录和文件均位于临时目录；测试不连接设备、不运行 Gradle、
 不安装 APK，也不修改真实 Android 项目。
@@ -47,6 +47,9 @@ SPEC.loader.exec_module(run_journey)
 REQUIREMENT_SNAPSHOT: Any = importlib.import_module("scripts.requirement_snapshot")
 apply_requirement_revision = REQUIREMENT_SNAPSHOT.apply_requirement_revision
 write_requirement_snapshot = REQUIREMENT_SNAPSHOT.write_requirement_snapshot
+IMPLEMENTATION_PLAN: Any = importlib.import_module("scripts.implementation_plan")
+confirm_implementation_plan = IMPLEMENTATION_PLAN.confirm_implementation_plan
+implementation_plan_path = IMPLEMENTATION_PLAN.implementation_plan_path
 
 
 class RunJourneyTest(unittest.TestCase):
@@ -60,6 +63,26 @@ class RunJourneyTest(unittest.TestCase):
         if journey is not None:
             (directory / "sample.xml").write_text(journey, encoding="utf-8")
         return directory
+
+    def valid_plan(self, scope: str) -> str:
+        """生成 Journey 上下文测试所需的最小有效实施计划。"""
+        return f"""# 实施计划
+
+## 实现范围
+- 修改{scope}。
+
+## 已上线业务影响
+- 原有成功流程保持不变。
+
+## 预计修改文件
+- `ExampleViewModel.kt`
+
+## 测试方案
+- 验证错误状态。
+
+## 明确不修改范围
+- 不修改接口契约。
+"""
 
     def test_rejects_zero_journeys(self):
         """验证空用例目录不能以零测试结果冒充 Journey 通过。"""
@@ -295,6 +318,28 @@ class RunJourneyTest(unittest.TestCase):
             scoped = run_journey.requirement_scope_id(config_path, config)
         self.assertTrue(scoped.startswith("run-123-"))
 
+    def test_requirement_scope_changes_when_implementation_plan_changes(self):
+        """验证计划内容变化会隔离 Journey 用例和报告目录。"""
+        root = Path(tempfile.mkdtemp())
+        config_path = root / "profiles" / "local.yaml"
+        config_path.parent.mkdir()
+        requirement = root / "requirement" / "requirement.md"
+        requirement.parent.mkdir()
+        requirement.write_text("显示错误", encoding="utf-8")
+        config = {
+            "workspace_root": str(root),
+            "requirement_dir": "requirement",
+            "requirement_file": "requirement.md",
+        }
+        plan = implementation_plan_path(requirement.parent)
+        plan.write_text(self.valid_plan("错误提示"), encoding="utf-8")
+        first_scope = run_journey.requirement_scope_id(config_path, config)
+
+        plan.write_text(self.valid_plan("错误提示与重试入口"), encoding="utf-8")
+        second_scope = run_journey.requirement_scope_id(config_path, config)
+
+        self.assertNotEqual(first_scope, second_scope)
+
     def test_confirmed_revision_keeps_unconfirmed_cases_out_of_scope(self):
         """验证待定正文不污染当前用例，而已配置 UI/API 输入变化会隔离 Journey。"""
         root = Path(tempfile.mkdtemp())
@@ -402,6 +447,61 @@ class RunJourneyTest(unittest.TestCase):
         )
         self.assertEqual(run_journey.HARNESS_UNAVAILABLE, result["status"])
         self.assertIn("尚未全部确认", result["message"])
+
+    def test_delivery_context_requires_current_plan_confirmation(self):
+        """验证 Journey 输入摘要绑定计划，计划变化后状态立即转为未确认。"""
+        root = Path(tempfile.mkdtemp())
+        config_path = root / "profiles" / "local.yaml"
+        config_path.parent.mkdir()
+        requirement = root / "requirement" / "requirement.md"
+        requirement.parent.mkdir()
+        requirement.write_text("显示错误", encoding="utf-8")
+        snapshot_path = root / "snapshot.json"
+        snapshot = write_requirement_snapshot(
+            snapshot_path, requirement, "显示错误", requirement_id="run-123",
+        )
+        snapshot, _ = apply_requirement_revision(
+            snapshot_path,
+            requirement,
+            "显示错误",
+            {
+                "version": 1,
+                "requirement_id": "run-123",
+                "base_revision": 0,
+                "scope": "SAME_REQUIREMENT",
+                "changes": [{
+                    "id": "BDD-001/T1",
+                    "change_type": "ADDED",
+                    "decision": "CONFIRMED",
+                    "text": "显示错误",
+                    "required": True,
+                }],
+            },
+        )
+        plan = implementation_plan_path(requirement.parent)
+        plan.write_text(self.valid_plan("错误提示"), encoding="utf-8")
+        receipt, _ = confirm_implementation_plan(snapshot, "显示错误", requirement.parent)
+        config = {
+            "workspace_root": str(root),
+            "requirement_dir": "requirement",
+            "requirement_file": "requirement.md",
+        }
+        with mock.patch.object(
+            run_journey, "requirement_snapshot_path_for_config", return_value=snapshot_path,
+        ):
+            confirmed = run_journey.delivery_context(config_path, config)
+            plan.write_text(self.valid_plan("错误提示与重试入口"), encoding="utf-8")
+            invalidated = run_journey.delivery_context(config_path, config)
+
+        expected = run_journey.requirement_inputs_digest(
+            config,
+            config_path,
+            snapshot["sha256"],
+            implementation_plan_sha256=receipt["implementation_plan_sha256"],
+        )
+        self.assertEqual("CONFIRMED", confirmed["requirement_status"])
+        self.assertEqual(expected, confirmed["requirement_inputs_sha256"])
+        self.assertEqual("UNCONFIRMED_PLAN", invalidated["requirement_status"])
 
     def test_stages_only_current_journeys(self):
         """验证同步当前用例前清除旧 XML，避免上一需求残留被执行。"""

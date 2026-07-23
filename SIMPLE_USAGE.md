@@ -12,6 +12,18 @@ android-implement-and-verify
 
 它负责从需求确认推进到测试全绿。其余 6 个是专项能力，由总入口按实际 diff 自动编排；只有明确要求单项检查时才手动调用。
 
+日常只看五步：
+
+```text
+确认需求
+→ 拆分测试
+→ 实现验证
+→ 变更后只处理受影响部分，可以反复循环
+→ 你要求最终检查时，执行完整交付
+```
+
+你只需说“开始这个需求”“确认，可以开始”“这个点增加/修改/删除……”或“执行最终检查”。Git 基线、需求修订、测试选择、专项路由和机器证据由 AI 在后台处理；只有出现风险、失败、资料缺失或需要授权时，才用中文说明原因和下一步。
+
 ## 个人查阅：常见专业术语
 
 这一节只是给你查阅的中文说明，不是 Skill 执行规则，不参与流程判断，也不会改变脚本中的英文名称和机器字段。
@@ -218,43 +230,21 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py statu
 
 `REQ-001`、`BDD-001/T1`、文件路径、Gradle 命令、类名和接口路径属于稳定技术标识，可以保留并附中文说明。`requirement-revision.json`、`delivery-result.json` 等机器附件继续使用英文枚举供脚本解析，但最终回复只优先展示中文摘要，不会把机器 JSON 正文直接交给你阅读。
 
-## 整体流程顺序(一图看懂)
+## 整体流程顺序（一图看懂）
 
 ```text
-① delivery.py init    读需求 → 只读分析相关项目代码/调用方/测试
-   └─ 置顶展示已上线业务影响 → 输出 BDD（前提/操作/预期结果）
-   └─ 停,等你确认「理解正确,继续」
-   └─ 你有增删改：分类本轮变化 → 合并并同步 requirement_file
-      → 重新 init → 只分析受影响范围 → 展示变化摘要和最新需求文件路径
-      → 再次等待确认（可以循环多次）
-                          ↓
-② 无新变化的明确确认后，delivery.py check-env
-   └─ 查 Git 分支/干净工作区 → 记录 Git 基线和需求起点
-③ delivery.py confirm-requirement-update   确认最新总需求和全部原子验收项
-   └─ 重新读取 requirement_file / requirement-revision.json / traceability.md
-   └─ 丢弃确认前旧聊天理解 → 开始编码
-                          ↓
-④ 编码后局部迭代（可以重复多次）
-   ├─ 实现完善：最小修改 + 受影响测试 + 必要编译
-   └─ 需求语义变化：init → 只确认受影响修订 → confirm-requirement-update
-      （复用原 Git 基线，不重复 check-env）→ 回到局部迭代
-                          ↓ 你要求最终检查 / 完整交付 / 准备提交
-⑤ delivery.py route   按当前需求基线后的最终 Git Diff 自动路由审查并保存条件门禁快照
-   └─ 新发现计划外旧业务影响 → 暂停交付 → init 补充说明
-      → confirm-requirement-update（不重复 check-env）→ 局部修复后重新 route
-
-   【核心·业务逻辑层】(route 自动逐个调用,必先过)
-     1. android-review-diff        ← 必跑:diff 影响范围
-     2. android-verify-api-contract  ← 仅当有接口变更才跑
-     3. android-review-code-quality  ← 必跑:质量/架构
-     4. android-audit-stability     ← 必跑:稳定性/兼容性
-     5. android-test-and-fix        ← 必跑:测试闭环/全绿门禁
-   【独立·UI 校验】(route 只提示,用户单独调用)
-     6. android-verify-ui          ← 截图与设计还原验收,不进自动队列
-
-⑥ delivery_gate.py validate   中文报告置顶显示旧业务修改与保护结果
-   └─ 核对确认修订、最终代码、route 条件门禁、执行收据和专项结果；退出码 0 才可声明通过
+① 确认需求：展示最新需求和旧业务影响；有增删改就合并后继续确认
+      ↓
+② 拆分测试：把全部确认需求拆成可验证的业务场景和测试用例
+      ↓
+③ 实现验证：逐项完成“失败测试 → 最小实现 → 测试通过”
+      ↓
+④ 变更后增量循环：只更新受影响需求、测试和代码，再回到实现验证
+      ↓ 你要求最终检查 / 完整交付 / 准备提交
+⑤ 最终交付：完整审查、构建、Lint、回归和条件专项 → 生成中文报告
 ```
+
+以上是用户操作视角。内部仍保留原有 Git 基线、需求修订、追溯、路由、专项结果和证据校验；不新增第二套状态机，也不因简化展示减少门禁。下面的脚本与机器文件用于 AI 自动执行和排障，日常不需要手动操作。
 
 脚本职责保持分离：
 

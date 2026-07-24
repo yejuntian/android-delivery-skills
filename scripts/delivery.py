@@ -183,6 +183,18 @@ def parse_args(argv=None):
     parser_route = subparsers.add_parser("route", help="分析代码改动并调用对应审查能力")
     parser_route.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
 
+    # 测试映射：把需求义务结构化绑定到测试用例，需求增量后标记 STALE 由 AI 回填。
+    parser_mapping = subparsers.add_parser(
+        "init-test-mapping",
+        help="为当前已确认义务生成测试映射骨架",
+    )
+    parser_mapping.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
+    parser_mapping.add_argument(
+        "--validate",
+        action="store_true",
+        help="只校验已有测试映射，不生成或覆盖骨架",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -777,6 +789,7 @@ def cmd_confirm_requirement_update(args):
     )
     print(f"✅ 本轮变化摘要: {summarize_revision_manifest(manifest)}")
     print("✅ Git 基线未修改；后续 route 仍覆盖本需求起点后的全部代码变化。")
+    _sync_test_mapping_after_revision(paths, snapshot)
     print_confirmed_fact_sources(
         requirement_path,
         revision_file,
@@ -1010,6 +1023,59 @@ def cmd_route(args):
     print_route_instructions(skills_to_run)
 
 
+def _sync_test_mapping_after_revision(paths, snapshot) -> None:
+    """需求修订推进后，把义务 sha256 已变化的测试登记标记为 STALE。
+
+    机器只负责刷新过期的语义摘要并打标；AI 必须据此重新登记测试并把状态回填
+    CURRENT，最终门禁才会放行。这是“需求增量后必须同步测试”的机器兜底。
+    """
+    from .test_mapping import TestMappingError, mark_stale_after_revision
+
+    mapping_path = getattr(paths, "test_mapping_path", None)
+    if mapping_path is None or not Path(mapping_path).is_file():
+        return
+    try:
+        mark_stale_after_revision(Path(mapping_path), snapshot)
+    except TestMappingError as exc:
+        print(f"⚠️ {exc}")
+
+
+def cmd_init_test_mapping(args):
+    """为当前已确认义务生成测试映射骨架，或校验已有映射。"""
+    from .test_mapping import (
+        TestMappingError,
+        build_initial_mapping,
+        load_test_mapping,
+        validate_test_mapping,
+        _atomic_write,
+    )
+
+    config = load_config(args.config)
+    paths = resolve_paths(config, args.config)
+    snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(args.config))
+    if snapshot is None:
+        raise DeliveryError("尚未建立需求快照，请先执行 check-env 和 confirm-requirement-update")
+    if snapshot["status"] != "CONFIRMED" or not snapshot.get("obligations"):
+        raise DeliveryError("当前需求尚未确认原子义务，无法生成测试映射")
+    mapping_path = paths.test_mapping_path
+    if args.validate:
+        payload = load_test_mapping(mapping_path)
+        errors = validate_test_mapping(payload, snapshot)
+        if errors:
+            print("❌ 测试映射未通过校验:", file=sys.stderr)
+            for error in errors:
+                print(f"- {error}", file=sys.stderr)
+            return 1
+        print(f"✅ 测试映射有效: {mapping_path}")
+        return 0
+    payload = build_initial_mapping(snapshot)
+    _atomic_write(mapping_path, payload)
+    print(f"✅ 测试映射骨架已生成: {mapping_path}")
+    print("👉 AI 指令：为每个义务登记真实测试用例 id，把 mapping_status 回填为 CURRENT。")
+    print("义务 sha256 已与当前需求修订绑定；需求再次增量时旧登记会自动标记 STALE。")
+    return 0
+
+
 def main(argv=None):
     """执行命令，并把可预期错误转换成简洁、可操作的提示。"""
     try:
@@ -1024,6 +1090,8 @@ def main(argv=None):
             return cmd_confirm_plan(args)
         elif args.command == "route":
             cmd_route(args)
+        elif args.command == "init-test-mapping":
+            return cmd_init_test_mapping(args)
     except (
         DeliveryError,
         GitInspectionError,

@@ -317,9 +317,19 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 - 条件必需：按业务影响选择仪器或截图测试；Journey 只执行 `FULL` 或 `PARTIAL` 中实际分配给它的验证义务。
 - 每个原子 Then 使用 `COVERED_AUTOMATED`、`COVERED_MANUAL`、`UNVERIFIED`、`BLOCKED` 或 `NOT_APPLICABLE`；`COVERED_MANUAL` 必须已经实际执行并有证据，不能用于尚未执行的计划。
 - 当前需求追溯表中全部已确认 `REQ-ID` 都映射到 `BDD-ID/Then`、实现、`TEST-ID`/实际人工验收、必需性、命令和最终证据，需求映射率为 100%。
+- 测试映射：`COVERED_AUTOMATED` 义务必须在 `<requirement_dir>/test-cases/test-mapping.json` 中登记，`mapping_status=CURRENT`，且登记的 `test_ids` 出现在执行收据里；STALE 映射表示需求已增量但测试未同步，直接阻断。
 - 所有必需 Then 均为 `COVERED_AUTOMATED` 或有证据的 `COVERED_MANUAL`；Journey、截图、Unit 或静态扫描不得越过自身证据边界。
 - 失败数为 0，P0/P1 测试缺口为 0。未执行项不得计为通过。
 - 必需测试不得存在未关闭的 `FLAKY`，最终证据必须在最后一次修复后重新执行。
+
+## 变异测试（防假断言）
+
+业界（PIT/pitest）验证“测试断言是否真在约束行为”的标准手段，在最终交付阶段对本次 diff 涉及的 Kotlin/Java 业务代码自动执行：
+
+- 本 Skill 的专项结果必须输出 `mutation_testing` 摘要（`producer=pitest`），包含语言范围、目标类、变异算子、生成/杀死/存活变异数、按义务记录的 `killed_by_obligation`、存活动义 `survival_blocked`，以及报告文件路径和 SHA-256。
+- 有变异存活 = 断言没有真正约束行为（测试是假的，或需求增量后断言没更新）。通过结论要求 `generated_mutants > 0` 且 `survived = 0`；存活变异阻断完整通过，必须补强断言并重跑。
+- 优先复用项目已有 pitest 配置；没有时只对本次 diff 涉及的类以最小变异算子集运行，不自动升级 AGP/Gradle、不新增重型依赖。Kotlin 目标需要 pitest Kotlin 插件。
+- 诚实边界：变异测试基于 JVM 字节码，覆盖 Unit Test 层业务逻辑（“AI 不更新断言”风险最高、命中最高的层），不覆盖 Robolectric 和 instrumented 测试。机器能证明“断言杀掉了变异”，仍读不懂测试语义正确性——后者由 route 阶段 `android-review-diff` 复核“映射声称改了测试 vs 测试文件真实 diff”。
 
 ## Android 版本兼容测试
 

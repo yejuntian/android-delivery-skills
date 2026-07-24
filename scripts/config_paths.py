@@ -26,6 +26,11 @@ class ConfigPaths:
     requirement_dir: Path
     requirement_path: Path | None
 
+    @property
+    def test_mapping_path(self) -> Path:
+        """返回当前需求测试映射路径，与追溯表同目录，便于人和机器同步查阅。"""
+        return (self.requirement_dir / "test-cases" / "test-mapping.json").resolve()
+
 
 def _resolve(value: Any, base: Path) -> Path | None:
     """只基于明确父目录解析路径，不搜索同名文件或猜测其他根目录。"""

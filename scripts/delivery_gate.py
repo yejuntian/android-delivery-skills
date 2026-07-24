@@ -46,6 +46,11 @@ from .requirement_snapshot import (  # noqa: E402
     requirement_digest,
 )
 from .requirement_inputs import requirement_inputs_digest  # noqa: E402
+from .test_mapping import (  # noqa: E402
+    TestMappingError,
+    load_test_mapping,
+    validate_test_mapping,
+)
 from .route_impact import RouteImpactError, load_route_impact  # noqa: E402
 from .specialist_result import (  # noqa: E402
     JOURNEY_AGENT_SKILL,
@@ -244,6 +249,21 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
     context["expected_conditional_gates"] = sorted(
         candidate["id"] for candidate in route_impact["conditional_gates"]
     )
+    # 测试映射是“需求增量后必须同步测试”的机器兜底；缺失时记为缺失，最终校验时拦截。
+    test_mapping_path = paths.test_mapping_path
+    try:
+        if test_mapping_path.is_file():
+            test_mapping = load_test_mapping(test_mapping_path)
+            mapping_errors = validate_test_mapping(test_mapping, requirement_snapshot)
+            if mapping_errors:
+                raise DeliveryGateError("；".join(mapping_errors))
+            context["test_mapping"] = {
+                item["obligation_id"]: item for item in test_mapping.get("mappings", [])
+            }
+        else:
+            context["test_mapping"] = None
+    except TestMappingError as exc:
+        raise DeliveryGateError(str(exc)) from exc
     return context
 
 
@@ -618,6 +638,41 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             for ref in refs
         ):
             errors.append(f"obligation {identifier} 缺少自动执行证据")
+        # 测试映射门禁：COVERED_AUTOMATED 义务的映射必须 CURRENT，且登记的测试 id
+        # 必须出现在执行收据里；STALE 映射表示需求已增量但测试未同步，直接阻断。
+        test_mapping = context.get("test_mapping")
+        if status == "COVERED_AUTOMATED":
+            if test_mapping is None:
+                errors.append(
+                    "缺少当前需求的测试映射，请先执行 delivery.py init-test-mapping"
+                )
+            else:
+                entry = test_mapping.get(identifier)
+                if entry is None:
+                    errors.append(f"义务 {identifier} 缺少测试映射登记")
+                elif entry["mapping_status"] == "STALE":
+                    errors.append(
+                        f"义务 {identifier} 的测试映射过期：需求已增量但测试未同步"
+                    )
+                elif entry.get("test_ids"):
+                    # 一致性只对 AUTOMATED 证据核对；纯 AGENT(Journey) 覆盖由专项结果 PASS 证明，
+                    # 不走 junit testcase 收据，无法用 test_ids 交叉核对。
+                    receipt_cases: set[str] = set()
+                    has_automated = False
+                    for ref in refs:
+                        if evidence.get(ref, {}).get("kind") != "AUTOMATED":
+                            continue
+                        has_automated = True
+                        receipt_cases.update(
+                            evidence.get(ref, {}).get("obligation_test_cases", {}).get(identifier, [])
+                        )
+                    if has_automated:
+                        unmapped = sorted(set(entry["test_ids"]) - receipt_cases)
+                        if unmapped:
+                            errors.append(
+                                f"义务 {identifier} 的测试映射登记了未执行的测试: "
+                                + ", ".join(unmapped)
+                            )
         if status == "COVERED_AUTOMATED" and not any(
             isinstance(evidence.get(ref, {}).get("executed_tests"), int)
             and evidence.get(ref, {}).get("executed_tests", 0) > 0

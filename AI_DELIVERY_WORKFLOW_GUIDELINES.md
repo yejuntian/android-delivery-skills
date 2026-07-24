@@ -89,16 +89,16 @@ Harness 由总入口、共享规则、脚本、专项 Skill 和证据门禁共�
 
 ## 三、Skill 角色与职责
 
-| Skill | 角色 | 负责内容 | 不负责内容 |
-|---|---|---|---|
+| Skill                          | 角色 | 负责内容 | 不负责内容 |
+|--------------------------------|---|---|---|
 | `android-implement-and-verify` | 项目负责人、总入口 | 读取需求、维护修订、建立 Git 基线、控制编码、路由专项、汇总最终交付 | 不代替专项完成详细审查 |
-| `android-review-diff` | 变更范围 Reviewer | 检查需求覆盖、改动越界、误改旧逻辑、遗漏调用方和回归风险 | 不负责整体架构和测试执行 |
-| `android-review-code-quality` | 架构与质量 Reviewer | 检查职责边界、耦合、重复、可维护性和项目架构一致性 | 不负责需求确认和动态稳定性 |
-| `android-audit-stability` | 稳定性工程师 | 检查生命周期、资源释放、泄漏、并发、性能、安全隐私及动态能力适用性 | 不把静态未发现问题写成绝对无泄漏 |
-| `android-test-and-fix` | 测试工程师与修复门禁 | 局部迭代执行受影响测试和必要编译；最终交付执行完整测试、分析失败、最小修复和回归 | 不负责需求确认和设计稿视觉还原 |
-| `android-verify-api-contract` | API 契约检查员 | 检查 endpoint、Request/Response、DTO、mapper、错误码、缓存字段和兼容性 | 不负责普通架构和 UI 验收 |
-| `android-verify-ui` | 独立 UI 验收工程师 | 检查设计还原、截图、布局、动态 UI 和可访问性 | 不生成或管理业务测试用例，不由 route 自动执行 |
-| `figma-android-xml` | 外部 XML UI 生产 Skill | 在已确认的 Figma + XML View 场景生成 XML、Drawable、Color、Dimen 和预览资源 | 不写 Kotlin/Java 业务逻辑，不负责行为测试和最终 UI 验收 |
+| `android-review-diff`          | 变更范围 Reviewer | 检查需求覆盖、改动越界、误改旧逻辑、遗漏调用方和回归风险 | 不负责整体架构和测试执行 |
+| `android-review-code-quality`  | 架构与质量 Reviewer | 检查职责边界、耦合、重复、可维护性和项目架构一致性 | 不负责需求确认和动态稳定性 |
+| `android-audit-stability`      | 稳定性工程师 | 检查生命周期、资源释放、泄漏、并发、性能、安全隐私及动态能力适用性 | 不把静态未发现问题写成绝对无泄漏 |
+| `android-test-and-fix`         | 测试工程师与修复门禁 | 局部迭代执行受影响测试和必要编译；最终交付执行完整测试、分析失败、最小修复和回归 | 不负责需求确认和设计稿视觉还原 |
+| `android-verify-api-contract`  | API 契约检查员 | 检查 endpoint、Request/Response、DTO、mapper、错误码、缓存字段和兼容性 | 不负责普通架构和 UI 验收 |
+| `android-verify-ui`            | 独立 UI 验收工程师 | 检查设计还原、截图、布局、动态 UI 和可访问性 | 不生成或管理业务测试用例，不由 route 自动执行 |
+| `figma-android-xml`         | 外部 XML UI 生产 Skill | 在已确认的 Figma + XML View 场景生成 XML、Drawable、Color、Dimen 和预览资源 | 不写 Kotlin/Java 业务逻辑，不负责行为测试和最终 UI 验收 |
 
 `android-verify-ui` 保持独立。Journey 可以证明用户操作和可见结果，UI 验收负责判断页面是否符合设计基准；二者可以复用截图，但不能互相代替。
 
@@ -119,8 +119,9 @@ Harness 由总入口、共享规则、脚本、专项 Skill 和证据门禁共�
 | `scripts/android_project_capabilities.py` | 只读发现模块、variant、Gradle task 及已有静态配置/CI 信号 |
 | `scripts/static_analysis.py` | 规范化已有 SARIF、生成稳定问题编号并审计静态门禁控制面变化 |
 | `scripts/execution_evidence.py` | 执行一条已选择命令并生成单 gate、不可覆盖的机器收据 |
-| `scripts/specialist_result.py` | 校验专项结果、P0-P3、capability 和证据摘要 |
-| `scripts/delivery_gate.py` | 校验最终报告与当前需求、代码和全部证据是否一致 |
+| `scripts/specialist_result.py` | 校验专项结果、P0-P3、capability、变异测试摘要和证据摘要 |
+| `scripts/test_mapping.py` | 维护义务↔测试用例结构化绑定，需求增量后标记 STALE 由 AI 回填 |
+| `scripts/delivery_gate.py` | 校验最终报告与当前需求、代码、测试映射和全部证据是否一致 |
 | `scripts/user_facing_labels.py` | 把稳定机器枚举转换为自然中文，不修改 JSON、Schema、业务状态或退出码 |
 | `android-test-and-fix/scripts/detect_package.py` | 仅在源码诊断阶段嗅探候选 applicationId；正式 Journey 仍以 APK 内真实包名为准 |
 | `android-test-and-fix/scripts/run_journey.py` | 执行已经判定适用的可选壳 Journey，并生成结构化结果 |

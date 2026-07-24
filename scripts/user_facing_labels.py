@@ -132,6 +132,7 @@ GATE_LABELS = {
     "android-security-privacy": "安全与隐私检查",
     "android-dynamic-leak": "动态内存泄漏检查",
     "android-performance": "性能检查",
+    "android-mutation": "变异测试（防假断言）",
     "behavior-journey": "界面流程自动化测试",
 }
 

@@ -124,6 +124,15 @@ class DeliveryGateTests(unittest.TestCase):
             "expected_conditional_gates": [],
             "result_path": "/tmp/result.json",
             "traceability_path": str(self.traceability),
+            "test_mapping": {
+                "BDD-001/T1": {
+                    "obligation_id": "BDD-001/T1",
+                    "obligation_sha256": self.obligation,
+                    "test_ids": ["FeatureTest#thenT1"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": None,
+                },
+            },
         }
         test_command = ["./gradlew", ":app:testDebugUnitTest"]
         test_report = self.temp_root / "TEST-result.xml"
@@ -455,6 +464,26 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertTrue(any("语义摘要与当前确认修订不一致" in error for error in errors))
         self.assertTrue(any("需求证据已失效" in error for error in errors))
         self.assertTrue(any("缺少自动执行证据" in error for error in errors))
+
+    def test_stale_test_mapping_blocks_pass(self) -> None:
+        """验证需求增量后测试映射仍为 STALE 时阻断通过结论。"""
+        self.context["test_mapping"]["BDD-001/T1"]["mapping_status"] = "STALE"
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("测试映射过期" in error for error in errors))
+
+    def test_missing_test_mapping_blocks_pass(self) -> None:
+        """验证缺少测试映射时 COVERED_AUTOMATED 义务不能通过。"""
+        self.context["test_mapping"] = None
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("缺少当前需求的测试映射" in error for error in errors))
+
+    def test_test_mapping_must_match_receipts(self) -> None:
+        """验证测试映射登记了未执行的测试时阻断通过。"""
+        self.context["test_mapping"]["BDD-001/T1"]["test_ids"] = [
+            "FeatureTest#thenT1", "FeatureTest#never"
+        ]
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("登记了未执行的测试" in error for error in errors))
 
     def test_requires_every_core_review_build_and_lint_gate(self) -> None:
         """验证 AI 不能通过省略质量、稳定性、构建或 lint 门禁缩短完整交付。"""

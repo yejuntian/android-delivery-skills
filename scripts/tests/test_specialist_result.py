@@ -420,6 +420,63 @@ class SpecialistResultTests(unittest.TestCase):
         self.assertEqual("specialists", path.name)
         self.assertIn("-r1-", path.parent.name)
 
+    def _mutation_report(self) -> Path:
+        """写入绑定摘要的变异测试报告文件，供 PASS 场景复用。"""
+        report = self.root / "mutations.xml"
+        report.write_text("<mutations/>\n", encoding="utf-8")
+        return report
+
+    def _test_and_fix_payload(self) -> dict:
+        """构造 android-test-and-fix 的最小有效专项结果。"""
+        self.payload["skill"] = "android-test-and-fix"
+        self.payload.pop("confirmed_impacts", None)
+        return self.payload
+
+    def test_test_and_fix_requires_mutation_summary(self) -> None:
+        """验证测试与修复专项缺少变异测试摘要时校验失败。"""
+        payload = self._test_and_fix_payload()
+        errors = validate_specialist_result(payload, self.context)
+        self.assertTrue(any("mutation_testing" in error for error in errors))
+
+    def test_mutation_survived_blocks_pass(self) -> None:
+        """验证存活变异存在时测试与修复专项不能标记 PASS。"""
+        report = self._mutation_report()
+        payload = self._test_and_fix_payload()
+        payload["mutation_testing"] = {
+            "producer": "pitest",
+            "languages": ["KOTLIN"],
+            "target_classes": ["com.sample.Feature"],
+            "mutators": ["MATH"],
+            "generated_mutants": 10,
+            "killed": 9,
+            "survived": 1,
+            "killed_by_obligation": {"BDD-001/T1": ["M1", "M2"]},
+            "survival_blocked": ["M3"],
+            "report_path": str(report),
+            "report_sha256": sha256_file(report),
+        }
+        errors = validate_specialist_result(payload, self.context)
+        self.assertTrue(any("存活变异" in error for error in errors))
+
+    def test_mutation_all_killed_passes(self) -> None:
+        """验证全部变异被杀死且报告有效时测试与修复专项可 PASS。"""
+        report = self._mutation_report()
+        payload = self._test_and_fix_payload()
+        payload["mutation_testing"] = {
+            "producer": "pitest",
+            "languages": ["KOTLIN"],
+            "target_classes": ["com.sample.Feature"],
+            "mutators": ["MATH"],
+            "generated_mutants": 8,
+            "killed": 8,
+            "survived": 0,
+            "killed_by_obligation": {"BDD-001/T1": ["M1"]},
+            "survival_blocked": [],
+            "report_path": str(report),
+            "report_sha256": sha256_file(report),
+        }
+        self.assertEqual([], validate_specialist_result(payload, self.context))
+
 
 if __name__ == "__main__":
     unittest.main()

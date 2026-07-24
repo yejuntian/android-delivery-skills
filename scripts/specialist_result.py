@@ -39,6 +39,7 @@ CAPABILITY_STATUSES = {"PASS", "FAIL", "SKIPPED", "UNVERIFIED", "BLOCKED"}
 SEVERITIES = {"P0", "P1", "P2", "P3"}
 JOURNEY_AGENT_SKILL = "android-test-and-fix/journey-agent"
 STABILITY_SKILL = "android-audit-stability"
+TEST_AND_FIX_SKILL = "android-test-and-fix"
 DIFF_REVIEW_SKILL = "android-review-diff"
 CODE_QUALITY_SKILL = "android-review-code-quality"
 CODE_QUALITY_CHECK_IDS = {
@@ -77,6 +78,134 @@ STATIC_TOOL_MODES = {
 }
 STATIC_CONTROL_KINDS = {"SUPPRESSION", "BASELINE", "EXCLUSION", "CONFIG"}
 STATIC_CONTROL_DECISIONS = {"JUSTIFIED", "REMOVED", "BLOCKING"}
+
+# 变异测试：业界验证“测试断言真伪”的标准手段。PIT 自动篡改生产代码再跑测试，
+# 存活变异 = 断言没真正约束行为 = 测试是假的。这里只校验机器摘要结构。
+MUTATION_TESTING_PRODUCER = "pitest"
+MUTATION_SEVERITIES = {"SURVIVED_HIGH", "SURVIVED_NORMAL", "SURVIVED_LOW", "KILLED", "NO_COVERAGE", "TIMED_OUT"}
+
+
+def _validate_mutation_testing(
+    value: Any,
+    conclusion: str,
+    context: dict[str, Any],
+) -> list[str]:
+    """校验变异测试机器摘要，防止 AI 用“测试通过”冒充“断言真在测”。"""
+    errors: list[str] = []
+    if not isinstance(value, dict):
+        return ["变异测试缺少 mutation_testing 机器摘要"]
+    expected_fields = {
+        "producer",
+        "languages",
+        "target_classes",
+        "mutators",
+        "generated_mutants",
+        "killed",
+        "survived",
+        "killed_by_obligation",
+        "survival_blocked",
+        "report_path",
+        "report_sha256",
+    }
+    if set(value) != expected_fields:
+        errors.append(
+            "mutation_testing 必须只包含 producer、languages、target_classes、mutators、"
+            "generated_mutants、killed、survived、killed_by_obligation、survival_blocked、"
+            "report_path、report_sha256"
+        )
+
+    producer = value.get("producer")
+    if producer != MUTATION_TESTING_PRODUCER:
+        errors.append(f"mutation_testing.producer 必须为 {MUTATION_TESTING_PRODUCER}")
+
+    languages = value.get("languages")
+    if (
+        not isinstance(languages, list)
+        or not languages
+        or not _has_unique_values(languages)
+        or any(language not in STATIC_LANGUAGES for language in languages)
+        or ("NONE" in languages and len(languages) != 1)
+    ):
+        errors.append("mutation_testing.languages 必须是有效且不重复的 Kotlin/Java/混合/无代码范围")
+
+    target_classes = value.get("target_classes")
+    if not _has_unique_values(target_classes) or not all(
+        isinstance(item, str) and item.strip() for item in target_classes
+    ):
+        errors.append("mutation_testing.target_classes 必须是唯一字符串数组")
+        target_classes = []
+    if languages and languages != ["NONE"] and not target_classes:
+        errors.append("存在 Kotlin/Java 变异范围时必须记录 target_classes")
+
+    mutators = value.get("mutators")
+    if not _has_unique_values(mutators) or not all(
+        isinstance(item, str) and item.strip() for item in mutators
+    ):
+        errors.append("mutation_testing.mutators 必须是唯一字符串数组")
+
+    for count_field in ("generated_mutants", "killed", "survived"):
+        count = value.get(count_field)
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            errors.append(f"mutation_testing.{count_field} 必须是非负整数")
+
+    generated = value.get("generated_mutants")
+    killed = value.get("killed")
+    survived = value.get("survived")
+    if (
+        isinstance(generated, int) and not isinstance(generated, bool)
+        and isinstance(killed, int) and not isinstance(killed, bool)
+        and isinstance(survived, int) and not isinstance(survived, bool)
+        and killed + survived != generated
+    ):
+        errors.append("mutation_testing 的 killed + survived 必须等于 generated_mutants")
+
+    killed_by_obligation = value.get("killed_by_obligation")
+    if not isinstance(killed_by_obligation, dict):
+        errors.append("mutation_testing.killed_by_obligation 必须是 BDD/Then → 变异 id 数组的映射")
+        killed_by_obligation = {}
+    else:
+        for obligation_id, mutants in killed_by_obligation.items():
+            if not isinstance(obligation_id, str) or not re.fullmatch(r"BDD-[0-9]+/T[0-9]+", obligation_id):
+                errors.append(f"mutation_testing.killed_by_obligation 存在无效 key: {obligation_id}")
+                continue
+            if not _has_unique_values(mutants) or not all(
+                isinstance(item, str) and item.strip() for item in mutants
+            ):
+                errors.append(f"mutation_testing.killed_by_obligation[{obligation_id}] 必须是唯一字符串数组")
+
+    survival_blocked = value.get("survival_blocked")
+    if not isinstance(survival_blocked, list) or not all(
+        isinstance(item, str) and item.strip() for item in survival_blocked
+    ):
+        errors.append("mutation_testing.survival_blocked 必须是字符串数组")
+
+    report_path_value = value.get("report_path")
+    report_digest = value.get("report_sha256")
+    report_path = Path(str(report_path_value or "")).expanduser()
+    if (
+        not isinstance(report_path_value, str)
+        or not report_path_value.strip()
+        or not isinstance(report_digest, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", report_digest)
+        or not report_path.is_file()
+    ):
+        errors.append("mutation_testing 缺少有效的变异测试报告文件和摘要")
+    else:
+        try:
+            if sha256_file(report_path) != report_digest:
+                errors.append("mutation_testing 变异测试报告文件摘要已变化")
+        except OSError as exc:
+            errors.append(f"mutation_testing 变异测试报告文件无法读取: {exc}")
+
+    # 通过结论必须同时满足：变异确实执行过，且没有应当杀掉却存活的变异。
+    if conclusion == "PASS":
+        if not isinstance(generated, int) or isinstance(generated, bool) or generated <= 0:
+            errors.append("变异测试结论为 PASS 时必须生成至少一个变异")
+        elif isinstance(survived, int) and not isinstance(survived, bool) and survived > 0:
+            errors.append(
+                f"变异测试仍有 {survived} 个存活变异，测试断言未真正约束行为，不能标记 PASS"
+            )
+    return errors
 
 
 class SpecialistResultError(RuntimeError):
@@ -652,6 +781,18 @@ def validate_specialist_result(
             errors.append("Journey Agent 没有真实 Journey 或 action 执行数量")
         if not payload.get("started_at") or not payload.get("finished_at"):
             errors.append("Journey Agent 缺少执行起止时间")
+
+    mutation_testing = payload.get("mutation_testing")
+    if mutation_testing is None:
+        # 测试与修复专项报告变异测试摘要；其他 Skill 不携带该字段。
+        if payload.get("skill") == TEST_AND_FIX_SKILL:
+            errors.append("android-test-and-fix 必须输出 mutation_testing 变异测试摘要")
+    elif payload.get("skill") == TEST_AND_FIX_SKILL:
+        errors.extend(
+            _validate_mutation_testing(mutation_testing, str(conclusion), context or payload)
+        )
+    else:
+        errors.append("只有 android-test-and-fix 可以输出 mutation_testing")
 
     if context:
         for field in (

@@ -636,6 +636,7 @@ def cmd_init(args):
     except RequirementSnapshotError as exc:
         raise DeliveryError(str(exc)) from exc
     if snapshot and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve():
+        _print_resume_brief(paths, snapshot)
         print(
             f"\n📚 当前确认修订: {snapshot['requirement_id']} "
             f"第 {snapshot['revision']} 版 "
@@ -672,8 +673,110 @@ def cmd_init(args):
         print(f"📄 默认修订清单: {revision_file}")
 
     _render_resume_guide(paths)
+    _print_flow_position(paths)
     print("\n---")
     print_bdd_instruction()
+
+
+def _print_resume_brief(paths, snapshot) -> None:
+    """旧需求续接时，把续接指南摘要直接打印到终端，强制 AI 第一眼进入状态。
+
+    单一职责：只读 snapshot/续接指南/mapping 派生摘要，不改任何状态。目的是让
+    AI 执行 init 时被迫看到当前修订/计划/STALE 数/下一步，不靠自觉去读文件。
+    """
+    from .render_artifacts import _read_json
+
+    revision = snapshot.get("revision", "?")
+    status = SNAPSHOT_STATUS_LABELS.get(snapshot.get("status"), "状态未知")
+    requirement_dir = getattr(paths, "requirement_dir", None)
+    receipt = _read_json(
+        Path(requirement_dir) / "test-cases" / "implementation-plan-receipt.json"
+        if requirement_dir else None
+    ) if requirement_dir else None
+    plan_confirmed = bool(receipt and receipt.get("confirmed_at"))
+    delivery_result = _read_json(
+        Path(requirement_dir) / "test-results" / "delivery-result.json"
+        if requirement_dir else None
+    ) if requirement_dir else None
+    conclusion = (delivery_result or {}).get("conclusion")
+    mapping = _read_json(
+        getattr(paths, "test_mapping_path", None)
+        or (Path(requirement_dir) / "test-cases" / "test-mapping.json")
+    ) if requirement_dir else None
+    stale = [
+        m for m in (mapping or {}).get("mappings", [])
+        if m.get("mapping_status") == "STALE"
+    ]
+    title = Path(requirement_dir).name if requirement_dir else snapshot.get("requirement_id", "")
+    last_activity = snapshot.get("confirmed_at") or snapshot.get("created_at") or ""
+    print("\n📌 续接旧需求：" + title)
+    summary = f"   修订：第 {revision} 版（{status}）｜计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}"
+    if last_activity:
+        summary += f"｜上次活动：{last_activity[:10]}"
+    if conclusion:
+        summary += f"｜最终结论：{conclusion}"
+    print(summary)
+    if stale:
+        names = "，".join(m.get("obligation_id", "?") for m in stale)
+        print(f"   ⏳ {len(stale)} 个测试待回填：{names}")
+    if plan_confirmed and not stale:
+        print("   下一步：可直接进入编码，或用户要求时最终交付")
+    elif plan_confirmed and stale:
+        print("   下一步：先回填 STALE 测试（init-test-mapping），再继续")
+    else:
+        print("   下一步：展示实施计划.md 并 confirm-plan")
+    print("   完整状态见：续接指南.md")
+
+
+def _print_flow_position(paths) -> None:
+    """打印当前流程位置（半状态驱动），让 AI 永远知道下一步该执行哪个命令。
+
+    单一职责：根据已存在的事实文件推断五步流程当前位置，只读不写。脚本仍是
+    检查点模型，本函数补一个常驻指示器，逼近 codex 状态驱动的体验。
+    """
+    from .render_artifacts import _read_json
+
+    requirement_dir = getattr(paths, "requirement_dir", None)
+    snapshot_path = requirement_snapshot_path_for_config(
+        getattr(paths, "config_path", None) or DEFAULT_CONFIG_PATH
+    )
+    try:
+        snapshot = load_requirement_snapshot(snapshot_path)
+    except RequirementSnapshotError:
+        snapshot = None
+    if snapshot is None or not snapshot.get("obligations"):
+        print("\n🧭 当前流程位置：第①步 确认需求")
+        print("   ○ 完成需求理解、写回 requirement_file、check-env → confirm-requirement-update")
+        return
+    if snapshot.get("status") != "CONFIRMED" or snapshot.get("pending_changes"):
+        print("\n🧭 当前流程位置：第①步 确认需求（仍有待定/冲突项）")
+        print("   ○ 解决待定项后重新 confirm-requirement-update")
+        return
+    receipt = _read_json(
+        Path(requirement_dir) / "test-cases" / "implementation-plan-receipt.json"
+        if requirement_dir else None
+    ) if requirement_dir else None
+    plan_confirmed = bool(receipt and receipt.get("confirmed_at"))
+    if not plan_confirmed:
+        print("\n🧭 当前流程位置：第②步 拆分测试与确认计划")
+        print("   ✓ 需求已确认")
+        print("   ○ 写实施计划.md → 展示摘要 → confirm-plan")
+        return
+    mapping = _read_json(
+        getattr(paths, "test_mapping_path", None)
+        or (Path(requirement_dir) / "test-cases" / "test-mapping.json")
+    ) if requirement_dir else None
+    stale = [
+        m for m in (mapping or {}).get("mappings", [])
+        if m.get("mapping_status") == "STALE"
+    ]
+    if stale:
+        names = "，".join(m.get("obligation_id", "?") for m in stale)
+        print(f"\n🧭 当前流程位置：第③步 实现验证（{len(stale)} 个测试待回填：{names}）")
+        print("   ○ init-test-mapping 回填 CURRENT → 按 Then 编码 Red→Green")
+        return
+    print("\n🧭 当前流程位置：第③/④步 实现验证 / 增量循环")
+    print("   ○ 按原子 Then 编码；完善只跑受影响测试；最终交付由用户明确要求触发")
 
 
 def _render_resume_guide(paths, revision_manifest=None) -> None:

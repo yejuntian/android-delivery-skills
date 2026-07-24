@@ -543,6 +543,46 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertEqual(["BDD-001/T1"], [item["id"] for item in restored["obligations"]])
         self.assertEqual("显示错误", restored["content"])
 
+    def test_init_prints_resume_brief_and_flow_position(self) -> None:
+        """续接旧需求时，init 打印续接摘要块和当前流程位置（半状态驱动）。"""
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, "登录失败显示错误", requirement_id="baseline-1",
+        )
+        apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            "登录失败显示错误",
+            self._manifest(0, [
+                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+            ]),
+        )
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+            config_path=str(self.root / "local.yaml"),
+            test_mapping_path=self.requirement_dir / "test-cases" / "test-mapping.json",
+            resume_guide_path=self.requirement_dir / "续接指南.md",
+        )
+        output = io.StringIO()
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(output),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+        text = output.getvalue()
+        # 优化1：续接摘要块强制 AI 第一眼进入状态。
+        self.assertIn("续接旧需求", text)
+        self.assertIn("计划：尚未确认或已失效", text)
+        # 优化2：流程位置指示器。
+        self.assertIn("当前流程位置", text)
+        self.assertIn("confirm-plan", text)
+
     def test_conflict_and_new_serial_requirement_are_blocked(self) -> None:
         """验证业务冲突不推进版本，新串行需求不能混入当前 Git 基线。"""
         write_requirement_snapshot(

@@ -803,6 +803,13 @@ def cmd_confirm_requirement_update(args):
     print("计划必须包含：实现范围、已上线业务影响、预计修改文件、测试方案、明确不修改范围。")
     print("聊天只展示简短计划摘要和上述 Markdown 路径，然后停止并等待用户确认。")
     print("只有用户明确确认该计划后，才执行 delivery.py confirm-plan；确认前不得编码。")
+    mapping_path = getattr(paths, "test_mapping_path", None)
+    if mapping_path is not None:
+        print(
+            f"👉 AI 指令：确认计划后先执行 delivery.py init-test-mapping 生成测试映射骨架 "
+            f"({mapping_path})，为每个义务登记真实 test_ids 并把 mapping_status 回填 CURRENT。"
+        )
+        print("需求后续增量时，义务 sha256 变化的旧登记会自动标记 STALE，必须重新登记测试才能通过最终门禁。")
     return 0
 
 

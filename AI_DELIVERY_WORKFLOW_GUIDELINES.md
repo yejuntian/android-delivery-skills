@@ -147,10 +147,10 @@ Harness 由总入口、共享规则、脚本、专项 Skill 和证据门禁共�
 ```
 
 - **确认需求**：读取需求和相关代码，置顶展示已上线业务影响；每个已接受答案先写回唯一需求文件，纯确认后进入计划准备。
-- **拆分测试与确认计划**：把行为映射为测试，再用一份 Markdown 展示实现范围、旧业务影响、预计文件、测试和不修改范围；确认后才编码。
+- **拆分测试与确认计划**：把行为映射为测试（`confirm-plan` 后用 `delivery.py init-test-mapping` 生成结构化 `test-mapping.json`，登记每个义务的 test_ids 并回填 `CURRENT`），再用一份 Markdown 展示实现范围、旧业务影响、预计文件、测试和不修改范围；确认后才编码。
 - **实现验证**：按一个可观察行为完成 `Red → 最小实现 → Green`，只报告本轮实现和验证结果。
-- **变更后增量循环**：实现完善只做局部修改和受影响测试；业务语义变化只修订受影响需求、测试和代码。
-- **最终交付**：只有用户明确要求时，才基于最终 diff 执行完整审查、回归、构建、Lint、条件专项和中文报告。
+- **变更后增量循环**：实现完善只做局部修改和受影响测试；业务语义变化只修订受影响需求、测试和代码，并使义务 sha256 变化的旧测试登记自动标记 STALE，AI 必须回填 CURRENT 才能通过最终门禁。
+- **最终交付**：只有用户明确要求时，才基于最终 diff 执行完整审查、回归、构建、Lint、变异测试(PIT)、条件专项和中文报告。
 
 接口或 UI 资料晚到但需求已经明确时，先用领域模型、Fake 和需求驱动 UI 跑通业务，并标记待正式资料对齐；正式资料到达后局部调整。关键业务含义仍不明确时，只暂停依赖该资料的范围并请求用户补充。
 
@@ -206,7 +206,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-        FACTS["阶段一输出：需求事实已确认"] --> MAP["映射全部已确认 BDD / Then<br/>阻塞项保留未验证"]
+        FACTS["阶段一输出：需求事实已确认"] --> MAP["映射全部已确认 BDD / Then<br/>执行 init-test-mapping 生成 test-mapping.json<br/>阻塞项保留未验证"]
         MAP --> INPUT{"正式 API / UI 资料状态"}
         INPUT -- "已齐或不适用" --> PLAN["生成唯一 实施计划.md"]
         INPUT -- "晚到但需求明确" --> PROVISIONAL["计划领域模型 / Fake / 需求驱动 UI<br/>标记待正式资料对齐"]
@@ -228,8 +228,8 @@ flowchart TD
         J -- "需求语义或旧业务处置变化" --> K["delivery.py init 生成受影响项修订清单"]
         K --> K1{"用户确认受影响修订"}
         K1 -- "待定或冲突" --> K
-        K1 -- "确认" --> K2["confirm-requirement-update<br/>复用原 Git 基线"]
-        K2 --> K3["更新测试映射和同一份实施计划"]
+        K1 -- "确认" --> K2["confirm-requirement-update<br/>复用原 Git 基线<br/>义务 sha256 变化的映射自动标 STALE"]
+        K2 --> K3["回填 test-mapping.json 为 CURRENT<br/>更新同一份实施计划"]
         K3 --> K4{"用户重新确认受影响计划"}
         K4 -- "修改" --> K3
         K4 -- "确认并执行 confirm-plan" --> W
@@ -245,7 +245,7 @@ flowchart TD
         M0 -- "否" --> M1{"发现计划外旧业务影响"}
         M1 -- "是" --> REVISE["返回阶段二：确认受影响修订"]
         M1 -- "否" --> N["选择测试层并执行完整回归"]
-        N --> O["构建、Lint、JUnit、Journey 或人工证据"]
+        N --> O["构建、Lint、JUnit、变异测试(PIT)、Journey 或人工证据"]
         O --> O0{"必需命令或专项失败"}
         O0 -- "否" --> UIQ{"需要独立 UI 验收"}
         UIQ -- "无 UI 影响" --> P["生成 delivery-result.json"]
@@ -255,8 +255,8 @@ flowchart TD
         UIRESULT -- "否" --> FIX
         UIQ -- "有 UI 但无可比基准" --> UIPENDING["记录视觉待对齐或未验证<br/>不冒充像素级通过"]
         UIPENDING --> P
-        P --> Q{"delivery_gate.py validate"}
-        Q -- "报告或证据缺口" --> FIX["保存证据并分类<br/>最小修复一个根因"]
+        P --> Q{"delivery_gate.py validate<br/>含测试映射 CURRENT 与变异 survived=0"}
+        Q -- "报告或证据缺口<br/>映射 STALE / 缺失<br/>或变异存活" --> FIX["保存证据并分类<br/>最小修复一个根因"]
         M0 -- "是" --> FIX
         O0 -- "是" --> FIX
         FIX -- "需求语义或旧业务冲突" --> REVISE

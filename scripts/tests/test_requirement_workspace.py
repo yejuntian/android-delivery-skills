@@ -210,6 +210,9 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertTrue((new_dir / "需求说明.md").is_file())
         for name in ("api", "ui", "test-cases", "test-results"):
             self.assertTrue((new_dir / name).is_dir())
+        # 人读产物子目录必须随新需求一起创建，否则 AI 手写产物无处落盘。
+        for name in ("plan", "review", "decisions"):
+            self.assertTrue((new_dir / name).is_dir(), f"缺少人读产物子目录: {name}")
         updated = self.config_path.read_text(encoding="utf-8")
         self.assertIn("# 必须保留的中文配置注释", updated)
         self.assertIn(
@@ -350,6 +353,40 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertIn("已完成需求", index)
         self.assertIn("需求总览", index)
         self.assertIn("archive/", index)
+
+    def test_index_command_writes_overview_file(self) -> None:
+        """index 子命令端到端：写入 需求总览.md，活动/已完成需求各一行。"""
+        policy = WorkspacePolicy(
+            mode="rotate",
+            root=self.workspace / "requirements-runtime",
+            keep_completed=3,
+            retention_days=7,
+            tempfile_dir=self.workspace / "tempfile",
+        )
+        policy.root.mkdir()
+        active = policy.root / "REQ-20260721-001-进行中需求"
+        active.mkdir()
+        _write_state(active, {"status": "ACTIVE", "title": "进行中需求", "requirement_id": "REQ-20260721-001"})
+        done = policy.root / "REQ-20260701-001-已完成需求"
+        done.mkdir()
+        _write_state(done, {
+            "status": "COMPLETED",
+            "title": "已完成需求",
+            "requirement_id": "REQ-20260701-001",
+            "completed_at": "2026-07-01T00:00:00+00:00",
+        })
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = main(["index", "--config", str(self.config_path)])
+
+        self.assertEqual(0, result)
+        index_path = policy.root / "需求总览.md"
+        self.assertTrue(index_path.is_file())
+        content = index_path.read_text(encoding="utf-8")
+        self.assertIn("进行中需求", content)
+        self.assertIn("已完成需求", content)
+        self.assertIn("REQ-20260721-001", content)
 
     def test_next_preview_accepts_chinese_outcome_without_modifying_files(self) -> None:
         """验证中文结论能生成准确预览，且未确认时不轮换目录或配置。"""

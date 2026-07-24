@@ -221,14 +221,11 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
-    """以同目录临时文件原子写入，避免中途中断留下半文件。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
+    """代理到公共原子写；统一行为。本工作区文件不需要 0600 权限。"""
+    from .atomic_write import write_text_atomic
     try:
-        temporary.write_text(content, encoding="utf-8")
-        temporary.replace(path)
+        write_text_atomic(path, content)
     except OSError as exc:
-        temporary.unlink(missing_ok=True)
         raise RequirementWorkspaceError(f"文件无法写入: {path}: {exc}") from exc
 
 

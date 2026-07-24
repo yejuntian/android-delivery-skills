@@ -446,6 +446,41 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("缺少实际人工证据" in error for error in errors))
 
+    def test_summary_forces_unverified_and_residual_sections(self) -> None:
+        """验证交付结论 md 必含'未验证项'与'残留风险'两个强制段，防被悄悄去掉。"""
+        from ..delivery_gate import render_delivery_summary
+
+        md_pass = render_delivery_summary(self.payload, self.context)
+        self.assertIn("## 未验证项", md_pass)
+        self.assertIn("## 残留风险", md_pass)
+
+        # 设备待验场景：未验证项与残留风险必须填入实际内容，而非"无"。
+        pending_payload = {
+            **self.payload,
+            "conclusion": "LOCAL_PASS_DEVICE_PENDING",
+            "obligations": [
+                {
+                    **self.payload["obligations"][0],
+                    "status": "UNVERIFIED",
+                    "reason": "真机待验",
+                }
+            ],
+            "pending_capabilities": [
+                {
+                    "id": "android-ui-a11y",
+                    "requires_device": True,
+                    "reason": "无真机",
+                    "evidence_ids": ["E-TEST"],
+                }
+            ],
+        }
+        md_pending = render_delivery_summary(pending_payload, self.context)
+        self.assertIn("## 未验证项", md_pending)
+        self.assertIn("BDD-001/T1", md_pending.split("## 未验证项")[1].split("## 残留风险")[0])
+        residual = md_pending.split("## 残留风险")[1]
+        self.assertIn("无真机", residual)
+        self.assertNotIn("本结论未保留残留风险项", residual)
+
     def test_requires_exact_latest_obligation_set(self) -> None:
         """验证最终报告少写或多写一个 Then 都不能绕过最新版总需求。"""
         self.context["expected_obligations"]["BDD-001/T2"] = {

@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .atomic_write import write_json_atomic
+
 
 MAPPING_VERSION = 1
 OBLIGATION_ID_PATTERN = "BDD-[0-9]+/T[0-9]+"
@@ -29,23 +31,13 @@ class TestMappingError(RuntimeError):
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
-    """以 0600 权限原子写入映射，中断时保留上一份完整记录。"""
-    target = Path(path).expanduser().resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(path.suffix + ".tmp")
+    """代理到公共原子写；保留旧名兼容既有调用方，统一行为与 0600 权限。"""
     try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        temporary.chmod(0o600)
-        temporary.replace(target)
+        write_json_atomic(path, payload)
     except OSError as exc:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise TestMappingError(f"测试映射无法写入: {target}: {exc}") from exc
+        raise TestMappingError(
+            f"测试映射无法写入: {Path(path).resolve()}: {exc}"
+        ) from exc
 
 
 def _validate_entry(item: Any, index: int) -> dict[str, Any]:

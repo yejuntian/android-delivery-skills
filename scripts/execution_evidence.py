@@ -352,18 +352,11 @@ def _gate_command_errors(gate_id: str, command: list[str]) -> list[str]:
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    """原子写入最终收据，命令中断时不会留下可被门禁误认的半文件。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    """代理到公共原子写；统一行为与 0600 权限。"""
+    from .atomic_write import write_json_atomic
     try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        temporary.chmod(0o600)
-        temporary.replace(path)
+        write_json_atomic(path, payload)
     except OSError as exc:
-        temporary.unlink(missing_ok=True)
         raise ExecutionEvidenceError(f"执行收据无法写入: {path}: {exc}") from exc
 
 

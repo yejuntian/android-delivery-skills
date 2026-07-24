@@ -53,23 +53,14 @@ def obligation_digest(identifier: str, text: str, required: bool) -> str:
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
-    """以 0600 权限原子写入外部状态，进程中断时保留上一份完整记录。"""
-    target = Path(path).expanduser().resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(target.suffix + ".tmp")
+    """代理到公共原子写；统一行为与 0600 权限。"""
+    from .atomic_write import write_json_atomic
     try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        temporary.chmod(0o600)
-        temporary.replace(target)
+        write_json_atomic(path, payload)
     except OSError as exc:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise RequirementSnapshotError(f"无法写入需求快照: {target}: {exc}") from exc
+        raise RequirementSnapshotError(
+            f"无法写入需求快照: {Path(path).resolve()}: {exc}"
+        ) from exc
 
 
 def _new_snapshot(

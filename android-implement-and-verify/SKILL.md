@@ -29,6 +29,13 @@ description: Android 需求实现与闭环验证总入口。用于完整完成 A
 
 内部继续执行本文件规定的三阶段命令、Git 基线、追溯、专项和证据门禁。默认不向用户展开 Skill 名称、脚本顺序、JSON、Schema、哈希或机器状态；只有用户明确询问，或解除故障、授权、阻塞确实需要时才展示必要细节及中文用途。
 
+## 人读产物与续接
+
+- 机器 JSON 是门禁附件；脚本从 JSON 渲染同名 md 影子供用户自检：`续接指南.md`（每次 `init` 刷新，聚合需求快照/映射/计划收据/最终结论）、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`、`test-results/交付结论.md`（强制未验证项与残留风险段）。
+- 续做旧需求时，先读 `<requirement_dir>/续接指南.md`，秒懂当前修订、义务状态（CURRENT/STALE）、计划是否确认、最终结论和下一步，不翻聊天。
+- 协作待办、`review/变更审查.md`（Diff 发现 + Context 发现双表）、`decisions/<日期>-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 手写，必须填 `references/templates/` 骨架。
+- 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前先归档关键人读 md 到 `archive/<requirement_id>/`，机器 JSON 随源清理。维护或扩展流程前先读 `decisions/`，避免重复推翻已确认取舍。
+
 ## 需求质量与追溯
 
 ### 稳定 ID 与场景门禁

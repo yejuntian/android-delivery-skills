@@ -922,6 +922,41 @@ def render_delivery_summary(
     else:
         lines.append("- 无。")
 
+    # 未验证项：强制独立段，逼 AI 暴露设备待验、能力缺失等没真正测到的内容。
+    unverified = [item for item in obligations if item.get("status") == "UNVERIFIED"]
+    lines.extend(["", f"## 未验证项（{len(unverified)} 项）", ""])
+    if unverified:
+        for item in unverified:
+            identifier = item.get("id", "未知义务")
+            text = _strip_business_prefix(
+                _single_line(expected.get(identifier, {}).get("text"))
+            ) or identifier
+            reason = localize_machine_terms(
+                _single_line(item.get("reason")) or "尚未在实际代码或设备上验证"
+            )
+            lines.append(f"- `{identifier}` {text} - {reason}")
+    else:
+        lines.append("- 无。")
+
+    # 残留风险：强制独立段，记录结论通过后仍存在的风险，不粉饰全绿。
+    risk_items: list[tuple[str, str]] = []
+    for cap in pending:
+        name = gate_label(cap.get("id"))
+        risk_items.append((name, localize_machine_terms(_single_line(cap.get("reason")) or "等待补充验证证据")))
+    for item in remaining:
+        identifier = item.get("id", "未知义务")
+        risk_items.append((f"`{identifier}`", localize_machine_terms(_single_line(item.get("reason")) or "未在最终代码上完成验证")))
+    lines.extend(["", "## 残留风险", ""])
+    if risk_items:
+        seen_risk: set[tuple[str, str]] = set()
+        for name, reason in risk_items:
+            if (name, reason) in seen_risk:
+                continue
+            seen_risk.add((name, reason))
+            lines.append(f"- {name}：{reason}")
+    else:
+        lines.append("- 本结论未保留残留风险项。")
+
     lines.extend(["", "## 下一步", ""])
     if pending:
         for item in pending:

@@ -310,6 +310,47 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertTrue(recent_cache.is_dir())
         self.assertTrue(damaged.is_dir())
 
+    def test_reclaim_archives_human_md_before_delete(self) -> None:
+        """回收前把关键人读 md 归档到 archive/，源目录删除后证据仍可查。"""
+        from ..requirement_workspace import (
+            archive_before_reclaim,
+            render_workspace_index,
+        )
+        policy = WorkspacePolicy(
+            mode="rotate",
+            root=self.workspace / "requirements-runtime",
+            keep_completed=0,
+            retention_days=0,
+            tempfile_dir=self.workspace / "tempfile",
+        )
+        policy.root.mkdir()
+        now = datetime(2026, 7, 21, tzinfo=timezone.utc)
+        done = policy.root / "REQ-20260701-001-已完成需求"
+        done.mkdir()
+        (done / "需求说明.md").write_text("# 需求正文", encoding="utf-8")
+        (done / "续接指南.md").write_text("# 续接", encoding="utf-8")
+        (done / "decisions").mkdir()
+        (done / "decisions" / "2026-07-01-不引库.md").write_text("# 决策", encoding="utf-8")
+        (done / "test-cases").mkdir()
+        (done / "test-cases" / "requirement-revision.json").write_text("{}", encoding="utf-8")
+        _write_state(done, {
+            "status": "COMPLETED",
+            "title": "已完成需求",
+            "completed_at": (now - timedelta(days=10)).isoformat(),
+        })
+
+        archive = archive_before_reclaim(done, policy.root)
+        self.assertIsNotNone(archive)
+        self.assertTrue((archive / "需求说明.md").is_file())
+        self.assertTrue((archive / "续接指南.md").is_file())
+        self.assertTrue((archive / "decisions" / "2026-07-01-不引库.md").is_file())
+        self.assertFalse((archive / "test-cases").exists())
+
+        index = render_workspace_index(policy.root)
+        self.assertIn("已完成需求", index)
+        self.assertIn("需求总览", index)
+        self.assertIn("archive/", index)
+
     def test_next_preview_accepts_chinese_outcome_without_modifying_files(self) -> None:
         """验证中文结论能生成准确预览，且未确认时不轮换目录或配置。"""
         source = self.workspace / "new-requirement.md"

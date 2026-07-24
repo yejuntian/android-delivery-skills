@@ -671,8 +671,59 @@ def cmd_init(args):
         revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
         print(f"📄 默认修订清单: {revision_file}")
 
+    _render_resume_guide(paths)
     print("\n---")
     print_bdd_instruction()
+
+
+def _render_resume_guide(paths) -> None:
+    """每次 init 末尾刷新续接指南.md，保证 AI 续做时读到最新状态快照。"""
+    from .render_artifacts import (
+        _read_json,
+        render_resume_guide,
+        render_revision_md,
+        render_test_mapping_md,
+        write_resume_guide,
+    )
+    from .atomic_write import write_text_atomic
+
+    config_path = getattr(paths, "config_path", None) or DEFAULT_CONFIG_PATH
+    snapshot_path = requirement_snapshot_path_for_config(config_path)
+    try:
+        snapshot = load_requirement_snapshot(snapshot_path)
+    except RequirementSnapshotError as exc:
+        print(f"⚠️ {exc}")
+        return
+    mapping = _read_json(getattr(paths, "test_mapping_path", None))
+    requirement_dir = getattr(paths, "requirement_dir", None)
+    receipt = _read_json(
+        (requirement_dir / "test-cases" / "implementation-plan-receipt.json")
+        if requirement_dir else None
+    )
+    delivery_result = _read_json(
+        (requirement_dir / "test-results" / "delivery-result.json")
+        if requirement_dir else None
+    )
+    resume_path = getattr(paths, "resume_guide_path", None)
+    if resume_path is None or requirement_dir is None:
+        return
+    title = Path(requirement_dir).name
+    try:
+        guide = render_resume_guide(snapshot, mapping, receipt, delivery_result, title)
+        write_resume_guide(Path(resume_path), guide)
+        if snapshot is not None:
+            write_text_atomic(
+                requirement_dir / "test-cases" / "需求修订说明.md",
+                render_revision_md(snapshot),
+            )
+        if mapping is not None and snapshot is not None:
+            write_text_atomic(
+                requirement_dir / "test-cases" / "测试映射说明.md",
+                render_test_mapping_md(mapping, snapshot),
+            )
+        print(f"📄 续接指南已刷新: {resume_path}")
+    except OSError as exc:
+        print(f"⚠️ 续接指南无法写入: {exc}")
 
 
 def cmd_check_env(args):
@@ -1080,6 +1131,7 @@ def cmd_init_test_mapping(args):
     print(f"✅ 测试映射骨架已生成: {mapping_path}")
     print("👉 AI 指令：为每个义务登记真实测试用例 id，把 mapping_status 回填为 CURRENT。")
     print("义务 sha256 已与当前需求修订绑定；需求再次增量时旧登记会自动标记 STALE。")
+    _render_resume_guide(paths)
     return 0
 
 

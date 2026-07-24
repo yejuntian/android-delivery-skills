@@ -120,6 +120,8 @@ Harness 由总入口、共享规则、脚本、专项 Skill 和证据门禁共�
 | `scripts/static_analysis.py` | 规范化已有 SARIF、生成稳定问题编号并审计静态门禁控制面变化 |
 | `scripts/execution_evidence.py` | 执行一条已选择命令并生成单 gate、不可覆盖的机器收据 |
 | `scripts/specialist_result.py` | 校验专项结果、P0-P3、capability、变异测试摘要和证据摘要 |
+| `scripts/atomic_write.py` | 为外部状态、收据和人读 md 影子提供统一原子写入 |
+| `scripts/render_artifacts.py` | 把 JSON 产物渲染成人读 md 影子（续接指南/修订说明/测试映射说明） |
 | `scripts/test_mapping.py` | 维护义务↔测试用例结构化绑定，需求增量后标记 STALE 由 AI 回填 |
 | `scripts/delivery_gate.py` | 校验最终报告与当前需求、代码、测试映射和全部证据是否一致 |
 | `scripts/user_facing_labels.py` | 把稳定机器枚举转换为自然中文，不修改 JSON、Schema、业务状态或退出码 |

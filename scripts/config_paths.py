@@ -31,6 +31,31 @@ class ConfigPaths:
         """返回当前需求测试映射路径，与追溯表同目录，便于人和机器同步查阅。"""
         return (self.requirement_dir / "test-cases" / "test-mapping.json").resolve()
 
+    @property
+    def plan_dir(self) -> Path:
+        """返回计划补充/影响预览目录，AI 手写产物，轮换时自动创建。"""
+        return (self.requirement_dir / "plan").resolve()
+
+    @property
+    def review_dir(self) -> Path:
+        """返回变更审查目录，AI 手写 Diff+Context 双表。"""
+        return (self.requirement_dir / "review").resolve()
+
+    @property
+    def decisions_dir(self) -> Path:
+        """返回决策留痕目录，重大取舍按 MADR 轻量版记录，推翻用 superseded。"""
+        return (self.requirement_dir / "decisions").resolve()
+
+    @property
+    def resume_guide_path(self) -> Path:
+        """返回续接指南路径，脚本渲染当前状态快照，是 AI 续做的第一入口。"""
+        return (self.requirement_dir / "续接指南.md").resolve()
+
+    @property
+    def communications_path(self) -> Path:
+        """返回协作待办路径，AI 手写 blocker/待确认/已发送/低风险直回。"""
+        return (self.requirement_dir / "协作待办.md").resolve()
+
 
 def _resolve(value: Any, base: Path) -> Path | None:
     """只基于明确父目录解析路径，不搜索同名文件或猜测其他根目录。"""

@@ -45,6 +45,13 @@ OUTCOME_ALIASES = {
 WORKSPACE_STATE_FILE = "requirement-workspace.json"
 WORKSPACE_SUMMARY_FILE = "需求说明.md"
 REQUIRED_SUBDIRECTORIES = ("api", "ui", "test-cases", "test-results")
+# 人读产物子目录：轮换时自动创建，与 test-cases/test-results 不冲突。
+HUMAN_SUBDIRECTORIES = ("plan", "review", "decisions")
+# 归档保留的人读 md 关键子集（机器 JSON 随源清理，不长期堆积）。
+ARCHIVE_FILES = ("需求说明.md", "续接指南.md", "交付结论.md", "协作待办.md")
+ARCHIVE_DIRS = ("decisions",)
+ARCHIVE_ROOT_NAME = "archive"
+WORKSPACE_INDEX_FILE = "需求总览.md"
 SUPPORTED_REQUIREMENT_SUFFIXES = {".docx", ".md", ".markdown", ".txt"}
 STATE_VERSION = 1
 WORKSPACE_LOCK_FILE = ".requirement-workspace.lock"
@@ -423,9 +430,91 @@ def _remove_reclaim_target(path: Path, allowed_root: Path) -> None:
         shutil.rmtree(path)
 
 
+def archive_before_reclaim(directory: Path, workspace_root: Path) -> Path | None:
+    """回收前把已完成需求的关键人读 md 拷到 archive/，保留可追溯证据。
+
+    只拷人读 md 子集（需求说明/续接指南/交付结论/协作待办/decisions）；机器 JSON、
+    截图、收据等随源目录清理，不长期堆积。归档失败时返回 None，调用方决定是否继续。
+    """
+    archive_root = (workspace_root / ARCHIVE_ROOT_NAME).resolve()
+    requirement_id = directory.name
+    try:
+        dest = (archive_root / requirement_id).resolve()
+        if dest.exists():
+            shutil.rmtree(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in ARCHIVE_FILES:
+            source_file = directory / name
+            if source_file.is_file():
+                shutil.copy2(source_file, dest / name)
+        for name in ARCHIVE_DIRS:
+            source_dir = directory / name
+            if source_dir.is_dir():
+                shutil.copytree(source_dir, dest / name)
+        return dest
+    except OSError:
+        return None
+
+
+def build_workspace_index(workspace_root: Path) -> list[dict[str, str]]:
+    """扫描所有需求目录，汇总一行一需求的索引数据，供需求总览.md 渲染。"""
+    entries: list[dict[str, str]] = []
+    if not workspace_root.is_dir():
+        return entries
+    for directory in sorted(workspace_root.iterdir()):
+        if not directory.is_dir() or directory.is_symlink():
+            continue
+        if directory.name in {ARCHIVE_ROOT_NAME}:
+            continue
+        state = _read_json(directory / WORKSPACE_STATE_FILE)
+        if not state:
+            continue
+        raw_status = state.get("status", "")
+        status_label = {
+            "ACTIVE": "进行中",
+            "COMPLETED": "已完成",
+            "CANCELLED": "已取消",
+        }.get(raw_status, raw_status or "未知")
+        title = state.get("title") or directory.name
+        revision = state.get("revision") or state.get("completed_at") or ""
+        entries.append({
+            "id": state.get("requirement_id", directory.name),
+            "title": title,
+            "status": status_label,
+            "revision": str(revision)[:10] if revision else "—",
+            "dir": directory.name,
+        })
+    return entries
+
+
+def render_workspace_index(workspace_root: Path) -> str:
+    """把所有需求汇总成需求总览.md，用户一眼看到全局。"""
+    entries = build_workspace_index(workspace_root)
+    lines = ["# 需求总览", "", ">", "本文件扫描各需求目录自动生成；机器事实以各目录的 JSON 为准。", ""]
+    if not entries:
+        lines.append("暂无需求目录。")
+        return "\n".join(lines)
+    lines.extend([
+        "| 编号 | 标题 | 状态 | 最后修订 | 目录 |",
+        "|---|---|---|---|---|",
+    ])
+    for item in entries:
+        lines.append(
+            f"| `{item['id']}` | {item['title']} | {item['status']} | {item['revision']} | `{item['dir']}` |"
+        )
+    lines.extend([
+        "",
+        "- 续做某个需求时，先读对应目录的 `续接指南.md`。",
+        "- 已完成且超保留数量与保留天数的需求，回收前会把关键人读 md 归档到 `archive/`。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def execute_reclaim_plan(policy: WorkspacePolicy, plan: ReclaimPlan) -> None:
-    """执行已经通过保留策略筛选的回收计划。"""
+    """执行已经通过保留策略筛选的回收计划；回收前先归档关键人读 md。"""
     for directory in plan.workspaces:
+        archive_before_reclaim(directory, policy.root)
         _remove_reclaim_target(directory, policy.root)
     for entry in plan.cache_entries:
         _remove_reclaim_target(entry, policy.tempfile_dir)
@@ -514,6 +603,8 @@ def _prepare_new_workspace(
     requirement_name = f"requirement{source.suffix.lower()}"
     shutil.copy2(source, directory / requirement_name)
     for name in REQUIRED_SUBDIRECTORIES:
+        (directory / name).mkdir()
+    for name in HUMAN_SUBDIRECTORIES:
         (directory / name).mkdir()
     state = {
         "schema_version": STATE_VERSION,
@@ -796,6 +887,9 @@ def parse_args(argv: list[str] | None = None) -> Any:
     prune.add_argument(
         "--confirm", action="store_true", help="确认删除已经满足延迟回收条件的内容"
     )
+
+    index_parser = subparsers.add_parser("index", help="渲染或刷新需求总览.md")
+    index_parser.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="本机配置路径")
     return parser.parse_args(argv)
 
 
@@ -808,6 +902,12 @@ def main(argv: list[str] | None = None) -> int:
         policy, paths = load_workspace_policy(config, config_path)
         if args.command == "status":
             return print_status(config_path, config)
+        if args.command == "index":
+            content = render_workspace_index(policy.root)
+            index_path = policy.root / WORKSPACE_INDEX_FILE
+            _write_text_atomic(index_path, content)
+            print(f"✅ 需求总览已刷新: {index_path}")
+            return 0
         if args.command == "prune":
             plan = build_reclaim_plan(policy, paths.requirement_dir)
             _print_reclaim_plan(plan)

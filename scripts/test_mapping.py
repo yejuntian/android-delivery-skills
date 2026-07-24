@@ -77,12 +77,22 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
     status = item.get("mapping_status")
     if status not in MAPPING_STATUSES:
         raise TestMappingError(f"{label}.mapping_status 必须是 CURRENT 或 STALE")
+    architecture_tests = item.get("architecture_tests")
+    if architecture_tests is not None:
+        if not isinstance(architecture_tests, list) or not all(
+            isinstance(rule, str) and rule.strip() for rule in architecture_tests
+        ):
+            raise TestMappingError(f"{label}.architecture_tests 必须是字符串数组")
+        if len(architecture_tests) != len(set(architecture_tests)):
+            raise TestMappingError(f"{label}.architecture_tests 不得重复")
     return {
         "obligation_id": identifier,
         "obligation_sha256": obligation_sha256 if isinstance(obligation_sha256, str) else None,
         "test_ids": list(test_ids),
         "mapping_status": status,
         "manual_reason": item.get("manual_reason") if isinstance(item.get("manual_reason"), str) else None,
+        "architecture_tests": [rule for rule in architecture_tests if isinstance(rule, str) and rule.strip()]
+        if isinstance(architecture_tests, list) else [],
     }
 
 

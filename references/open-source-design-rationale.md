@@ -323,7 +323,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **来源**：shareit/shell `docs/`（阶段目录 + 每产物人读 md + task 串联 + verify 脚本断言化）；[GitHub Spec Kit](https://github.com/github/spec-kit) 的 spec continuity 与稳定 ID；[XDG Base Directory](https://specifications.freedesktop.org/basedir/latest/) 与 [Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html) 的延迟回收（已落地为 M23）；[MADR](https://github.com/adr/madr) 的决策记录轻量化；[ArchUnit](https://github.com/TNG/ArchUnit) 的 JVM 架构测试替代易碎手写扫描脚本。
 - **决策**：
   - md 是主产物（人读/自检/AI 执行依据），JSON 是门禁附件（SHA 链/变异测试/哈希校验全读 JSON 不动）。`render_artifacts.py` 从 JSON 渲染同名 md 影子：`续接指南.md`（每次 init 刷新，聚合需求快照/映射/计划收据/最终结论，是续做旧需求的第一入口）、`需求修订说明.md`、`测试映射说明.md`、`交付结论.md`（强制未验证项与残留风险独立段）。
-  - 阶段子目录 `plan/ review/ decisions/`（与既有 `test-cases/ test-results/` 不冲突）；协作待办、变更审查（Diff+Context 双表）、决策记录由 AI 手写并填 `references/templates/` 骨架（plan/review/test/result/decision/communications）。
+  - 阶段子目录 `plan/ review/ decisions/`（与既有 `test-cases/ test-results/` 不冲突）；协作待办、变更审查（Diff+Context 双表）、决策记录由 AI 手写并填 `android-implement-and-verify/templates/` 骨架（plan/review/test/result/decision/communications）。
   - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前 `archive_before_reclaim` 把关键人读 md 归档到 `archive/<requirement_id>/`，机器 JSON 随源清理不堆积；双门槛（keep_completed + retention_days）不变。
   - 架构测试层：`test-mapping.json` 增 `architecture_tests` 字段，AI 生成 ArchUnit/反射测试进项目 test 源集，进现有 `android-test-and-fix` 门禁，零额外基建；复用原则服从不变量 #10（零依赖优先，用户同意才引 archunit-junit5）。
 - **边界**：续接指南是从事实源渲染的状态快照，不是第二事实源（不变量 #25 不变）；md 与 JSON 一致性靠脚本渲染（零漂移），手写 md 由 SKILL 要求填模板；JSON 路径全部原位不迁移，零破坏在途需求。

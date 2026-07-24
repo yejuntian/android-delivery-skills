@@ -960,7 +960,7 @@ def cmd_confirm_requirement_update(args):
     print("│       / 测试方案 / 明确不修改范围")
     print("└─ 用户确认后执行 delivery.py confirm-plan ──────────────┘")
     print("\n👉 下一步")
-    print("  1. 把实施计划写入上述 md（填 references/templates/plan.md 骨架）")
+    print("  1. 把实施计划写入上述 md（填 android-implement-and-verify/templates/plan.md 骨架）")
     print("  2. 展示简短摘要给用户，停止等待确认")
     print("  3. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
     mapping_path = getattr(paths, "test_mapping_path", None)

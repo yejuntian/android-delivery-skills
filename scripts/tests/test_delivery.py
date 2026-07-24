@@ -879,13 +879,19 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("requirement-revision.json", text)
         self.assertIn("追溯表:", text)
         self.assertIn("traceability.md", text)
-        self.assertIn("进入只读计划阶段", text)
+        self.assertIn("进入计划阶段", text)
         self.assertIn("实施计划.md", text)
-        self.assertIn("等待用户确认", text)
+        self.assertIn("等待确认", text)
         self.assertNotIn("已获准开始编码", text)
         self.assertNotIn("显示登录错误", text)
         self.assertNotIn("内容摘要", text)
         self.assertIn("确认前旧聊天理解、旧总结或旧方案不得作为执行依据", text)
+        # 补丁A：确认需求修订后应自动刷新续接指南等 人读 md。
+        self.assertTrue((self.requirement.parent / "续接指南.md").is_file())
+        resume = (self.requirement.parent / "续接指南.md").read_text(encoding="utf-8")
+        self.assertIn("续接指南", resume)
+        # 补丁B：本轮 manifest 的波及清单应写进续接指南。
+        self.assertIn("波及清单", resume)
 
     def test_confirm_plan_is_the_only_step_that_authorizes_coding(self) -> None:
         """验证需求确认只进入只读计划，用户确认计划后才输出编码授权。"""

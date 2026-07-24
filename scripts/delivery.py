@@ -676,8 +676,12 @@ def cmd_init(args):
     print_bdd_instruction()
 
 
-def _render_resume_guide(paths) -> None:
-    """每次 init 末尾刷新续接指南.md，保证 AI 续做时读到最新状态快照。"""
+def _render_resume_guide(paths, revision_manifest=None) -> None:
+    """刷新续接指南.md 及配套人读影子；传入 manifest 时附本次增量波及清单。
+
+    init 末尾不传 manifest（只反映当前状态）；confirm-requirement-update 成功后
+    传入本轮修订清单，让续接指南列出受影响义务及其测试/计划影响半径。
+    """
     from .render_artifacts import (
         _read_json,
         render_resume_guide,
@@ -694,22 +698,25 @@ def _render_resume_guide(paths) -> None:
     except RequirementSnapshotError as exc:
         print(f"⚠️ {exc}")
         return
-    mapping = _read_json(getattr(paths, "test_mapping_path", None))
     requirement_dir = getattr(paths, "requirement_dir", None)
-    receipt = _read_json(
-        (requirement_dir / "test-cases" / "implementation-plan-receipt.json")
-        if requirement_dir else None
-    )
-    delivery_result = _read_json(
-        (requirement_dir / "test-results" / "delivery-result.json")
-        if requirement_dir else None
-    )
-    resume_path = getattr(paths, "resume_guide_path", None)
-    if resume_path is None or requirement_dir is None:
+    if requirement_dir is None:
         return
+    requirement_dir = Path(requirement_dir)
+    # 路径优先用 ConfigPaths 属性；测试或旧调用方用 SimpleNamespace 时按 requirement_dir 派生。
+    mapping = _read_json(
+        getattr(paths, "test_mapping_path", None)
+        or (requirement_dir / "test-cases" / "test-mapping.json")
+    )
+    receipt = _read_json(requirement_dir / "test-cases" / "implementation-plan-receipt.json")
+    delivery_result = _read_json(requirement_dir / "test-results" / "delivery-result.json")
+    resume_path = getattr(paths, "resume_guide_path", None) or (
+        requirement_dir / "续接指南.md"
+    )
     title = Path(requirement_dir).name
     try:
-        guide = render_resume_guide(snapshot, mapping, receipt, delivery_result, title)
+        guide = render_resume_guide(
+            snapshot, mapping, receipt, delivery_result, title, revision_manifest
+        )
         write_resume_guide(Path(resume_path), guide)
         if snapshot is not None:
             write_text_atomic(
@@ -841,26 +848,31 @@ def cmd_confirm_requirement_update(args):
     print(f"✅ 本轮变化摘要: {summarize_revision_manifest(manifest)}")
     print("✅ Git 基线未修改；后续 route 仍覆盖本需求起点后的全部代码变化。")
     _sync_test_mapping_after_revision(paths, snapshot)
+    _render_resume_guide(paths, manifest)
+    plan_path = implementation_plan_path(paths.requirement_dir)
+    print("\n📋 进入计划阶段（只读，暂不编码）")
+    print("┌─ 实施计划 ─────────────────────────────────────────────┐")
+    print(f"│ 写入: {plan_path}")
+    print("│ 必含: 实现范围 / 已上线业务影响 / 预计修改文件")
+    print("│       / 测试方案 / 明确不修改范围")
+    print("└─ 用户确认后执行 delivery.py confirm-plan ──────────────┘")
+    print("\n👉 下一步")
+    print("  1. 把实施计划写入上述 md（填 references/templates/plan.md 骨架）")
+    print("  2. 展示简短摘要给用户，停止等待确认")
+    print("  3. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
+    mapping_path = getattr(paths, "test_mapping_path", None)
+    if mapping_path is not None:
+        print(
+            f"\n👉 确认计划后先执行 delivery.py init-test-mapping 生成测试映射骨架 "
+            f"({mapping_path})，为每个义务登记真实 test_ids 并回填 CURRENT。"
+        )
+        print("需求后续增量时，义务 sha256 变化的旧登记会自动标记 STALE，必须重新登记测试才能通过最终门禁。")
     print_confirmed_fact_sources(
         requirement_path,
         revision_file,
         (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
         action="拆分测试并生成实施计划",
     )
-    plan_path = implementation_plan_path(paths.requirement_dir)
-    print("\n---")
-    print("👉 AI 指令：进入只读计划阶段，暂时不得修改 Android 代码或运行构建/设备任务。")
-    print(f"请把实施计划写入: {plan_path}")
-    print("计划必须包含：实现范围、已上线业务影响、预计修改文件、测试方案、明确不修改范围。")
-    print("聊天只展示简短计划摘要和上述 Markdown 路径，然后停止并等待用户确认。")
-    print("只有用户明确确认该计划后，才执行 delivery.py confirm-plan；确认前不得编码。")
-    mapping_path = getattr(paths, "test_mapping_path", None)
-    if mapping_path is not None:
-        print(
-            f"👉 AI 指令：确认计划后先执行 delivery.py init-test-mapping 生成测试映射骨架 "
-            f"({mapping_path})，为每个义务登记真实 test_ids 并把 mapping_status 回填 CURRENT。"
-        )
-        print("需求后续增量时，义务 sha256 变化的旧登记会自动标记 STALE，必须重新登记测试才能通过最终门禁。")
     return 0
 
 

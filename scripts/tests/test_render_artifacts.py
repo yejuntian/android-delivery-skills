@@ -95,6 +95,34 @@ class RenderArtifactsTests(unittest.TestCase):
         guide = render_resume_guide(None, None, None, None, "")
         self.assertIn("尚未建立需求快照", guide)
 
+    def test_resume_guide_lists_impact_blast_radius(self) -> None:
+        """传入修订清单时，续接指南列出本次增量波及义务及影响半径。"""
+        snapshot = make_snapshot(revision=3)
+        mapping = {"mappings": [
+            {"obligation_id": "BDD-001/T1", "mapping_status": "STALE", "test_ids": []},
+            {"obligation_id": "BDD-002/T1", "mapping_status": "CURRENT", "test_ids": ["t2"]},
+        ]}
+        manifest = {"changes": [
+            {"id": "BDD-001/T1", "change_type": "CHANGED", "decision": "CONFIRMED"},
+            {"id": "BDD-002/T1", "change_type": "UNCHANGED", "decision": "CONFIRMED"},
+            {"id": "BDD-003/T1", "change_type": "ADDED", "decision": "CONFIRMED"},
+            {"id": "BDD-009/T1", "change_type": "REMOVED", "decision": "CONFIRMED"},
+        ]}
+        guide = render_resume_guide(snapshot, mapping, None, None, "", manifest)
+        self.assertIn("本次增量波及清单（第 3 版）", guide)
+        self.assertIn("`BDD-001/T1` [CHANGED]", guide)
+        self.assertIn("测试映射已标 STALE", guide)
+        self.assertIn("`BDD-003/T1` [ADDED]", guide)
+        self.assertIn("待登记测试用例", guide)
+        self.assertIn("`BDD-009/T1` [REMOVED]", guide)
+        # UNCHANGED 不进波及清单。
+        self.assertNotIn("[UNCHANGED]", guide)
+
+    def test_resume_guide_without_manifest_has_no_blast_radius(self) -> None:
+        """不传 manifest（init 场景）时不渲染波及清单段。"""
+        guide = render_resume_guide(make_snapshot(), None, None, None, "")
+        self.assertNotIn("波及清单", guide)
+
 
 if __name__ == "__main__":
     unittest.main()

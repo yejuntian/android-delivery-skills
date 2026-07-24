@@ -136,8 +136,13 @@ def render_resume_guide(
     plan_receipt: dict[str, Any] | None,
     delivery_result: dict[str, Any] | None,
     requirement_title: str = "",
+    revision_manifest: dict[str, Any] | None = None,
 ) -> str:
-    """聚合各事实源渲染续接指南，是 AI 续做旧需求的第一入口。"""
+    """聚合各事实源渲染续接指南，是 AI 续做旧需求的第一入口。
+
+    revision_manifest 为本轮需求修订清单（confirm-requirement-update 传入）时，
+    额外渲染"本次增量波及清单"，列出受影响的义务及其测试/计划影响半径。
+    """
     lines = ["# 续接指南", ""]
     if requirement_title:
         lines.append(f"## {requirement_title}")
@@ -181,6 +186,13 @@ def render_resume_guide(
             text = _strip_business_prefix(_single_line(item.get("text"))) or identifier
             lines.append(f"- `{identifier}` {text}（{mark}）")
 
+    # 波及清单：本轮修订清单里 CHANGED/ADDED/REMOVED/SUPERSEDED 的义务及其影响半径。
+    impacted = _impact_blast_radius(revision_manifest, mappings)
+    if impacted:
+        lines.extend(["", f"## 本次增量波及清单（第 {revision} 版）", ""])
+        for item in impacted:
+            lines.append(f"- `{item['id']}` [{item['change']}] {item['effect']}")
+
     pending = snapshot.get("pending_changes") or []
     stale = [m for m in (mapping or {}).get("mappings", []) if m.get("mapping_status") == "STALE"]
     if pending:
@@ -191,6 +203,62 @@ def render_resume_guide(
         lines.extend(["", "## 测试待回填项（STALE）", ""])
         for entry in stale:
             lines.append(f"- `{entry.get('obligation_id')}` 需求增量后测试未同步，请重新登记。")
+
+    lines.extend([
+        "",
+        "## 下一步",
+        "",
+        "- 未确认变化：完成 `confirm-requirement-update`。",
+        "- 计划未确认：展示 `实施计划.md` 并 `confirm-plan`。",
+        "- STALE 映射：重新登记测试，`mapping_status` 回填 CURRENT。",
+        "- 最终结论为通过且无变化：可直接交付；否则按五步流程继续。",
+        "",
+        "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以 `需求说明.md` 为准。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+_IMPACT_CHANGE_TYPES = {"ADDED", "CHANGED", "REMOVED", "SUPERSEDED"}
+
+
+def _impact_blast_radius(
+    manifest: dict[str, Any] | None,
+    mappings: dict[str, dict[str, Any]],
+) -> list[dict[str, str]]:
+    """把本轮修订清单的非 UNCHANGED 义务映射成"波及项 + 影响半径"。
+
+    单一职责：只读 manifest 和 mapping 派生波及清单，不改任何状态。REMOVED 义务
+    不在当前 mapping 中属正常（已被删除），只提示处置方向。
+    """
+    if not manifest or not isinstance(manifest, dict):
+        return []
+    changes = manifest.get("changes")
+    if not isinstance(changes, list):
+        return []
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
+        change_type = change.get("change_type")
+        if change_type not in _IMPACT_CHANGE_TYPES:
+            continue
+        identifier = change.get("id")
+        if not isinstance(identifier, str) or identifier in seen:
+            continue
+        seen.add(identifier)
+        entry = mappings.get(identifier, {})
+        if change_type == "REMOVED":
+            effect = "已删除，确认对应实现已处置（删除/保留兼容/停止）"
+        elif entry.get("mapping_status") == "STALE":
+            effect = "测试映射已标 STALE，需重新登记"
+        elif entry:
+            effect = "测试映射需核对是否仍 CURRENT"
+        else:
+            effect = "待登记测试用例"
+        rows.append({"id": identifier, "change": change_type, "effect": effect})
+    return rows
 
     lines.extend([
         "",

@@ -48,7 +48,7 @@ flowchart TD
     REV --> REV2{"修订确认有效？"}
     REV2 -- "待定/冲突" --> REVFIX["修正清单或继续澄清"]
     REVFIX --> C
-    REV2 -- "确认（首次确认 / 增量修订）" --> FACTS["机器自动：<br/>✅ 刷新续接指南<br/>✅ 刷新需求修订说明<br/>✅ 刷新测试映射说明<br/>✅ 标 STALE（如有）"]
+    REV2 -- "确认（首次确认 / 增量修订）" --> FACTS["机器自动：<br/>✅ 刷新续接指南（含波及清单）<br/>✅ 刷新需求修订说明<br/>✅ 刷新测试映射说明<br/>✅ 标 STALE（如有）<br/>✅ 提示建立 traceability.md（如缺失）"]
     FACTS --> STAGE1["阶段一完成：需求事实已确认"]
 ```
 
@@ -80,7 +80,7 @@ flowchart TD
     L --> L1{"route 前置校验"}
     L1 -- "计划收据失效" --> L2["重新 confirm-plan"]
     L2 --> L
-    L1 -- "通过" --> M["Diff / 质量 / 稳定性 / API 专项"]
+    L1 -- "通过（sha256→计划收据→route 快照→完整输入摘要 全校验）" --> M["Diff / 质量 / 稳定性 / API 专项"]
     M --> M0{"需要修复？"}
     M0 -- "是" --> FIX["保存证据 + 最小修复一个根因"]
     M0 -- "否" --> N["选择测试层 + 执行完整回归"]
@@ -91,7 +91,7 @@ flowchart TD
     N --> O["构建 + Lint + JUnit + 变异测试(PIT)<br/>+ Journey 或人工证据"]
     O --> P["生成 delivery-result.json"]
     P --> Q{"delivery_gate.py validate"}
-    Q -- "STALE 未回填 / 缺登记 /<br/>变异存活 / sha 不匹配" --> FIX
+    Q -- "STALE 未回填 / 缺登记 /<br/>变异存活 / sha 不匹配 /<br/>traceability 缺义务 /<br/>计划收据失效" --> FIX
     Q -- "设备待验" --> DEVICE["LOCAL_PASS_DEVICE_PENDING"]
     Q -- "仍有未完成" --> INCOMPLETE["INCOMPLETE"]
     Q -- "全部通过" --> PASS["FULL_PASS"]
@@ -182,7 +182,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     OLD["上周交付<br/>document/2026-07-20-login/<br/>（原样不动）"]
-    NEW["本周续接<br/>document/2026-07-25-login-forgot-pwd/<br/>requirement.md 引用旧需求"]
+    NEW["本周续接<br/>document/2026-07-25-login-forgot-pwd/<br/><需求名>.md 注明'关联需求：续接旧目录'"]
     NEW --> NEW_ENV["check-env --new-requirement<br/>建当前 HEAD 新基线"]
     NEW_ENV --> NEW_CONFIRM["confirm-requirement-update<br/>全新义务/映射/收据"]
     NEW_CONFIRM --> NEW_DONE["交付完成"]

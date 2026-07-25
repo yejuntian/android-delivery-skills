@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """脚本名称：config_paths.py
 
-用途：统一解析 Android Delivery 配置路径及项目外基线、路由和证据位置。
+用途：统一解析 Android Delivery 配置路径及机器状态、证据位置。
 
-职责边界：只根据配置文件位置和显式字段解析路径，不读取需求正文、不检查 Git，
-也不决定 Skill 路由。Delivery 与 Journey 共用本模块，避免同一相对路径指向不同位置。
+核心设计：机器状态（基线/快照/route/证据/能力）放在 ``<requirement_dir>/.state/``，
+跟着需求目录走（文档和状态自包含）。requirement_dir 由 profile 显式提供绝对路径，
+不依赖运行时 cwd，因此不再有按 config 路径 hash 命名导致的漂移或跨项目残留。
+
+职责边界：只根据配置文件内容解析路径，不读取需求正文、不检查 Git，也不决定 Skill 路由。
 """
 
 from __future__ import annotations
 
 import hashlib
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,11 @@ class ConfigPaths:
         """返回协作待办路径，AI 手写 blocker/待确认/已发送/低风险直回。"""
         return (self.requirement_dir / "协作待办.md").resolve()
 
+    @property
+    def state_dir(self) -> Path:
+        """机器状态根目录（基线/快照/route/证据/能力），跟 requirement_dir 走，gitignore。"""
+        return (self.requirement_dir / ".state").resolve()
+
 
 def _resolve(value: Any, base: Path) -> Path | None:
     """只基于明确父目录解析路径，不搜索同名文件或猜测其他根目录。"""
@@ -80,38 +87,53 @@ def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> Con
     )
 
 
-def _state_path_for_config(config_path: str | Path, suffix: str | None = None) -> Path:
-    """按配置路径生成外部状态文件名，使同名配置和不同项目互不覆盖。"""
-    path = Path(config_path).expanduser().resolve()
-    state_root = Path(
-        os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
-    ).expanduser()
-    # 同名 local.yaml 可能属于不同项目，用绝对路径摘要避免需求基线互相覆盖。
-    digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
-    filename = f"{path.stem}-{digest}-{suffix}.json" if suffix else f"{path.stem}-{digest}.json"
-    return (state_root / "android-delivery-skills" / filename).resolve()
+def _requirement_dir_from_config(config_path: str | Path) -> Path:
+    """从 config 解析出 requirement_dir，供仍以 config_path 为参数的旧调用方使用。
+
+    单一职责：只 resolve 路径，不读取正文。config 必须能被 load（含 requirement_dir）。
+    """
+    import yaml  # 延迟导入，避免纯路径模块强依赖 PyYAML
+
+    source = Path(config_path).expanduser().resolve()
+    try:
+        config = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    except (OSError, UnicodeError, yaml.YAMLError) as exc:
+        raise ValueError(f"配置无法读取，无法定位 requirement_dir: {source}: {exc}") from exc
+    paths = resolve_config_paths(config if isinstance(config, dict) else {}, source)
+    return paths.requirement_dir
+
+
+def _state_dir_for(config_path: str | Path) -> Path:
+    """返回机器状态根目录 = requirement_dir/.state，自动创建。
+
+    状态跟 requirement_dir 走（文档和状态自包含），不再放全局 ~/.local/state，也不按
+    config 路径 hash 命名。requirement_dir 是绝对路径，不依赖运行时 cwd。
+    """
+    state_dir = _requirement_dir_from_config(config_path) / ".state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir.resolve()
 
 
 def baseline_path_for_config(config_path: str | Path) -> Path:
-    """返回当前配置的 Git 基线路径，文件始终位于目标仓库之外。"""
-    # 保留既有文件名，升级脚本后仍能继续读取正在执行的需求基线。
-    return _state_path_for_config(config_path)
+    """返回当前配置的 Git 基线路径，位于 requirement_dir/.state/baseline.json。"""
+    return _state_dir_for(config_path) / "baseline.json"
 
 
 def requirement_snapshot_path_for_config(config_path: str | Path) -> Path:
-    """返回外部需求修订路径，供连续确认、义务校验和中途差异分析共用。"""
-    return _state_path_for_config(config_path, "requirement")
+    """返回需求修订路径，供连续确认、义务校验和中途差异分析共用。"""
+    return _state_dir_for(config_path) / "requirement-snapshot.json"
 
 
 def route_impact_path_for_config(config_path: str | Path) -> Path:
     """返回路由影响快照路径，使条件门禁绑定最近一次最终 diff 分析。"""
-    return _state_path_for_config(config_path, "route-impact")
+    return _state_dir_for(config_path) / "route-impact.json"
 
 
 def evidence_directory_for_config(config_path: str | Path) -> Path:
-    """返回执行收据目录；日志和收据放在目标项目外，避免改变交付代码摘要。"""
-    marker = _state_path_for_config(config_path, "evidence")
-    return marker.with_suffix("")
+    """返回执行收据目录；收据放在 requirement_dir/.state/evidence，跟需求走。"""
+    directory = _state_dir_for(config_path) / "evidence"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory.resolve()
 
 
 def evidence_scope_directory(
@@ -166,4 +188,4 @@ def specialist_directory_for_config(
 
 def capabilities_path_for_config(config_path: str | Path) -> Path:
     """返回 Android 项目能力发现结果路径，供不同模型复用同一工程事实。"""
-    return _state_path_for_config(config_path, "capabilities")
+    return _state_dir_for(config_path) / "capabilities.json"

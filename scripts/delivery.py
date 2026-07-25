@@ -853,6 +853,9 @@ def cmd_check_env(args):
         raise DeliveryError("未配置 requirement_file，无法保存已确认需求快照")
     requirement_content = read_requirement(requirement_path)
 
+    # chdir 前先把 config 解析成绝对路径，避免 os.chdir 后对相对 --config 路径重新
+    # resolve 时算出不同的状态路径（cwd 漂移导致 init/check-env 状态分裂）。
+    resolved_config = Path(args.config).expanduser().resolve()
     os.chdir(project_path)
 
     print("=== 环境检查 ===")
@@ -872,8 +875,8 @@ def cmd_check_env(args):
         )
     print("✅ 工作区干净。")
 
-    baseline_path = baseline_path_for_config(args.config)
-    snapshot_path = requirement_snapshot_path_for_config(args.config)
+    baseline_path = baseline_path_for_config(resolved_config)
+    snapshot_path = requirement_snapshot_path_for_config(resolved_config)
     if _reuse_existing_requirement_start(
         project_path,
         requirement_path,
@@ -1022,13 +1025,15 @@ def cmd_route(args):
     if not project_path or not os.path.isdir(project_path):
         raise DeliveryError(f"项目路径无效: {project_path}")
 
+    # chdir 前固定绝对 config 路径，避免 cwd 漂移导致状态路径分裂。
+    resolved_config = Path(args.config).expanduser().resolve()
     os.chdir(project_path)
     target_branch = config.get("branch")
     branch = current_branch(project_path)
     if target_branch and branch != target_branch:
         raise DeliveryError(f"当前分支 ({branch}) 与目标分支 ({target_branch}) 不匹配")
 
-    baseline_path = baseline_path_for_config(args.config)
+    baseline_path = baseline_path_for_config(resolved_config)
     changes, warnings = get_diff_changes(baseline_path)
     diff_files = [change.path for change in changes]
     print("=== 审查路由分析 ===")
@@ -1104,7 +1109,7 @@ def cmd_route(args):
             impacts,
             conditional_gates,
         )
-        route_path = route_impact_path_for_config(args.config)
+        route_path = route_impact_path_for_config(resolved_config)
         write_route_impact(route_path, route_payload)
     except (GitInspectionError, RouteImpactError) as exc:
         raise DeliveryError(str(exc)) from exc

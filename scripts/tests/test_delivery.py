@@ -138,26 +138,34 @@ class RequirementPathTests(unittest.TestCase):
         self.assertEqual(resolved_requirement, requirement.resolve())
 
     def test_external_state_keeps_baseline_and_derived_evidence_separate(self) -> None:
-        """验证基线、需求、路由、能力和证据使用独立且位于项目外的路径。"""
-        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.root / "state")}):
-            baseline = baseline_path_for_config(self.config_path)
-            snapshot = requirement_snapshot_path_for_config(self.config_path)
-            route = route_impact_path_for_config(self.config_path)
-            capabilities = capabilities_path_for_config(self.config_path)
-            evidence = evidence_directory_for_config(self.config_path)
-            specialists = specialist_directory_for_config(
-                self.config_path,
-                "requirement-1",
-                2,
-                "a" * 64,
-                "b" * 64,
-            )
+        """验证基线、需求、路由、能力和证据使用独立路径，且都在 requirement_dir/.state 下。"""
+        import yaml as _yaml
+        requirement_dir = self.root / "req"
+        requirement_dir.mkdir()
+        cfg = {"project_path": str(self.root), "requirement_dir": str(requirement_dir)}
+        self.config_path.write_text(_yaml.safe_dump(cfg), encoding="utf-8")
 
-        self.assertTrue(baseline.name.endswith(".json"))
-        self.assertNotIn("-baseline.json", baseline.name)
-        self.assertTrue(snapshot.name.endswith("-requirement.json"))
-        self.assertTrue(route.name.endswith("-route-impact.json"))
-        self.assertTrue(capabilities.name.endswith("-capabilities.json"))
+        baseline = baseline_path_for_config(self.config_path)
+        snapshot = requirement_snapshot_path_for_config(self.config_path)
+        route = route_impact_path_for_config(self.config_path)
+        capabilities = capabilities_path_for_config(self.config_path)
+        evidence = evidence_directory_for_config(self.config_path)
+        specialists = specialist_directory_for_config(
+            self.config_path,
+            "requirement-1",
+            2,
+            "a" * 64,
+            "b" * 64,
+        )
+
+        # 所有状态都在 requirement_dir/.state 下，跟需求走。
+        state_root = (requirement_dir / ".state").resolve()
+        self.assertEqual(baseline.parent, state_root)
+        self.assertEqual(baseline.name, "baseline.json")
+        self.assertEqual(snapshot.name, "requirement-snapshot.json")
+        self.assertEqual(route.name, "route-impact.json")
+        self.assertEqual(capabilities.name, "capabilities.json")
+        self.assertEqual(evidence.parent, state_root)
         self.assertEqual(evidence, specialists.parents[1])
         self.assertEqual("specialists", specialists.name)
         self.assertEqual(5, len({baseline, snapshot, route, capabilities, evidence}))
@@ -1510,6 +1518,10 @@ class GitDiffCollectionTests(unittest.TestCase):
                 mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
                 mock.patch("scripts.delivery.resolve_paths", return_value=paths),
                 mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.baseline),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=self.baseline.with_name("requirement-snapshot.json"),
+                ),
                 mock.patch(
                     "scripts.delivery.write_requirement_snapshot",
                     side_effect=RequirementSnapshotError("snapshot failed"),

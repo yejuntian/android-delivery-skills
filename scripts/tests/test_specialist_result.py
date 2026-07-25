@@ -405,12 +405,18 @@ class SpecialistResultTests(unittest.TestCase):
 
     def test_path_command_uses_current_requirement_scope(self) -> None:
         """验证专项结果目录按当前需求、修订和代码摘要隔离。"""
+        import yaml as _yaml
         output = io.StringIO()
+        requirement_dir = self.root / "req"
+        requirement_dir.mkdir()
         config_path = self.root / "local.yaml"
+        config_path.write_text(
+            _yaml.safe_dump({"project_path": str(self.root), "requirement_dir": str(requirement_dir)}),
+            encoding="utf-8",
+        )
         with (
             mock.patch("scripts.delivery.load_config", return_value={}),
             mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
-            mock.patch.dict("os.environ", {"XDG_STATE_HOME": str(self.root / "state")}),
             redirect_stdout(output),
         ):
             exit_code = main(["path", "--config", str(config_path)])

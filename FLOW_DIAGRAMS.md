@@ -1,7 +1,53 @@
 # Android Delivery Skills 完整流程图
 
 > 配合 FLOW_OVERVIEW.md 使用，本文件只放流程图（mermaid），帮助可视化。
-> 每张图旁附简述（做了什么、为什么、看什么），便于扫读。
+> 每张图旁附简述（做了什么、为什么、看什么）和执行命令，便于扫读和实操。
+
+## 零、执行速查（AI 和用户怎么用）
+
+```text
+角色分工：
+  用户：说需求、确认需求、确认计划、要求最终交付
+  AI：执行脚本命令、改代码、改测试、写文档、跑回归
+  脚本：校验门禁、刷新 md、标 STALE、拦 gate
+
+执行环境：
+  cd <skill仓库>/ai-skills/android-delivery-skills
+  profile 在 profiles/<需求>.yaml，每条命令带 --config profiles/<需求>.yaml
+
+一次完整需求的命令序列：
+
+  # 1. 读需求（docx 自动转 md，刷新续接指南）
+  python3 scripts/delivery.py init --config profiles/<需求>.yaml
+
+  # 2. 用户确认需求后，建基线
+  python3 scripts/delivery.py check-env --config profiles/<需求>.yaml
+
+  # 3. AI 物化修订清单后，确认需求修订
+  python3 scripts/delivery.py confirm-requirement-update --config profiles/<需求>.yaml
+
+  # 4. AI 写实施计划.md 后，确认计划（才能编码）
+  python3 scripts/delivery.py confirm-plan --config profiles/<需求>.yaml
+
+  # 5. 生成测试映射骨架
+  python3 scripts/delivery.py init-test-mapping --config profiles/<需求>.yaml
+
+  # 6. AI 编码（Red → 最小实现 → Green）+ 回填 CURRENT
+
+  # 7. 用户要求最终交付时
+  python3 scripts/delivery.py route --config profiles/<需求>.yaml
+  python3 scripts/delivery_gate.py validate --config profiles/<需求>.yaml
+
+中途增量（需求变了）：
+  # AI 改 <需求名>.md → 物化修订清单 → 一个命令
+  python3 scripts/delivery.py confirm-requirement-update --config profiles/<需求>.yaml
+  # → 机器自动标 STALE + 刷新 md → AI 自动改代码+测试+回填+回归
+
+续接旧需求：
+  # 新建独立目录 + profile，用 --new-requirement 建当前 HEAD 基线
+  python3 scripts/delivery.py init --config profiles/<新需求>.yaml
+  python3 scripts/delivery.py check-env --new-requirement --config profiles/<新需求>.yaml
+```
 
 ## 一、五步总览
 

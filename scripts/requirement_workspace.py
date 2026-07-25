@@ -44,7 +44,7 @@ OUTCOME_ALIASES = {
 }
 WORKSPACE_STATE_FILE = "requirement-workspace.json"
 WORKSPACE_SUMMARY_FILE = "需求说明.md"
-REQUIRED_SUBDIRECTORIES = ("api", "ui", "test-cases", "test-results")
+REQUIRED_SUBDIRECTORIES = ("api", "ui", "test-cases", "test-results", "config", "issues")
 # 人读产物子目录：轮换时自动创建，与 test-cases/test-results 不冲突。
 HUMAN_SUBDIRECTORIES = ("plan", "review", "decisions")
 # 归档保留的人读 md 关键子集（机器 JSON 随源清理，不长期堆积）。

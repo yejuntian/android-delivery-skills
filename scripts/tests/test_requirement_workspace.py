@@ -209,7 +209,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         )
         self.assertTrue((new_dir / "requirement.md").is_file())
         self.assertTrue((new_dir / "需求说明.md").is_file())
-        for name in ("api", "ui", "test-cases", "test-results"):
+        for name in ("api", "ui", "test-cases", "test-results", "config", "issues"):
             self.assertTrue((new_dir / name).is_dir())
         # 人读产物子目录必须随新需求一起创建，否则 AI 手写产物无处落盘。
         for name in ("plan", "review", "decisions"):

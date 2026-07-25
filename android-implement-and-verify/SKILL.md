@@ -40,6 +40,7 @@ description: |
 - 机器 JSON 是门禁附件；脚本从 JSON 渲染同名 md 影子供用户自检：`续接指南.md`（每次 `init` 刷新，聚合需求快照/映射/计划收据/最终结论）、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`、`test-results/交付结论.md`（强制未验证项与残留风险段）。
 - 续做旧需求时，先读 `<requirement_dir>/续接指南.md`，秒懂当前修订、义务状态（CURRENT/STALE）、计划是否确认、最终结论和下一步，不翻聊天。
 - 协作待办、`review/变更审查.md`（Diff 发现 + Context 发现双表）、`decisions/<日期>-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 手写，必须填 `android-implement-and-verify/templates/` 骨架（plan/review/decision 等）。
+- 补充文档目录：`config/` 只记非密配置元数据（key 名/环境/owner/来源，绝不存 token/私钥/凭据）；`issues/` 每个问题一个 md（bug/数据偏差/QA反馈/Journey 失败，含现象/根因/处置/证据）；`ui/design-notes.md` 记设计说明文字（页面状态/交互/资源对照/与实现差异）。均填对应模板骨架。
 - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前先归档关键人读 md 到 `archive/<requirement_id>/`，机器 JSON 随源清理。维护或扩展流程前先读 `decisions/`，避免重复推翻已确认取舍。
 
 ## 并行需求通道（多窗口同时推进）

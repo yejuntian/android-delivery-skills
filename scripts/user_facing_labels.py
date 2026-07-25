@@ -31,12 +31,29 @@ DECISION_LABELS = {
     "CONFLICT": "存在冲突",
 }
 SNAPSHOT_STATUS_LABELS = {
-    "AWAITING_OBLIGATIONS": "等待生成验收清单",
+    "AWAITING_OBLIGATIONS": "初始（尚未确认需求）",
     "PENDING_CONFIRMATION": "存在等待确认的变化",
     "CONFIRMED": "已确认",
     "UNCONFIRMED_CHANGE": "需求变化尚未确认",
     "UNCONFIRMED_PLAN": "实施计划尚未确认或已经失效",
 }
+
+
+def revision_label(revision: Any) -> str:
+    """把机器 revision 数字转换成面向用户的直观中文。
+
+    0 = 初始（尚未确认需求）；1 = 首次确认；
+    N>1 = 增量修订（第 N-1 次）。
+    """
+    try:
+        r = int(revision)
+    except (TypeError, ValueError):
+        return "未知版本"
+    if r <= 0:
+        return "初始（尚未确认需求）"
+    if r == 1:
+        return "首次确认"
+    return f"增量修订（第 {r - 1} 次）"
 REMOVAL_DISPOSITION_LABELS = {
     "REMOVE_IMPLEMENTATION": "整个功能彻底删除",
     "KEEP_COMPATIBILITY": "只删除当前入口，保留兼容能力",

@@ -28,6 +28,7 @@ from .user_facing_labels import (
     SNAPSHOT_STATUS_LABELS,
     gate_label,
     localize_machine_terms,
+    revision_label,
     user_label,
 )
 
@@ -67,7 +68,7 @@ def render_revision_md(snapshot: dict[str, Any]) -> str:
         f"> 本文件由 `requirement_snapshot.json` 自动渲染；机器事实以同目录 JSON 为准。",
         "",
         f"- 需求集合：`{snapshot.get('requirement_id', '未知')}`",
-        f"- 当前修订：第 {snapshot.get('revision', '?')} 版",
+        f"- 当前修订：{revision_label(snapshot.get('revision', '?'))}",
         f"- 状态：{user_label(snapshot.get('status'), SNAPSHOT_STATUS_LABELS)}",
         "",
         "## 当前有效原子验收项",
@@ -91,7 +92,7 @@ def render_revision_md(snapshot: dict[str, Any]) -> str:
     if history:
         lines.extend(["", "## 修订历史", ""])
         for record in history:
-            lines.append(f"- 第 {record.get('revision')} 版（`{record.get('sha256', '')[:12]}`）")
+            lines.append(f"- {revision_label(record.get('revision'))}（`{record.get('sha256', '')[:12]}`）")
     lines.append("")
     return "\n".join(lines)
 
@@ -157,7 +158,7 @@ def render_resume_guide(
     status = user_label(snapshot.get("status"), SNAPSHOT_STATUS_LABELS)
     lines.extend([
         f"- 需求集合：`{snapshot.get('requirement_id', '未知')}`",
-        f"- 当前修订：第 {revision} 版（{status}）",
+        f"- 当前修订：{revision_label(revision)}（{status}）",
     ])
     plan_confirmed = bool(plan_receipt and plan_receipt.get("confirmed_at"))
     lines.append(f"- 实施计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}")
@@ -189,7 +190,7 @@ def render_resume_guide(
     # 波及清单：本轮修订清单里 CHANGED/ADDED/REMOVED/SUPERSEDED 的义务及其影响半径。
     impacted = _impact_blast_radius(revision_manifest, mappings)
     if impacted:
-        lines.extend(["", f"## 本次增量波及清单（第 {revision} 版）", ""])
+        lines.extend(["", f"## 本次增量波及清单（{revision_label(revision)}）", ""])
         for item in impacted:
             lines.append(f"- `{item['id']}` [{item['change']}] {item['effect']}")
 

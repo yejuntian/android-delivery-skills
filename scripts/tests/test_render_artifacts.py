@@ -47,7 +47,7 @@ class RenderArtifactsTests(unittest.TestCase):
     def test_revision_md_lists_obligations(self) -> None:
         """需求修订说明列出每条义务及其必需性。"""
         md = render_revision_md(make_snapshot())
-        self.assertIn("第 2 版", md)
+        self.assertIn("增量修订（第 1 次）", md)
         self.assertIn("`BDD-001/T1`", md)
         self.assertIn("[必需]", md)
 
@@ -109,7 +109,7 @@ class RenderArtifactsTests(unittest.TestCase):
             {"id": "BDD-009/T1", "change_type": "REMOVED", "decision": "CONFIRMED"},
         ]}
         guide = render_resume_guide(snapshot, mapping, None, None, "", manifest)
-        self.assertIn("本次增量波及清单（第 3 版）", guide)
+        self.assertIn("本次增量波及清单（增量修订（第 2 次））", guide)
         self.assertIn("`BDD-001/T1` [CHANGED]", guide)
         self.assertIn("测试映射已标 STALE", guide)
         self.assertIn("`BDD-003/T1` [ADDED]", guide)

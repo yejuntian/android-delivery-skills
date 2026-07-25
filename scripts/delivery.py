@@ -80,6 +80,7 @@ from .user_facing_labels import (  # noqa: E402
     SNAPSHOT_STATUS_LABELS,
     ChineseArgumentParser,
     localize_machine_terms,
+    revision_label,
 )
 
 
@@ -385,7 +386,7 @@ def _reuse_existing_requirement_start(
     print("✅ 检测到当前需求已有起点，本次复用且不重建基线。")
     print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
     snapshot_status = SNAPSHOT_STATUS_LABELS.get(snapshot["status"], "状态暂时无法识别")
-    print(f"✅ 当前需求修订: 第 {snapshot['revision']} 版（{snapshot_status}）")
+    print(f"✅ 当前需求修订: {revision_label(snapshot['revision'])}（{snapshot_status}）")
     content_matches = snapshot["sha256"] == requirement_digest(requirement_content)
     if content_matches:
         print("✅ 当前需求正文与最近确认修订一致。")
@@ -663,7 +664,7 @@ def cmd_init(args):
         _print_resume_brief(paths, snapshot)
         print(
             f"\n📚 当前确认修订: {snapshot['requirement_id']} "
-            f"第 {snapshot['revision']} 版 "
+            f"{revision_label(snapshot['revision'])} "
             f"({SNAPSHOT_STATUS_LABELS.get(snapshot['status'], '状态未知')})"
         )
         if snapshot["obligations"]:
@@ -734,7 +735,7 @@ def _print_resume_brief(paths, snapshot) -> None:
     title = Path(requirement_dir).name if requirement_dir else snapshot.get("requirement_id", "")
     last_activity = snapshot.get("confirmed_at") or snapshot.get("created_at") or ""
     print("\n📌 续接旧需求：" + title)
-    summary = f"   修订：第 {revision} 版（{status}）｜计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}"
+    summary = f"   修订：{revision_label(revision)}（{status}）｜计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}"
     if last_activity:
         summary += f"｜上次活动：{last_activity[:10]}"
     if conclusion:
@@ -994,7 +995,7 @@ def cmd_confirm_requirement_update(args):
 
     print(
         f"✅ 需求修订已确认: {snapshot['requirement_id']} "
-        f"第 {snapshot['revision']} 版"
+        f"{revision_label(snapshot['revision'])}"
     )
     print(f"✅ 本轮变化摘要: {summarize_revision_manifest(manifest)}")
     print("✅ Git 基线未修改；后续 route 仍覆盖本需求起点后的全部代码变化。")

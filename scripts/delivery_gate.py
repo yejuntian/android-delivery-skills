@@ -64,6 +64,7 @@ from .user_facing_labels import (  # noqa: E402
     ChineseArgumentParser,
     gate_label,
     localize_machine_terms,
+    revision_label,
     user_label,
 )
 
@@ -888,7 +889,7 @@ def render_delivery_summary(
         "",
         f"**{user_label(conclusion, DELIVERY_CONCLUSION_LABELS)}**",
         "",
-        f"- 需求修订：第 {payload.get('requirement_revision', '未知')} 版",
+        f"- 需求修订：{revision_label(payload.get('requirement_revision', '未知'))}",
         f"- 验收项：共 {len(obligations)} 项，已验证 {len(covered)} 项，"
         f"尚未验证或受阻 {len(remaining)} 项，不适用 {len(not_applicable)} 项",
         "",

@@ -16,17 +16,18 @@
 
 ## 一、五步总览
 
-> 用户始终只看到五步，内部三阶段（需求确认→计划→最终交付）隐藏在后。增量不推倒重来，最终交付只在用户明确要求时触发。
+> 用户始终只看到五步，内部四阶段（需求确认→计划→测试执行→最终交付）隐藏在后。**需求变更可能发生在任何阶段**，不管在哪一步发现漏洞，都先写回需求文档，再触发增量闭环全自动同步到所有下游产物。
 
 ```mermaid
 flowchart TD
     S1["① 确认需求<br/>含已上线业务影响"] --> S2["② 拆分测试与确认计划<br/>init-test-mapping + 实施计划"]
     S2 --> S3["③ 实现验证<br/>Red → 最小实现 → Green"]
-    S3 --> S4{"下一步？"}
+    S3 --> S3A["③.5 测试执行（编码后必做）<br/>写测试计划 → 按文档逐条测 → 回填结果"]
+    S3A --> S4{"下一步？"}
     S4 -- "需求/实现继续变化" --> S1
-    S4 -- "需求增量（语义变化）" --> S5["增量闭环（全自动）"]
+    S4 -- "需求增量（语义变化）<br/>⬇ 可在任何阶段触发" --> S5["增量闭环（全自动）<br/>改需求→改代码→改测试→改测试文档→回归"]
     S5 --> S3
-    S4 -- "最终检查 / 完整交付" --> S6["⑤ 最终交付<br/>route + 全部门禁 + 中文报告"]
+    S4 -- "最终检查 / 完整交付" --> S6["④ 最终交付<br/>route + 全部门禁 + 中文报告"]
     S6 -- "发现技术问题" --> S3
     S6 -- "发现计划外业务影响" --> S1
     S6 --> S7["用户决定是否提交<br/>push / PR 另行授权"]
@@ -94,7 +95,7 @@ python3 scripts/delivery.py confirm-requirement-update --config profiles/<需求
 
 ## 三、阶段二：拆分测试、确认计划与实现
 
-> 生成测试映射骨架→AI 填测试→写实施计划（5 必需标题）→confirm-plan 生成收据→编码。编码中需求变了→增量闭环全自动（见第五节）。
+> 生成测试映射骨架→AI 填测试→写实施计划（5 必需标题）→confirm-plan 生成收据→编码。编码中需求变了→增量闭环全自动（见第六节）。
 
 ```mermaid
 flowchart TD
@@ -104,11 +105,10 @@ flowchart TD
     PC --> PCR["delivery.py confirm-plan<br/>生成收据（三重 sha256 绑定）"]
     PCR --> CODE{"开始编码"}
     CODE -- "首次" --> RED["按原子 Then：<br/>Red → 最小实现 → Green"]
-    CODE -- "增量" --> INCR["增量闭环铁律（见第五节）"]
+    CODE -- "增量" --> INCR["增量闭环铁律（见第六节）"]
     RED --> J{"编码后下一步？"}
     INCR --> J
-    J -- "实现完善（验收不变）" --> W["局部修改 + 受影响测试 + 必要编译"]
-    W --> J
+    J -- "实现完善（验收不变）" --> NEXTSTAGE["→ 进入阶段三：测试执行"]
     J -- "需求语义变化" --> K["改 <需求名>.md → confirm-requirement-update"]
     K --> K1["机器自动：标 STALE + 刷新所有 md + 旧计划收据失效"]
     K1 --> INCR
@@ -136,13 +136,65 @@ python3 scripts/delivery.py confirm-plan --config profiles/<需求>.yaml
 
 ---
 
-## 四、阶段三：最终审查与交付
+## 四、阶段三：测试执行（编码后、route 前的必做环节）
 
-> route 路由专项→构建/Lint/JUnit/变异测试/证据→delivery_gate 全量校验→出结论（FULL_PASS/LOCAL_PASS/INCOMPLETE/BLOCKED）。
+> 编码完成后不能直接跳 route+gate。必须先写测试计划文档（每个 AC → 用例 → 验证点 → 预期 → 方式），然后按文档逐条执行测试（Unit→构建→安装→真机 Journey→截图→logcat），每条回填结果（PASS/FAIL/UNVERIFIED + 截图路径 + 日志路径）。**只有测试计划里每个用例都有结果，才进 route+gate。** 如果测试中发现需求漏洞，触发增量闭环（见第六节）。
 
 ```mermaid
 flowchart TD
-    J["用户明确要求最终交付"] --> L["delivery.py route"]
+    CODE_DONE["编码完成"] --> TP1["① 写测试计划文档<br/>test-results/测试结果.md<br/>每个 AC → 用例 → 验证点 → 预期 → 方式<br/>（先写计划，不是事后补记录）"]
+    TP1 --> TP2["② 按计划逐条执行"]
+    TP2 --> TP2A["Unit Test<br/>./gradlew testDebugUnitTest"]
+    TP2 --> TP2B["构建<br/>./gradlew assembleDebug"]
+    TP2 --> TP2C["安装到设备<br/>adb install"]
+    TP2 --> TP2D["真机 Journey<br/>adb 滑动/点击/截图/logcat"]
+    TP2A --> TP3
+    TP2B --> TP3
+    TP2C --> TP3
+    TP2D --> TP3
+    TP3["③ 回填结果<br/>每条用例标 PASS/FAIL/UNVERIFIED<br/>+ 截图路径 + 日志路径<br/>+ 覆盖结论表（需求→覆盖方式→结论）"]
+    TP3 --> TP4{"所有用例<br/>都有结果？"}
+    TP4 -- "否（有未测）" --> TP2
+    TP4 -- "测试中发现<br/>需求漏洞" --> INCR["增量闭环（见第六节）"]
+    INCR --> TP1
+    TP4 -- "全部有结果<br/>（PASS 或明确 UNVERIFIED）" --> NEXT["→ 进入阶段四：route + gate"]
+```
+
+### 怎么执行
+
+**你做什么**：等 AI 完成测试执行并报告结果。如果测试中发现需求遗漏，补充需求后 AI 自动增量闭环。
+
+**AI 做什么**：
+1. 写 `test-results/测试结果.md`（测试目标 + 环境 + 用例表 + 预期 + 方式）
+2. 按文档逐条执行：
+   - Unit Test：`./gradlew testDebugUnitTest`
+   - 构建：`./gradlew assembleDebug`
+   - 安装：`adb install`
+   - 真机 Journey：`adb shell input swipe/tap` + `screencap` + `logcat`
+3. 每条回填结果（PASS/FAIL/UNVERIFIED + 截图路径 + 日志路径）
+4. 写覆盖结论表（每个 BDD/AC → 覆盖方式 → 结论）
+5. 如果测试中发现需求漏洞 → 触发增量闭环（改需求→改代码→改测试→改文档→重测）
+
+**你看什么**：`test-results/测试结果.md` 完整的用例表 + 截图 + 日志 + 覆盖结论。
+
+```bash
+# AI 先写测试计划文档，再按文档执行
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 真机 Journey：adb shell input swipe/tap + screencap + logcat
+# 回填结果到 test-results/测试结果.md
+```
+
+---
+
+## 五、阶段四：最终交付（route + gate）
+
+> route 路由专项→构建/Lint/JUnit/变异测试/证据→delivery_gate 全量校验→出结论。**gate 会校验 test-results/测试结果.md 是否存在且覆盖完整。**
+
+```mermaid
+flowchart TD
+    TEST_DONE["阶段三输出：测试全部执行完成"] --> L["delivery.py route"]
     L --> L1{"route 前置校验<br/>（sha256 → 计划收据 → route 快照 → 完整输入摘要）"}
     L1 -- "计划收据失效" --> L2["重新 confirm-plan"]
     L2 --> L
@@ -156,8 +208,8 @@ flowchart TD
     FIX -- "重跑测试" --> N
     N --> O["构建 + Lint + JUnit + 变异测试(PIT)<br/>+ Journey 或人工证据"]
     O --> P["生成 delivery-result.json"]
-    P --> Q{"delivery_gate.py validate<br/>（义务集合/sha256/STALE/变异/traceability 全校验）"}
-    Q -- "STALE 未回填 / 缺登记 /<br/>变异存活 / sha 不匹配 /<br/>traceability 缺义务 /<br/>计划收据失效" --> FIX
+    P --> Q{"delivery_gate.py validate<br/>（义务集合/sha256/STALE/变异/traceability 全校验<br/>+ 测试结果文档存在且覆盖完整）"}
+    Q -- "STALE 未回填 / 缺登记 /<br/>变异存活 / sha 不匹配 /<br/>traceability 缺义务 /<br/>测试结果文档缺失" --> FIX
     Q -- "设备待验" --> DEVICE["LOCAL_PASS_DEVICE_PENDING"]
     Q -- "仍有未完成" --> INCOMPLETE["INCOMPLETE"]
     Q -- "全部通过" --> PASS["FULL_PASS"]
@@ -173,7 +225,7 @@ flowchart TD
 **AI 做什么**：
 1. 跑 `route`：基于真实 diff 路由专项审查（Diff/质量/稳定性/API/UI）
 2. 跑构建 + Lint + JUnit + 变异测试(PIT) + Journey 或人工证据
-3. 跑 `delivery_gate validate`：全量校验义务集合/sha256/STALE/变异/traceability
+3. 跑 `delivery_gate validate`：全量校验义务集合/sha256/STALE/变异/traceability + 测试结果文档
 4. 输出中文交付结论（FULL_PASS / LOCAL_PASS / INCOMPLETE / BLOCKED）
 
 **你看什么**：终端输出结论 + `交付结论.md`（强制含"未验证项"和"残留风险"段）。
@@ -185,18 +237,19 @@ python3 scripts/delivery_gate.py validate --config profiles/<需求>.yaml
 
 ---
 
-## 五、增量闭环（需求增量后全自动）
+## 六、增量闭环（任何阶段需求变更都触发，全自动）
 
-> 你/AI 改需求→confirm 一个命令→机器自动标 STALE+刷新 md+旧计划失效→AI 自动改代码+改测试+回填+增量回归+报告。整个过程不用你发额外命令。
+> **需求变更可能发生在任何阶段**（写需求时、拆 BDD 时、写计划时、编码时、写测试时、真机测试时、route 审查时、gate 校验时）。不管在哪一步发现，都先写回需求文档，再触发全自动闭环：改需求→改代码→改测试→改测试文档→增量回归→报告。整个过程不用你发额外命令。
 
 ```mermaid
 flowchart TD
-    CHANGE["用户/AI 改了需求<br/>（往 <需求名>.md 追加/修改）"]
+    TRIGGER["在任何阶段发现需求漏洞/变更<br/>（编码中 / 测试中 / 审查中 / gate 中 / 任何时刻）"]
+    TRIGGER --> CHANGE["改 <需求名>.md<br/>（写回需求事实源）"]
     CHANGE --> CONFIRM["confirm-requirement-update<br/>（一个命令）"]
     CONFIRM --> AUTO{"机器自动"}
-    AUTO --> A1["版本号 +1<br/>（首次确认 → 增量修订第N次）"]
+    AUTO --> A1["版本号 +1<br/>（增量修订第N次）"]
     AUTO --> A2["义务 sha256 变化 → 标 STALE"]
-    AUTO --> A3["刷新续接指南<br/>（含波及清单）"]
+    AUTO --> A3["刷新续接指南（含波及清单）"]
     AUTO --> A4["刷新需求修订说明"]
     AUTO --> A5["刷新测试映射说明"]
     AUTO --> A6["旧计划收据失效"]
@@ -210,35 +263,45 @@ flowchart TD
 
     AI --> B1["① 改实现代码<br/>只改波及清单里的文件"]
     B1 --> B2["② 改测试代码<br/>STALE/新义务加断言"]
-    B2 --> B3["③ init-test-mapping<br/>回填 CURRENT"]
-    B3 --> B4["④ 增量回归<br/>跑受影响模块全量测试<br/>含旧测试，确认无回归"]
-    B4 --> B5["⑤ 报告完成<br/>改了哪些文件/测试通过/有无回归"]
-    B5 --> DONE["增量完成，回到实现验证"]
+    B2 --> B3["③ 更新测试结果文档<br/>受影响用例标'需重测'<br/>新增用例补到用例表"]
+    B3 --> B4["④ init-test-mapping<br/>回填 CURRENT"]
+    B4 --> B5["⑤ 增量回归<br/>跑受影响模块全量测试<br/>含旧测试，确认无回归"]
+    B5 --> B6["⑥ 重跑受影响用例<br/>按测试结果文档重测<br/>回填新结果（PASS/FAIL）"]
+    B6 --> B7["⑦ 报告完成<br/>改了哪些文件/测试通过/有无回归"]
+    B7 --> DONE["增量完成，回到发现变更的阶段继续"]
 ```
 
 ### 怎么执行
 
-**你做什么**：说"加一个 xxx 功能"或"改一下 xxx"。
+**你做什么**：在任何阶段说"加一个 xxx 功能"或"改一下 xxx"或"发现 xxx 没考虑"。
 
 **AI 做什么**：
 1. 改 `<需求名>.md`（写回需求）
 2. 物化修订清单 → 跑 `confirm-requirement-update`（一个命令）
 3. 机器自动：版本号+1 → 变化义务标 STALE → 刷新所有 md → 旧计划失效
-4. AI 自动闭环（不等用户）：① 改实现代码 ② 改测试代码 ③ 回填 CURRENT ④ 跑增量回归（含旧测试） ⑤ 报告
+4. AI 自动闭环（不等用户）：
+   - ① 改实现代码
+   - ② 改测试代码
+   - ③ **更新测试结果文档**（受影响用例标"需重测" + 新增用例补到用例表）
+   - ④ 回填 CURRENT
+   - ⑤ 跑增量回归（含旧测试）
+   - ⑥ **重跑受影响用例**，按测试结果文档重测，回填新结果
+   - ⑦ 报告
 
-**你看什么**：续接指南"波及清单"显示改了哪些义务，AI 报告增量完成。
+**你看什么**：续接指南"波及清单"显示改了哪些义务，测试结果文档更新，AI 报告增量完成。
 
 ```bash
 # AI 改 <需求名>.md + 物化修订清单后
 python3 scripts/delivery.py confirm-requirement-update --config profiles/<需求>.yaml
-# 后面 AI 全自动完成，不用你再发命令
+# 后面 AI 全自动完成 7 步闭环，不用你再发命令
+# 完成后回到发现变更的阶段继续
 ```
 
 ---
 
-## 六、STALE 联动机制（防改需求不更新测试）
+## 七、STALE 联动机制（防改需求不更新测试）
 
-> 需求改了某个义务→它的 sha256 变了→机器自动标 STALE→续接指南/映射说明同步→gate 拦不放行。AI 看到后自动改测试+回填→gate 放行。这就是"防 AI 改需求不更新测试"的机器兜底。
+> 需求改了某个义务→它的 sha256 变了→机器自动标 STALE→续接指南/映射说明/测试结果文档同步→gate 拦不放行。AI 看到后自动改测试+回填→gate 放行。这就是"防 AI 改需求不更新测试"的机器兜底。
 
 ```mermaid
 flowchart LR
@@ -247,20 +310,22 @@ flowchart LR
     HASH --> STALE["test-mapping.json<br/>BDD-002 标 STALE"]
     STALE --> GUIDE["续接指南<br/>⏳ BDD-002 测试待回填"]
     STALE --> MAP_MD["测试映射说明<br/>BDD-002 状态：待回填"]
+    STALE --> TEST_DOC["测试结果文档<br/>BDD-002 相关用例标'需重测'"]
     STALE --> GATE["delivery_gate<br/>拦！STALE 未回填不放行"]
 
     GUIDE --> AI_FIX["AI 自动改测试代码<br/>加深色模式断言"]
     AI_FIX --> AI_FILL["回填 CURRENT"]
-    AI_FILL --> GATE_PASS["gate 通过 ✅"]
+    AI_FILL --> RETEST["重跑 BDD-002 用例<br/>回填新结果"]
+    RETEST --> GATE_PASS["gate 通过 ✅"]
 ```
 
 ### 怎么执行
 
-这个机制是**自动触发的**，你不需要做任何事。它发生在阶段二/五的 `confirm-requirement-update` 之后，机器自动标 STALE，AI 自动改测试+回填。你只在续接指南里看到"⏳ 测试待回填"→ AI 改完后变成"✅ 测试已对齐"。
+这个机制是**自动触发的**，你不需要做任何事。它发生在任何阶段的 `confirm-requirement-update` 之后，机器自动标 STALE，AI 自动改测试+回填+重测+更新文档。你只在续接指南里看到"⏳ 测试待回填"→ AI 改完后变成"✅ 测试已对齐"。
 
 ---
 
-## 七、多需求并行（git worktree）
+## 八、多需求并行（git worktree）
 
 > 每个需求一个 worktree + 独立分支 + 独立 profile + 独立 document 目录。各窗口独立闭环互不干扰。合并用 merge --no-ff。integrate 汇总结论到主工作树总览。
 
@@ -298,7 +363,7 @@ flowchart TD
 
 **你做什么**：开多个 Claude Code 窗口，每个窗口一个需求。
 
-**AI 做什么**：每个窗口独立走阶段一→二→三，各用各的 profile + worktree。完成后合并到主分支。
+**AI 做什么**：每个窗口独立走阶段一→二→三→四，各用各的 profile + worktree。完成后合并到主分支。
 
 ```bash
 # 每个窗口各自
@@ -315,7 +380,7 @@ python3 scripts/requirement_workspace.py integrate \
 
 ---
 
-## 八、续接旧需求（新目录 + 引用）
+## 九、续接旧需求（新目录 + 引用）
 
 > 续接不往旧目录塞内容（会冲突）。新建独立目录 + 引用旧需求 + 建当前 HEAD 新基线。旧目录原样不动，零污染。
 
@@ -349,7 +414,7 @@ python3 scripts/delivery.py check-env --new-requirement --config profiles/<新�
 
 ---
 
-## 九、docx → md 事实源切换
+## 十、docx → md 事实源切换
 
 > 用户给 docx→init 自动转写为 <需求名>.md→以后所有命令统一读 md（config_paths 自动切换，无断裂）。图片型 docx 用模板骨架建空 md。docx 原样保留仅作初始记录。
 

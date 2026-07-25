@@ -73,11 +73,22 @@ def _resolve(value: Any, base: Path) -> Path | None:
 
 
 def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> ConfigPaths:
-    """按 config目录 -> workspace -> requirement_dir 的固定层级解析配置。"""
+    """按 config目录 -> workspace -> requirement_dir 的固定层级解析配置。
+
+    事实源优先 md：如果 requirement_file 指向 docx，但同目录已有 requirement.md，
+    自动切换到 md（init 转写后的后续命令全部读 md，不再绑 docx）。这样 init 转 md
+    后 check-env/confirm/route/gate 全自动跟随，无断裂。
+    """
     resolved_config = Path(config_path).expanduser().resolve()
     config_dir = resolved_config.parent
     workspace = _resolve(config.get("workspace_root"), config_dir) or config_dir
     requirement_dir = _resolve(config.get("requirement_dir"), workspace) or workspace
+    requirement_file_value = config.get("requirement_file")
+    # 事实源优先 md：docx 已转写 md 后，所有命令统一读 md。
+    if isinstance(requirement_file_value, str) and requirement_file_value.lower().endswith(".docx"):
+        md_candidate = requirement_dir / "requirement.md"
+        if md_candidate.is_file():
+            config = {**config, "requirement_file": "requirement.md"}
     return ConfigPaths(
         config_path=resolved_config,
         workspace_root=workspace,

@@ -190,7 +190,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 五、阶段四：最终交付（route + gate）
 
-> route 路由专项→构建/Lint/JUnit/变异测试/证据→delivery_gate 全量校验→出结论。**gate 会校验 test-results/测试结果.md 是否存在且覆盖完整。**
+> route 路由专项→构建/Lint/JUnit/变异测试/证据→delivery_gate 全量校验→出结论。**gate 会校验 test-results/测试结果.md 是否存在且覆盖完整。route/gate 中发现需求漏洞也触发增量闭环（见第六节），不只是改代码。**
 
 ```mermaid
 flowchart TD
@@ -200,16 +200,19 @@ flowchart TD
     L2 --> L
     L1 -- "全部通过" --> M["Diff / 质量 / 稳定性 / API 专项"]
     M --> M0{"需要修复？"}
-    M0 -- "是" --> FIX["保存证据 + 最小修复一个根因"]
+    M0 -- "是：技术问题" --> FIX["保存证据 + 最小修复一个根因"]
+    M0 -- "是：发现需求漏洞<br/>（route 暴露需求未覆盖的边界）" --> INCR_ROUTE["增量闭环（见第六节）<br/>改需求→改代码→改测试→改文档→重测"]
+    INCR_ROUTE --> L
     M0 -- "否" --> N["选择测试层 + 执行完整回归"]
-    FIX -- "需求冲突" --> BACK["返回阶段二"]
     FIX -- "代码变化" --> L
     FIX -- "重跑专项" --> M
     FIX -- "重跑测试" --> N
     N --> O["构建 + Lint + JUnit + 变异测试(PIT)<br/>+ Journey 或人工证据"]
     O --> P["生成 delivery-result.json"]
     P --> Q{"delivery_gate.py validate<br/>（义务集合/sha256/STALE/变异/traceability 全校验<br/>+ 测试结果文档存在且覆盖完整）"}
-    Q -- "STALE 未回填 / 缺登记 /<br/>变异存活 / sha 不匹配 /<br/>traceability 缺义务 /<br/>测试结果文档缺失" --> FIX
+    Q -- "技术问题（STALE/变异/sha）" --> FIX
+    Q -- "发现需求漏洞<br/>（义务不匹配/缺义务）" --> INCR_GATE["增量闭环（见第六节）<br/>改需求→改代码→改测试→改文档→重测"]
+    INCR_GATE --> L
     Q -- "设备待验" --> DEVICE["LOCAL_PASS_DEVICE_PENDING"]
     Q -- "仍有未完成" --> INCOMPLETE["INCOMPLETE"]
     Q -- "全部通过" --> PASS["FULL_PASS"]

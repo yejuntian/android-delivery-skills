@@ -43,6 +43,18 @@ description: |
 - 补充文档目录：`config/` 只记非密配置元数据（key 名/环境/owner/来源，绝不存 token/私钥/凭据）；`issues/` 每个问题一个 md（bug/数据偏差/QA反馈/Journey 失败，含现象/根因/处置/证据）；`ui/design-notes.md` 记设计说明文字（页面状态/交互/资源对照/与实现差异）。均填对应模板骨架。
 - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前先归档关键人读 md 到 `archive/<requirement_id>/`，机器 JSON 随源清理。维护或扩展流程前先读 `decisions/`，避免重复推翻已确认取舍。
 
+## 增量闭环铁律（需求增量后 AI 必须自动完成，不等用户指示）
+
+confirm-requirement-update 成功后，如果续接指南有 STALE 或新增义务，AI 必须立即自动完成全部后续，不中途停下等用户：
+
+1. **改实现代码**：只改增量需求涉及的文件（看续接指南波及清单），不动已交付逻辑；未变化义务的代码不碰。
+2. **改测试代码**：为 STALE/新增义务加断言，不删旧测试、不弱化旧断言。
+3. **回填映射**：init-test-mapping + 把 STALE 回填 CURRENT，登记新义务的 test_ids。
+4. **增量回归**：跑受影响模块的全量测试（含旧测试），确认已交付功能无回归；旧测试失败必须修到通过，不能跳过。
+5. **报告完成**：改了哪些文件、哪些测试通过、有无回归，一句话给用户。
+
+唯一需要等用户的是：需求还没确认（待定/冲突），或用户还没说"开始编码"。
+
 ## 并行需求通道（多窗口同时推进）
 
 - 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。`config_paths` 已按 profile 路径的 hash 隔离 Git 基线/快照/route/证据/能力（机器保证，非自觉）。

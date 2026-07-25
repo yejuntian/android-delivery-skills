@@ -1,8 +1,11 @@
 # Android Delivery Skills 完整流程图
 
 > 配合 FLOW_OVERVIEW.md 使用，本文件只放流程图（mermaid），帮助可视化。
+> 每张图旁附简述（做了什么、为什么、看什么），便于扫读。
 
 ## 一、五步总览
+
+> 简述：用户始终只看到五步，内部三阶段（需求确认→计划→最终交付）隐藏在后。增量改动不推倒重来，最终交付只在用户明确要求时触发。
 
 ```mermaid
 flowchart TD
@@ -19,6 +22,8 @@ flowchart TD
 ```
 
 ## 二、阶段一：确认需求与基线
+
+> 简述：读需求（docx 自动转 md），反复沟通确认（每答案先写回 md），纯确认后建 Git 基线 + 需求快照。confirm 成功后自动刷新续接指南/修订说明/映射说明。看续接指南知道当前在哪一步。
 
 ```mermaid
 flowchart TD
@@ -41,10 +46,10 @@ flowchart TD
     G2 --> G3["展示变化摘要 + 路径"]
     G3 --> C
     F -- "纯确认（无新变化）" --> H["delivery.py check-env"]
-    H --> ENV{"分支 + 代码工作区检查"}
+    H --> ENV{"分支 + 代码工作区检查<br/>（文档改动已忽略，只检查代码）"}
     ENV -- "否" --> ENVFAIL["说明问题<br/>不自动 stash/commit/clean"]
     ENVFAIL -- "用户处理后" --> H
-    ENV -- "代码干净（文档改动已忽略）" --> REV["confirm-requirement-update"]
+    ENV -- "代码干净" --> REV["confirm-requirement-update"]
     REV --> REV2{"修订确认有效？"}
     REV2 -- "待定/冲突" --> REVFIX["修正清单或继续澄清"]
     REVFIX --> C
@@ -53,6 +58,8 @@ flowchart TD
 ```
 
 ## 三、阶段二：拆分测试、确认计划与实现
+
+> 简述：生成测试映射骨架→AI 填测试→写实施计划（5 必需标题）→confirm-plan 生成收据→编码。编码中需求变了→增量闭环全自动（见第五节）。看续接指南知道 STALE 哪些、下一步干啥。
 
 ```mermaid
 flowchart TD
@@ -74,13 +81,15 @@ flowchart TD
 
 ## 四、阶段三：最终审查与交付
 
+> 简述：route 路由专项→构建/Lint/JUnit/变异测试/证据→delivery_gate 全量校验（义务/sha256/STALE/变异/traceability）→出结论（FULL_PASS/LOCAL_PASS/INCOMPLETE/BLOCKED）。看 gate 报错知道哪个义务/测试不合规。
+
 ```mermaid
 flowchart TD
     J["用户明确要求最终交付"] --> L["delivery.py route"]
-    L --> L1{"route 前置校验"}
+    L --> L1{"route 前置校验<br/>（sha256 → 计划收据 → route 快照 → 完整输入摘要）"}
     L1 -- "计划收据失效" --> L2["重新 confirm-plan"]
     L2 --> L
-    L1 -- "通过（sha256→计划收据→route 快照→完整输入摘要 全校验）" --> M["Diff / 质量 / 稳定性 / API 专项"]
+    L1 -- "全部通过" --> M["Diff / 质量 / 稳定性 / API 专项"]
     M --> M0{"需要修复？"}
     M0 -- "是" --> FIX["保存证据 + 最小修复一个根因"]
     M0 -- "否" --> N["选择测试层 + 执行完整回归"]
@@ -90,7 +99,7 @@ flowchart TD
     FIX -- "重跑测试" --> N
     N --> O["构建 + Lint + JUnit + 变异测试(PIT)<br/>+ Journey 或人工证据"]
     O --> P["生成 delivery-result.json"]
-    P --> Q{"delivery_gate.py validate"}
+    P --> Q{"delivery_gate.py validate<br/>（义务集合/sha256/STALE/变异/traceability 全校验）"}
     Q -- "STALE 未回填 / 缺登记 /<br/>变异存活 / sha 不匹配 /<br/>traceability 缺义务 /<br/>计划收据失效" --> FIX
     Q -- "设备待验" --> DEVICE["LOCAL_PASS_DEVICE_PENDING"]
     Q -- "仍有未完成" --> INCOMPLETE["INCOMPLETE"]
@@ -101,6 +110,8 @@ flowchart TD
 ```
 
 ## 五、增量闭环（需求增量后全自动）
+
+> 简述：你/AI 改需求→confirm 一个命令→机器自动标 STALE+刷新 md+旧计划失效→AI 自动改代码+改测试+回填+增量回归+报告。整个过程不用你发额外命令。看续接指南"波及清单"知道改了哪些义务。
 
 ```mermaid
 flowchart TD
@@ -131,6 +142,8 @@ flowchart TD
 
 ## 六、STALE 联动机制（防改需求不更新测试）
 
+> 简述：需求改了某个义务→它的 sha256 变了→机器自动标 STALE→续接指南/映射说明同步→gate 拦不放行。AI 看到后自动改测试+回填 CURRENT→gate 放行。这就是"防 AI 改需求不更新测试"的机器兜底。
+
 ```mermaid
 flowchart LR
     REQ["需求改了<br/>BDD-002 加了深色模式"] --> CONFIRM2["confirm-requirement-update"]
@@ -146,6 +159,8 @@ flowchart LR
 ```
 
 ## 七、多需求并行（git worktree）
+
+> 简述：每个需求一个 worktree + 独立分支 + 独立 profile + 独立 document 目录。各窗口独立闭环互不干扰。合并用 merge --no-ff（保留 hash + merge commit 标需求边界）。integrate 汇总结论到主工作树总览。
 
 ```mermaid
 flowchart TD
@@ -179,6 +194,8 @@ flowchart TD
 
 ## 八、续接旧需求（新目录 + 引用）
 
+> 简述：续接不往旧目录塞内容（会冲突）。新建独立目录 + 引用旧需求 + 建当前 HEAD 新基线。旧目录原样不动，零污染。看旧目录交付结论知道上次做了什么，看新目录知道本次增量。
+
 ```mermaid
 flowchart TD
     OLD["上周交付<br/>document/2026-07-20-login/<br/>（原样不动）"]
@@ -191,6 +208,8 @@ flowchart TD
 ```
 
 ## 九、docx → md 事实源切换
+
+> 简述：用户给 docx→init 自动转写为 <需求名>.md→以后所有命令统一读 md（config_paths 自动切换，无断裂）。图片型 docx 用模板骨架建空 md。docx 原样保留仅作初始记录。
 
 ```mermaid
 flowchart TD

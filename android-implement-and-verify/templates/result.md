@@ -5,6 +5,7 @@
 - 分支：
 - 需求修订：第 N 版
 - 最终结论：FULL_PASS / LOCAL_PASS_DEVICE_PENDING / INCOMPLETE / BLOCKED
+- 关联需求：（续接旧需求时填，如"续接 2026-07-20-login"；无则留空）
 
 ## 改了什么
 

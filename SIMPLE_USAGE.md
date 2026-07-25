@@ -46,8 +46,20 @@ android-implement-and-verify
 
 - 不冲突的需求各窗口独立闭环；改同一文件时 git 合入自然报冲突，无需预检。
 - 合并用 `git merge --no-ff`（保留提交 hash，证据链不断）；不用 rebase（改写 hash 使证据失效）。
-- `document/` 放在 Android 项目里，需在该项目 `.gitignore` 加 `document/`；`delivery_gate` 已在代码摘要里排除 `document/`，文档变化不影响门禁。
+- `document/` 是交付文档，git 跟踪、可随代码一起 commit；`check-env` 只检查代码工作区，文档改动不阻断；`delivery_gate` 已在代码摘要里排除 `document/`，文档变化不影响门禁。
 - 不要用 `requirement_workspace.py next` 创建并行需求（它只表示同通道内上一需求结束后开始下一项）。
+
+## 续接旧需求（对已交付需求继续改动）
+
+业界共识：续接不往旧产物里塞内容（test-mapping/snapshot/delivery-result 会冲突），而是**新建独立需求目录 + 引用旧需求**：
+
+1. 新建目录 `document/<日期>-<英文名>/`（如续接 login 加忘记密码 → `2026-07-25-login-forgot-pwd/`）。
+2. 需求正文 `requirement.md` 顶部注明关联（如"续接 2026-07-20-login，本次新增忘记密码"）。
+3. 代码基线用 `check-env --new-requirement` 建当前 HEAD 最新点（不复用旧基线，因为代码已变）。
+4. 产物（test-mapping/snapshot/delivery-result）全新生成，只管本次义务，不碰旧目录。
+5. plan.md / 交付结论填"关联需求"字段，需求总览里一眼看到同一功能的多次迭代。
+
+旧目录原样保留，追溯时按"关联需求"链查阅每次迭代。
 - 共享真机/模拟器/账号仍需串行。
 - 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 生成 `<主工作树>/document/integration-<批次>.md`；`index --main-worktree <主工作树>` 刷新全局 `<主工作树>/document/需求总览.md`。
 

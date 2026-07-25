@@ -89,6 +89,14 @@ class DeliveryError(RuntimeError):
     """表示已有明确原因、不能继续猜测的流程错误。"""
 
 
+def _is_under_path(file_path: str, prefix: str) -> bool:
+    """判断 git porcelain 输出的文件路径是否在指定目录前缀下（document/ 过滤用）。"""
+    if not file_path or not prefix:
+        return False
+    normalized = file_path.replace("\\", "/").strip('"')
+    return normalized == prefix or normalized.startswith(prefix.rstrip("/") + "/")
+
+
 def format_requirement_change(change):
     """把机器稳定枚举转换成面向用户的中文需求变化说明。"""
     change_type = CHANGE_TYPE_LABELS.get(change.get("change_type"), "未知变化")
@@ -626,6 +634,27 @@ def cmd_init(args):
 
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法读取需求正文")
+
+    # 事实源优先用 md：docx 仅作初始输入，init 自动读取 docx 并转写成 requirement.md。
+    # 以后所有增量、修订、门禁都以 md 为准，不碰 docx（docx 是 OOXML，AI 无法可靠增量编辑）。
+    requirement_dir = paths.requirement_dir
+    md_path = requirement_dir / "requirement.md"
+    if requirement_path.suffix.lower() == ".docx" and md_path.is_file():
+        print(f"\n💡 检测到 requirement.md 已存在，优先以它为事实源（不再读 docx）。")
+        requirement_path = md_path
+        paths = resolve_paths({**config, "requirement_file": "requirement.md"}, args.config)
+        requirement_path = paths.requirement_path
+    elif requirement_path.suffix.lower() == ".docx" and not md_path.is_file():
+        # 首次：AI 自动读取 docx 正文并转写成 requirement.md（事实源切换）。
+        docx_content = read_requirement(requirement_path)
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(docx_content, encoding="utf-8")
+        print(f"\n💡 已自动读取 docx 并转写为 requirement.md（事实源）。")
+        print(f"💡 以后所有增量、修订和门禁都以 requirement.md 为准，原 docx 仅作初始记录保留。")
+        requirement_path = md_path
+        paths = resolve_paths({**config, "requirement_file": "requirement.md"}, args.config)
+        requirement_path = paths.requirement_path
+
     content = read_requirement(requirement_path)
     print("\n=== 需求正文内容 ===")
     print(content)
@@ -868,12 +897,29 @@ def cmd_check_env(args):
     print("✅ 分支检查通过。")
 
     status = working_tree_status(project_path)
-    if status:
+    # document/ 是交付文档（git 跟踪、可 commit），不算代码改动，不阻断 check-env。
+    # 只检查代码工作区是否干净，文档随时改不卡流程；防串需求靠代码基线 + document 日期目录隔离。
+    requirement_dir_rel = None
+    try:
+        requirement_dir_rel = paths.requirement_dir.resolve().relative_to(project_path.resolve())
+    except ValueError:
+        pass
+    code_status = status
+    if status and requirement_dir_rel:
+        # 过滤掉 requirement_dir 下的所有行（文档/状态变化不算代码脏）。
+        prefix = str(requirement_dir_rel).replace("\\", "/")
+        code_lines = [
+            line for line in status.splitlines()
+            if not _is_under_path(line.split(maxsplit=1)[-1] if " " in line else "", prefix)
+        ]
+        code_status = "\n".join(code_lines).strip()
+    if code_status:
         raise DeliveryError(
-            "工作区存在需求开始前的改动，无法建立不串需求的基线。\n"
-            f"{status}\n请先自行确认并处理；脚本不会自动 stash、提交或清理。"
+            "代码工作区存在需求开始前的改动，无法建立不串需求的基线。\n"
+            f"{code_status}\n请先自行确认并处理；脚本不会自动 stash、提交或清理。\n"
+            "（交付文档 document/ 的改动不算代码脏，已自动忽略。）"
         )
-    print("✅ 工作区干净。")
+    print("✅ 代码工作区干净（交付文档改动已忽略）。")
 
     baseline_path = baseline_path_for_config(resolved_config)
     snapshot_path = requirement_snapshot_path_for_config(resolved_config)

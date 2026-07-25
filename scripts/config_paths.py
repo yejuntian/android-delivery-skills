@@ -72,12 +72,24 @@ def _resolve(value: Any, base: Path) -> Path | None:
     return path.resolve() if path.is_absolute() else (base / path).resolve()
 
 
+def _md_filename_for_dir(requirement_dir: Path) -> str:
+    """从 requirement_dir 目录名提取需求名，生成 <需求名>.md（如 ig-video-feed.md）。
+
+    目录名格式为 <日期>-<英文名>（如 2026-07-25-ig-video-feed），
+    取第一个 - 之后的部分作为需求名；无日期前缀时用整个目录名。
+    """
+    name = requirement_dir.name
+    parts = name.split("-", 3)
+    # 格式 YYYY-MM-DD-<slug>：取第 4 段；否则用整个目录名。
+    slug = parts[3] if len(parts) >= 4 and len(parts[0]) == 4 and parts[0].isdigit() else name
+    return f"{slug}.md"
+
+
 def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> ConfigPaths:
     """按 config目录 -> workspace -> requirement_dir 的固定层级解析配置。
 
-    事实源优先 md：如果 requirement_file 指向 docx，但同目录已有 requirement.md，
-    自动切换到 md（init 转写后的后续命令全部读 md，不再绑 docx）。这样 init 转 md
-    后 check-env/confirm/route/gate 全自动跟随，无断裂。
+    事实源优先 md：如果 requirement_file 指向 docx，但同目录已有转写的 <需求名>.md，
+    自动切换到该 md（init 转写后的后续命令全部读 md，不再绑 docx）。
     """
     resolved_config = Path(config_path).expanduser().resolve()
     config_dir = resolved_config.parent
@@ -86,9 +98,10 @@ def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> Con
     requirement_file_value = config.get("requirement_file")
     # 事实源优先 md：docx 已转写 md 后，所有命令统一读 md。
     if isinstance(requirement_file_value, str) and requirement_file_value.lower().endswith(".docx"):
-        md_candidate = requirement_dir / "requirement.md"
+        md_name = _md_filename_for_dir(requirement_dir)
+        md_candidate = requirement_dir / md_name
         if md_candidate.is_file():
-            config = {**config, "requirement_file": "requirement.md"}
+            config = {**config, "requirement_file": md_name}
     return ConfigPaths(
         config_path=resolved_config,
         workspace_root=workspace,

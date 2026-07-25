@@ -39,6 +39,7 @@ from .config_paths import (  # noqa: E402
     requirement_snapshot_path_for_config,
     route_impact_path_for_config,
     resolve_config_paths as resolve_paths,
+    _md_filename_for_dir,
 )
 from .git_changes import (  # noqa: E402
     GitInspectionError,
@@ -635,24 +636,37 @@ def cmd_init(args):
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法读取需求正文")
 
-    # 事实源优先用 md：docx 仅作初始输入，init 自动读取 docx 并转写成 requirement.md。
+    # 事实源优先用 md：docx 仅作初始输入，init 自动读取 docx 并转写成 <需求名>.md。
     # 以后所有增量、修订、门禁都以 md 为准，不碰 docx（docx 是 OOXML，AI 无法可靠增量编辑）。
     requirement_dir = paths.requirement_dir
-    md_path = requirement_dir / "requirement.md"
+    md_name = _md_filename_for_dir(requirement_dir)
+    md_path = requirement_dir / md_name
     if requirement_path.suffix.lower() == ".docx" and md_path.is_file():
-        print(f"\n💡 检测到 requirement.md 已存在，优先以它为事实源（不再读 docx）。")
+        print(f"\n💡 检测到 {md_name} 已存在，优先以它为事实源（不再读 docx）。")
         requirement_path = md_path
-        paths = resolve_paths({**config, "requirement_file": "requirement.md"}, args.config)
+        paths = resolve_paths({**config, "requirement_file": md_name}, args.config)
         requirement_path = paths.requirement_path
     elif requirement_path.suffix.lower() == ".docx" and not md_path.is_file():
-        # 首次：AI 自动读取 docx 正文并转写成 requirement.md（事实源切换）。
+        # 首次：AI 自动读取 docx 正文并转写成 <需求名>.md（事实源切换）。
         docx_content = read_requirement(requirement_path)
         md_path.parent.mkdir(parents=True, exist_ok=True)
-        md_path.write_text(docx_content, encoding="utf-8")
-        print(f"\n💡 已自动读取 docx 并转写为 requirement.md（事实源）。")
-        print(f"💡 以后所有增量、修订和门禁都以 requirement.md 为准，原 docx 仅作初始记录保留。")
+        if not docx_content.strip():
+            # 图片型 docx 提取不到正文：用模板骨架建空文件，
+            # AI 在后续沟通中根据截图/Figma/用户补充逐步填充，不脑补。
+            template_path = SKILL_ROOT / "android-implement-and-verify" / "templates" / "requirement.md"
+            if template_path.is_file():
+                md_path.write_text(template_path.read_text(encoding="utf-8"), encoding="utf-8")
+            else:
+                md_path.write_text("# <需求标题>\n\n> 来源：图片型 docx，无文本正文，待 AI 后续填充\n\n## 需求说明\n\n（待填充）\n", encoding="utf-8")
+            print(f"\n⚠️ 该 docx 是图片型，无法提取正文文字。")
+            print(f"⚠️ 已用模板骨架创建 {md_name}，AI 将在后续沟通中根据截图/Figma/用户补充逐步填充。")
+            print(f"⚠️ 填充后再次执行 init，流程会读取已填充的 {md_name}。")
+        else:
+            md_path.write_text(docx_content, encoding="utf-8")
+            print(f"\n💡 已自动读取 docx 并转写为 {md_name}（事实源）。")
+            print(f"💡 以后所有增量、修订和门禁都以 {md_name} 为准，原 docx 仅作初始记录保留。")
         requirement_path = md_path
-        paths = resolve_paths({**config, "requirement_file": "requirement.md"}, args.config)
+        paths = resolve_paths({**config, "requirement_file": md_name}, args.config)
         requirement_path = paths.requirement_path
 
     content = read_requirement(requirement_path)

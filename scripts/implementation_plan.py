@@ -223,7 +223,8 @@ def validate_plan_confirmation(
     for key, value in expected.items():
         if payload.get(key) != value:
             raise ImplementationPlanError(
-                "需求或实施计划已变化，旧计划确认失效；请重新展示计划并获得用户确认"
+                "需求或实施计划已变化，旧计划确认失效；"
+                "请重新展示 实施计划.md 并执行 delivery.py confirm-plan"
             )
     try:
         receipt_sha256 = hashlib.sha256(receipt_path.read_bytes()).hexdigest()

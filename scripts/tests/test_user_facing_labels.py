@@ -129,15 +129,15 @@ class UserFacingLabelsTests(unittest.TestCase):
         self.assertEqual("其他交付检查", gate)
 
     def test_requirement_instruction_uses_chinese_scenario_terms(self) -> None:
-        """验证需求阶段向用户显示前提、操作和预期结果，不泄漏英文流程词。"""
+        """验证需求阶段指令用中文验收术语，不泄漏英文流程词。"""
         output = io.StringIO()
 
         with redirect_stdout(output):
             print_bdd_instruction()
 
         text = output.getvalue()
-        self.assertIn("前提 / 操作 / 预期结果", text)
         self.assertIn("原子验收项", text)
+        self.assertIn("主流程/异常边界", text)
         for machine_term in ("Given", "When", "Then", "BLOCKED", "Red", "Green"):
             self.assertNotIn(machine_term, text)
 

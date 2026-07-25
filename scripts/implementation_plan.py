@@ -71,7 +71,7 @@ def read_implementation_plan(path: str | Path) -> str:
     missing = []
     for section in REQUIRED_PLAN_SECTIONS:
         heading = re.search(
-            rf"^\s*#{{1,6}}\s+{re.escape(section)}\s*$",
+            rf"^\s*#{{1,6}}\s+{re.escape(section)}(?:[（(（].*?[)））])?\s*$",
             content,
             flags=re.MULTILINE,
         )
@@ -85,7 +85,7 @@ def read_implementation_plan(path: str | Path) -> str:
             missing.append(f"{section}（内容为空）")
     if missing:
         raise ImplementationPlanError(
-            "实施计划缺少必需内容: " + "、".join(missing)
+            "实施计划缺少必需内容（必须是精确标题，可带括号说明）: " + "、".join(missing)
         )
     return content.strip()
 

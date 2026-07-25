@@ -231,21 +231,19 @@ class UserInstructionTests(unittest.TestCase):
     """验证终端交给其他 AI 的需求阶段指令与主流程保持一致。"""
 
     def test_bdd_instruction_includes_existing_business_safety_rules(self) -> None:
-        """验证确认前只读检查、旧业务标记和基线复用都明确展示。"""
+        """验证确认前只读检查和基线复用等核心约束仍在精简指令中。"""
         output = io.StringIO()
 
         with redirect_stdout(output):
             print_bdd_instruction()
 
         text = output.getvalue()
-        self.assertIn("只读核对 project_path、Git 仓库和目标分支", text)
-        self.assertIn("不得重复执行 check-env", text)
-        self.assertIn("【本次明确修改 / 必须保持不变 / 暂时无法确认 / 明确不修改范围】", text)
-        self.assertIn("【修改已上线业务】、【保护已上线业务】", text)
-        self.assertIn("必须是必需项", text)
+        self.assertIn("先形成初步需求理解", text)
+        self.assertIn("用户故事+AC+主流程/异常边界", text)
+        self.assertIn("确认后不得编码", text)
 
     def test_bdd_instruction_converges_changes_before_first_confirmation(self) -> None:
-        """验证首次确认前的多轮增删改先汇总到文件，不会误建基线或正式修订。"""
+        """验证首次确认前多轮增删改先汇总到文件的核心约束仍在精简指令中。"""
         output = io.StringIO()
 
         with redirect_stdout(output):
@@ -253,15 +251,11 @@ class UserInstructionTests(unittest.TestCase):
 
         text = output.getvalue()
         self.assertIn("先展示本轮变化摘要", text)
-        self.assertIn("合并为最新完整需求并同步 requirement_file", text)
-        self.assertIn("重新执行 init", text)
-        self.assertIn("最新 requirement_file 路径", text)
-        self.assertIn("默认不在聊天重贴完整需求", text)
-        self.assertIn("同时还有新变化时仍按需求变化处理", text)
-        self.assertIn("收到最新 requirement_file 路径与变更摘要", text)
-        self.assertIn("不要求实现删除处置", text)
-        self.assertIn("进入只读计划阶段", text)
-        self.assertIn("不得直接编码", text)
+        self.assertIn("合并写回 requirement_file", text)
+        self.assertIn("重新 init 读取", text)
+        self.assertIn("纯确认", text)
+        self.assertIn("先写实施计划等待确认", text)
+        self.assertIn("不得编码", text)
 
     def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
         """验证 P0/P1 自动修复授权不会越过未确认的旧业务处置。"""
@@ -875,10 +869,8 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("需求变化候选", text)
         self.assertIn("+允许点击重试", text)
         self.assertIn("BDD-001/T1", text)
-        self.assertIn("新增、修改、删除、未变化、已被新要求替代", text)
-        self.assertIn("英文枚举只写入 requirement-revision.json", text)
+        self.assertIn("新增、修改、删除、未变化", text)
         self.assertIn("check-env --new-requirement", text)
-        self.assertNotIn("ADDED/CHANGED/REMOVED/UNCHANGED", text)
 
     def test_confirm_command_never_changes_git_baseline(self) -> None:
         """验证独立需求确认只更新修订快照，不覆盖当前需求 Git 起点。"""

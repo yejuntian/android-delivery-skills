@@ -213,7 +213,7 @@ def render_resume_guide(
         "- STALE 映射：重新登记测试，`mapping_status` 回填 CURRENT。",
         "- 最终结论为通过且无变化：可直接交付；否则按五步流程继续。",
         "",
-        "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以 `需求说明.md` 为准。",
+        "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以配置的 requirement_file 为准。",
         "",
     ])
     return "\n".join(lines)
@@ -269,7 +269,7 @@ def _impact_blast_radius(
         "- STALE 映射：重新登记测试，`mapping_status` 回填 CURRENT。",
         "- 最终结论为通过且无变化：可直接交付；否则按五步流程继续。",
         "",
-        "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以 `需求说明.md` 为准。",
+        "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以配置的 requirement_file 为准。",
         "",
     ])
     return "\n".join(lines)

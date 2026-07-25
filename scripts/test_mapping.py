@@ -136,17 +136,43 @@ def validate_test_mapping(
     return errors
 
 
-def build_initial_mapping(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """为在途需求生成骨架；已确认义务默认 STALE，由 AI 填测试后回填 CURRENT。"""
+def build_initial_mapping(
+    snapshot: dict[str, Any],
+    existing_mapping: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """生成测试映射骨架；保留已有 CURRENT 登记中 sha256 未变化的项，避免破坏性重写。
+
+    P2 修复：R2 后重跑 init-test-mapping 时，未变化义务（UNCHANGED）的 CURRENT
+    登记不应被清空。只对新增义务或 sha256 变化的义务生成 STALE 骨架。
+    """
+    current_sha = {
+        item["id"]: item["sha256"] for item in snapshot.get("obligations", [])
+    }
+    preserved: dict[str, dict[str, Any]] = {}
+    if existing_mapping and isinstance(existing_mapping.get("mappings"), list):
+        for entry in existing_mapping["mappings"]:
+            if not isinstance(entry, dict):
+                continue
+            oid = entry.get("obligation_id")
+            if not isinstance(oid, str) or oid not in current_sha:
+                continue
+            # 仅保留 sha256 未变且已 CURRENT 的登记（UNCHANGED 项）。
+            if (
+                entry.get("mapping_status") == "CURRENT"
+                and entry.get("obligation_sha256") == current_sha[oid]
+                and entry.get("test_ids")
+            ):
+                preserved[oid] = entry
     return {
         "version": MAPPING_VERSION,
         "mappings": [
-            {
+            preserved.get(item["id"])
+            or {
                 "obligation_id": item["id"],
                 "obligation_sha256": item["sha256"],
                 "test_ids": [],
                 "mapping_status": "STALE",
-                "manual_reason": "在途需求尚未登记测试用例",
+                "manual_reason": "在途需求尚未登记测试用例，填 test_ids 后回填 CURRENT",
             }
             for item in snapshot.get("obligations", [])
         ],
@@ -180,6 +206,7 @@ def mark_stale_after_revision(
             # 义务语义已变化：强制刷新声明的摘要并标记待重新登记测试。
             entry["obligation_sha256"] = current_sha
             entry["mapping_status"] = "STALE"
+            entry["manual_reason"] = "需求增量使该义务语义变化，请重新登记测试并回填 CURRENT"
             updated = True
     payload["version"] = MAPPING_VERSION
     if updated:

@@ -169,6 +169,11 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         raise DeliveryGateError("需求修订仍有待定或冲突项，不能进入最终交付门禁")
     if requirement_snapshot["sha256"] != requirement_sha256:
         raise DeliveryGateError("requirement_file 尚未确认为当前需求修订")
+    route_path = route_impact_path_for_config(config_path)
+    try:
+        route_impact = load_route_impact(route_path)
+    except RouteImpactError as exc:
+        raise DeliveryGateError(str(exc)) from exc
     try:
         plan_context = validate_plan_confirmation(
             requirement_snapshot,
@@ -235,11 +240,6 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         ),
         "implementation_plan_path": str(implementation_plan_path(paths.requirement_dir)),
     }
-    route_path = route_impact_path_for_config(config_path)
-    try:
-        route_impact = load_route_impact(route_path)
-    except RouteImpactError as exc:
-        raise DeliveryGateError(str(exc)) from exc
     for field in (
         "requirement_id",
         "requirement_revision",

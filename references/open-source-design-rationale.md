@@ -330,6 +330,21 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **拒绝**：不迁移 JSON 路径（破坏在途需求风险）；不新建 test/ result/ 子目录（与 test-cases/test-results 混淆）；不复制 Spec Kit/Matt Pocock 完整文件树或 Handoff 体系（M01/M27 已拒绝）；本轮不加并行冲突检测（目录已为多 requirement_dir 预留，用户明确后续补）；不做需求级度量或架构图（超范围）。
 - **落点**：新增 `scripts/atomic_write.py`（公共原子写，渐进收敛 5+ 处重复）、`scripts/render_artifacts.py`；规则落 `_shared/android-global-rules.md`（产物体系一条）、`android-implement-and-verify/SKILL.md`（续接入口）、`android-test-and-fix/SKILL.md`（ArchUnit 层）；本文保存来源与取舍，评测场景防回归。
 
+### M32 多需求并行（git worktree）与交付文档落地
+
+- **调研日期**：2026-07-25。
+- **问题**：单配置流程默认一个 `profiles/local.yaml` 对应一个活动需求；多需求共用同一配置/工作树/需求目录并行会互相污染（Git 基线、route 快照、证据覆盖、未提交代码阻塞）。
+- **来源**：[git worktree 官方](https://git-scm.com/docs/git-worktree)、[Claude Code worktrees](https://code.claude.com/docs/en/worktrees)、[OpenAI Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)；Spec Kit spec continuity（集成批次汇总）。
+- **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 按 profile 绝对路径 SHA-256 hash 隔离 baseline/snapshot/route/evidence/capabilities（req-login→`306d8e48`、req-pay→`ff6a9ed1`，5 类路径全不同）；同文件同行冲突 git merge 自然检出；改不同文件无冲突；`git worktree remove/prune` 可回收；同 config 并发第二写窗口被 O_EXCL 锁拒。
+- **决策**：
+  - 业界标准 = 纯 git worktree，零自研并行 wrapper 脚本。一个需求 = 一个 worktree + 独立分支 + 独立 profile + 独立 requirement_dir。
+  - 文档落地：`requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），目录名英文 slug（kebab-case），中文名存 `需求说明.md` 首行 + workspace state 的 title，只在总览/集成报告显示。
+  - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 断证据链）、不用 cherry-pick（丢追溯链）。
+  - `requirement_workspace.py` 新增 `integrate`（汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md` + 各通道标 MERGED+批次号）、扩展 `index --main-worktree`（刷新全局 `<主工作树>/document/需求总览.md`，六列含分支和集成批次，分支自动从 workspace state 填）。
+  - 不污染门禁：document/ 进 Android 项目需 .gitignore；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。
+- **对不变量 #18 / M22 的覆盖说明**：M22 原则"需求资料默认不进 Android 项目"。本决策由用户明确确认：文档放 project_path/document/ 时配套 .gitignore + 摘要排除，保证不污染门禁，覆盖旧默认。rotate 单配置通道仍可用项目外 requirements-runtime，不变。
+- **拒绝**：不新增 parallel_channel.py 或任何自研并行 wrapper（业界无此实践）；不做冲突预检机器门禁（git 合入自然报冲突）；不用 rebase/cherry-pick 合并；不改 config_paths 核心逻辑（hash 隔离已完备）。
+
 ### 运行时规则唯一归属
 
 | 规则范围 | 唯一运行时来源 |

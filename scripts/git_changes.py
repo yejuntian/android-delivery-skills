@@ -302,6 +302,10 @@ def current_delivery_snapshot(
     for relative in untracked:
         if relative in excluded:
             continue
+        # 目录前缀排除：exclude_paths 含 "document" 时，document/ 下所有 untracked 也排除。
+        if any(relative == prefix or relative.startswith(prefix.rstrip("/") + "/")
+               for prefix in excluded):
+            continue
         digest.update(b"\0untracked\0")
         digest.update(relative.encode("utf-8", errors="surrogateescape"))
         path = repo / relative

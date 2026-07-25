@@ -24,6 +24,33 @@ android-implement-and-verify
 
 你只需说“开始这个需求”“确认需求”“确认计划”“这个点增加/修改/删除……”或“执行最终检查”。Git 基线、需求修订、测试选择、专项路由和机器证据由 AI 在后台处理；只有出现风险、失败、资料缺失或需要授权时，才用中文说明原因和下一步。
 
+## 同时处理多个需求（多窗口并行）
+
+一个 `--config` 是一个交付通道，同通道内仍串行。多个需求要同时推进时，按业界标准（git worktree）隔离，每个需求一套独立配置：
+
+```text
+一个需求 = 一个 git worktree + 独立分支 + 独立 profiles/<需求>.yaml + 独立 requirement_dir
+```
+
+脚本已按 profile 路径的 hash 隔离 Git 基线、快照、route、证据和能力，不同通道互不覆盖。
+
+步骤（以 `login` 需求为例）：
+
+1. 建独立工作树：`git -C <Android项目> worktree add ../MyApp-req-login -b feature/req-login`
+2. 建需求目录：`mkdir -p MyApp-req-login/document/2026-07-25-login`（文档放在 `project_path/document/<日期-英文名>/`）
+3. 复制并改 profile：`cp profiles/local.yaml profiles/req-login.yaml`，把 `project_path` 指向新 worktree、`branch` 设为 `feature/req-login`、`requirement_dir` 设为 `MyApp-req-login/document/2026-07-25-login`、`requirement_file` 指向需求正文
+4. 每条命令都带自己的 `--config`：`init`、`check-env`、`confirm-requirement-update`、`confirm-plan`、`route`、`delivery_gate.py validate`
+5. 不冲突（改不同文件）的需求各窗口独立闭环；合并用 `git merge --no-ff`，合入后在最终代码上重跑受影响门禁
+
+注意：
+
+- 不冲突的需求各窗口独立闭环；改同一文件时 git 合入自然报冲突，无需预检。
+- 合并用 `git merge --no-ff`（保留提交 hash，证据链不断）；不用 rebase（改写 hash 使证据失效）。
+- `document/` 放在 Android 项目里，需在该项目 `.gitignore` 加 `document/`；`delivery_gate` 已在代码摘要里排除 `document/`，文档变化不影响门禁。
+- 不要用 `requirement_workspace.py next` 创建并行需求（它只表示同通道内上一需求结束后开始下一项）。
+- 共享真机/模拟器/账号仍需串行。
+- 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 生成 `<主工作树>/document/integration-<批次>.md`；`index --main-worktree <主工作树>` 刷新全局 `<主工作树>/document/需求总览.md`。
+
 ## 个人查阅：常见专业术语
 
 这一节只是给你查阅的中文说明，不是 Skill 执行规则，不参与流程判断，也不会改变脚本中的英文名称和机器字段。

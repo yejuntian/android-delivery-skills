@@ -14,11 +14,13 @@
 
 # 必填：当前要开发或分析的 Android 项目根目录。
 # 应指向包含 settings.gradle、settings.gradle.kts 或实际 Gradle 工程入口的目录。
+# 多需求并行时，每个通道指向自己的 git worktree，不能多个通道共用同一工作树。
 project_path: "/absolute/path/to/android-project"
 
 # 推荐填写：当前需求对应的目标 Git 分支。
 # check-env 和 route 会核对实际分支；填写错误时流程会停止，不会自动切换分支。
 # 如果明确不需要分支约束，可以设为 null，但通常不建议关闭这项保护。
+# 多需求并行时，每个通道对应自己的分支（如 feature/req-login）。
 branch: "feature/your-requirement"
 
 # 必填：本机公共工作区根目录，用作 requirement_dir 等相对路径的解析基准。
@@ -27,6 +29,8 @@ workspace_root: "/absolute/path/to/workspace"
 
 # 必填：当前需求的工作目录，可以是绝对路径，也可以相对于 workspace_root。
 # 需求正文、UI/API 证据、测试用例和交付报告都放在这里；该目录属于运行输入，默认不提交。
+# 多需求并行推荐放在 project_path/document/<日期-英文名>/（文档跟 worktree 走）；
+# 此时需在 Android 项目 .gitignore 加 document/，delivery_gate 已在代码摘要里排除 document/。
 requirement_dir: "ai-skills/current-requirement"
 
 # 必填：需求正文文件，可以是绝对路径，也可以相对于 requirement_dir。

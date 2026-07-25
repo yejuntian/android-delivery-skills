@@ -12,6 +12,7 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -353,6 +354,9 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertIn("已完成需求", index)
         self.assertIn("需求总览", index)
         self.assertIn("archive/", index)
+        # 并行方案六列总览必须含分支和集成批次列。
+        self.assertIn("分支", index)
+        self.assertIn("集成批次", index)
 
     def test_index_command_writes_overview_file(self) -> None:
         """index 子命令端到端：写入 需求总览.md，活动/已完成需求各一行。"""
@@ -387,6 +391,47 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertIn("进行中需求", content)
         self.assertIn("已完成需求", content)
         self.assertIn("REQ-20260721-001", content)
+
+    def test_integrate_generates_report_and_marks_merged(self) -> None:
+        """integrate 汇总各通道生成交付集成报告，并标 MERGED + 批次号。"""
+        from ..requirement_workspace import integrate_channels
+
+        # 两个并行通道（模拟两个 worktree 的 requirement_dir）
+        channel_a = self.workspace / "channels" / "2026-07-25-login"
+        channel_b = self.workspace / "channels" / "2026-07-25-pay"
+        for channel, title, branch, conclusion in [
+            (channel_a, "登录页改造", "feature/req-login", "FULL_PASS"),
+            (channel_b, "支付断点续传", "feature/req-pay", "LOCAL_PASS_DEVICE_PENDING"),
+        ]:
+            channel.mkdir(parents=True)
+            _write_state(channel, {
+                "status": "COMPLETED",
+                "title": title,
+                "branch": branch,
+                "requirement_id": channel.name,
+            })
+            (channel / "test-results").mkdir()
+            (channel / "test-results" / "delivery-result.json").write_text(
+                json.dumps({"conclusion": conclusion, "obligations": [], "pending_capabilities": []}),
+                encoding="utf-8",
+            )
+
+        main_worktree = self.workspace / "MyApp"
+        report = integrate_channels(
+            main_worktree, [channel_a, channel_b], "2026-07-25-批次1"
+        )
+        self.assertTrue(report.is_file())
+        content = report.read_text(encoding="utf-8")
+        self.assertIn("登录页改造", content)
+        self.assertIn("支付断点续传", content)
+        self.assertIn("feature/req-login", content)
+        self.assertIn("FULL_PASS", content)
+
+        # 各通道 state 被标 MERGED + 批次号。
+        state_a = json.loads((channel_a / "requirement-workspace.json").read_text(encoding="utf-8"))
+        self.assertEqual("MERGED", state_a["status"])
+        self.assertEqual("2026-07-25-批次1", state_a["integration_batch"])
+
 
     def test_next_preview_accepts_chinese_outcome_without_modifying_files(self) -> None:
         """验证中文结论能生成准确预览，且未确认时不轮换目录或配置。"""

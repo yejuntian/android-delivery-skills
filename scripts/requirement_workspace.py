@@ -52,6 +52,7 @@ ARCHIVE_FILES = ("需求说明.md", "续接指南.md", "交付结论.md", "协�
 ARCHIVE_DIRS = ("decisions",)
 ARCHIVE_ROOT_NAME = "archive"
 WORKSPACE_INDEX_FILE = "需求总览.md"
+INTEGRATION_REPORT_PREFIX = "integration-"
 SUPPORTED_REQUIREMENT_SUFFIXES = {".docx", ".md", ".markdown", ".txt"}
 STATE_VERSION = 1
 WORKSPACE_LOCK_FILE = ".requirement-workspace.lock"
@@ -454,7 +455,12 @@ def archive_before_reclaim(directory: Path, workspace_root: Path) -> Path | None
 
 
 def build_workspace_index(workspace_root: Path) -> list[dict[str, str]]:
-    """扫描所有需求目录，汇总一行一需求的索引数据，供需求总览.md 渲染。"""
+    """扫描所有需求目录，汇总一行一需求的索引数据，供需求总览.md 渲染。
+
+    支持两种布局：rotate 的 requirements-runtime（每需求一个目录）和并行方案的
+    project_path/document/<日期-英文名>（每 worktree 的 document 下各需求目录）。
+    后者由 integrate 写入 integration_batch，index 据此显示分支和集成批次。
+    """
     entries: list[dict[str, str]] = []
     if not workspace_root.is_dir():
         return entries
@@ -471,6 +477,7 @@ def build_workspace_index(workspace_root: Path) -> list[dict[str, str]]:
             "ACTIVE": "进行中",
             "COMPLETED": "已完成",
             "CANCELLED": "已取消",
+            "MERGED": "已合并",
         }.get(raw_status, raw_status or "未知")
         title = state.get("title") or directory.name
         revision = state.get("revision") or state.get("completed_at") or ""
@@ -478,6 +485,8 @@ def build_workspace_index(workspace_root: Path) -> list[dict[str, str]]:
             "id": state.get("requirement_id", directory.name),
             "title": title,
             "status": status_label,
+            "branch": state.get("branch") or "—",
+            "batch": state.get("integration_batch") or "—",
             "revision": str(revision)[:10] if revision else "—",
             "dir": directory.name,
         })
@@ -485,24 +494,34 @@ def build_workspace_index(workspace_root: Path) -> list[dict[str, str]]:
 
 
 def render_workspace_index(workspace_root: Path) -> str:
-    """把所有需求汇总成需求总览.md，用户一眼看到全局。"""
+    """把所有需求汇总成需求总览.md（六列含分支和集成批次），用户一眼看到全局。
+
+    并行方案的总览放主工作树 document/，但各需求目录分散在各 worktree 的
+    document/<需求> 下。本函数只渲染传入的 workspace_root 下的需求目录；
+    并行场景由调用方把各通道目录软聚合（如扫描主工作树 document/ 的兄弟需求目录）。
+    归档提示统一展示，避免在总览正文里硬编码 archive 路径断言。
+    """
     entries = build_workspace_index(workspace_root)
     lines = ["# 需求总览", "", ">", "本文件扫描各需求目录自动生成；机器事实以各目录的 JSON 为准。", ""]
     if not entries:
         lines.append("暂无需求目录。")
         return "\n".join(lines)
     lines.extend([
-        "| 编号 | 标题 | 状态 | 最后修订 | 目录 |",
-        "|---|---|---|---|---|",
+        "| 目录（日期-英文名） | 中文标题 | 分支 | 状态 | 集成批次 | 最后修订 |",
+        "|---|---|---|---|---|---|",
     ])
     for item in entries:
         lines.append(
-            f"| `{item['id']}` | {item['title']} | {item['status']} | {item['revision']} | `{item['dir']}` |"
+            f"| `{item['dir']}` | {item['title']} | `{item['branch']}` | "
+            f"{item['status']} | {item['batch']} | {item['revision']} |"
         )
     lines.extend([
         "",
         "- 续做某个需求时，先读对应目录的 `续接指南.md`。",
-        "- 已完成且超保留数量与保留天数的需求，回收前会把关键人读 md 归档到 `archive/`。",
+        "- 代码在对应分支的 worktree 里（`MyApp-<英文名>/`）。",
+        "- 集成批次详情见同目录 `integration-<日期>-<批次>.md`。",
+        "- 已完成需求超保留数量与天数时回收前归档到 `archive/`；并行合并的需求原地保留。",
+        "- 不冲突的并行需求各窗口独立闭环；合并用 git merge --no-ff。",
         "",
     ])
     return "\n".join(lines)
@@ -515,6 +534,101 @@ def execute_reclaim_plan(policy: WorkspacePolicy, plan: ReclaimPlan) -> None:
         _remove_reclaim_target(directory, policy.root)
     for entry in plan.cache_entries:
         _remove_reclaim_target(entry, policy.tempfile_dir)
+
+
+def _read_channel_state(channel_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """读单个并行通道的 workspace state 和最终结果；缺失时返回空 dict。
+
+    单一职责：只读两个事实源，不校验、不渲染。供 integrate 汇总。
+    """
+    state = _read_json(channel_dir / WORKSPACE_STATE_FILE) or {}
+    result_path = channel_dir / "test-results" / "delivery-result.json"
+    result: dict[str, Any] = {}
+    if result_path.is_file():
+        try:
+            loaded = json.loads(result_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                result = loaded
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            result = {}
+    return state, result
+
+
+def render_integration_report(
+    channels: list[tuple[Path, dict[str, Any], dict[str, Any]]],
+    batch_label: str,
+) -> str:
+    """把本批次合并的各通道汇总成交付集成报告 md。
+
+    单一职责：只读 state/result 派生 md，不校验、不重验证（验证靠 delivery_gate
+    在最终代码重跑）。channels 为 (目录, state, result) 三元组列表。
+    """
+    lines = [
+        f"# 交付集成报告 {batch_label}",
+        "",
+        "> 本报告汇总本批次合并的并行通道结论；各通道独立闭环的证据以各自目录为准。",
+        "",
+        "| 目录 | 中文标题 | 分支 | 最终结论 | 未验证项 | 残留风险 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for channel_dir, state, result in channels:
+        conclusion = result.get("conclusion", "未生成")
+        obligations = result.get("obligations", []) if isinstance(result, dict) else []
+        unverified = [
+            item.get("id", "?") for item in obligations
+            if isinstance(item, dict) and item.get("status") == "UNVERIFIED"
+        ]
+        pending = result.get("pending_capabilities", []) if isinstance(result, dict) else []
+        risk_parts: list[str] = []
+        for cap in pending:
+            if isinstance(cap, dict):
+                risk_parts.append(str(cap.get("id", "?")))
+        risk = "；".join(risk_parts) if risk_parts else "—"
+        lines.append(
+            f"| `{channel_dir.name}` | {state.get('title', channel_dir.name)} | "
+            f"`{state.get('branch', '—')}` | {conclusion} | "
+            f"{'，'.join(unverified) if unverified else '—'} | {risk} |"
+        )
+    lines.extend([
+        "",
+        "## 合入后注意",
+        "",
+        "- 代码已用 `git merge --no-ff` 合入集成分支，提交 hash 保留，证据链不断。",
+        "- 合入后的最终代码上重新执行 build/lint/test 和 delivery_gate。",
+        "- 各通道文档目录原地保留，不物理合并；细查见各自 `续接指南.md`。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def integrate_channels(
+    main_worktree: Path,
+    channel_dirs: list[Path],
+    batch_label: str,
+) -> Path:
+    """汇总各通道结论生成交付集成报告，并把各通道标 MERGED + 批次号。
+
+    单一职责：只汇总不验证。返回生成的集成报告路径。各通道 requirement_dir 的
+    document 父目录不同（并行 worktree 各自隔离），报告写到主工作树 document/。
+    """
+    main_worktree = Path(main_worktree).expanduser().resolve()
+    report_root = main_worktree / "document"
+    report_root.mkdir(parents=True, exist_ok=True)
+    triples: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    for channel_dir in channel_dirs:
+        channel_dir = Path(channel_dir).expanduser().resolve()
+        state, result = _read_channel_state(channel_dir)
+        triples.append((channel_dir, state, result))
+        # 把状态标 MERGED + 批次号写回各通道 state（单一职责：只写本批次标记）。
+        state_path = channel_dir / WORKSPACE_STATE_FILE
+        existing = _read_json(state_path) or {}
+        if isinstance(existing, dict):
+            existing["status"] = "MERGED"
+            existing["integration_batch"] = batch_label
+            _write_state(channel_dir, existing)
+    report_path = report_root / f"{INTEGRATION_REPORT_PREFIX}{batch_label}.md"
+    _write_text_atomic(report_path, render_integration_report(triples, batch_label))
+    return report_path
 
 
 def _relative_config_path(path: Path, workspace_root: Path) -> str:
@@ -887,6 +1001,26 @@ def parse_args(argv: list[str] | None = None) -> Any:
 
     index_parser = subparsers.add_parser("index", help="渲染或刷新需求总览.md")
     index_parser.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="本机配置路径")
+    index_parser.add_argument(
+        "--main-worktree",
+        default=None,
+        help="主工作树路径；指定后总览写到 <主工作树>/document/需求总览.md",
+    )
+
+    integrate_parser = subparsers.add_parser(
+        "integrate", help="汇总并行通道结论生成交付集成报告"
+    )
+    integrate_parser.add_argument(
+        "--main-worktree", required=True, help="主工作树路径（集成报告写到其 document/）"
+    )
+    integrate_parser.add_argument(
+        "--channels",
+        required=True,
+        help="逗号分隔的并行通道 requirement_dir 路径列表",
+    )
+    integrate_parser.add_argument(
+        "--batch", required=True, help="集成批次标签，如 2026-07-25-批次1"
+    )
     return parser.parse_args(argv)
 
 
@@ -900,10 +1034,30 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             return print_status(config_path, config)
         if args.command == "index":
-            content = render_workspace_index(policy.root)
-            index_path = policy.root / WORKSPACE_INDEX_FILE
+            index_root = (
+                Path(args.main_worktree).expanduser().resolve() / "document"
+                if args.main_worktree
+                else policy.root
+            )
+            index_root.mkdir(parents=True, exist_ok=True)
+            content = render_workspace_index(policy.root if not args.main_worktree else index_root)
+            index_path = index_root / WORKSPACE_INDEX_FILE
             _write_text_atomic(index_path, content)
             print(f"✅ 需求总览已刷新: {index_path}")
+            return 0
+        if args.command == "integrate":
+            channel_dirs = [
+                Path(item.strip()).expanduser().resolve()
+                for item in args.channels.split(",")
+                if item.strip()
+            ]
+            report_path = integrate_channels(
+                Path(args.main_worktree).expanduser().resolve(),
+                channel_dirs,
+                args.batch,
+            )
+            print(f"✅ 交付集成报告已生成: {report_path}")
+            print("各通道已标 MERGED 并记录批次号；合并后请在最终代码重跑 delivery_gate。")
             return 0
         if args.command == "prune":
             plan = build_reclaim_plan(policy, paths.requirement_dir)

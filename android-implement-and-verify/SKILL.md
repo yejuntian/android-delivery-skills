@@ -42,6 +42,15 @@ description: |
 - 协作待办、`review/变更审查.md`（Diff 发现 + Context 发现双表）、`decisions/<日期>-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 手写，必须填 `android-implement-and-verify/templates/` 骨架（plan/review/decision 等）。
 - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前先归档关键人读 md 到 `archive/<requirement_id>/`，机器 JSON 随源清理。维护或扩展流程前先读 `decisions/`，避免重复推翻已确认取舍。
 
+## 并行需求通道（多窗口同时推进）
+
+- 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。`config_paths` 已按 profile 路径的 hash 隔离 Git 基线/快照/route/证据/能力（机器保证，非自觉）。
+- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走）；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。Android 项目需在 `.gitignore` 加 `document/`，且 `delivery_gate` 已在代码摘要里排除 `document/`，文档变化不污染 `snapshot_sha256`。
+- 不冲突的需求（改不同文件）各窗口独立闭环，从 `init`/`check-env` 到 `route`/`delivery_gate` 全套自带 `--config`。改同一文件时 git 合入自然报冲突，不做预检。
+- 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 使 worktree 证据失效）、不用 cherry-pick（丢追溯链）。合入后在最终代码上重跑受影响门禁。
+- 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md`，各通道标 `MERGED`+批次号；`index --main-worktree <主工作树>` 刷新全局总览到 `<主工作树>/document/需求总览.md`（六列含分支和集成批次）。
+- 并行通道不能用 `requirement_workspace.py next`（它只表示同通道内上一需求结束后开始下一项）；共享真机/模拟器/账号仍需串行。
+
 ## 需求质量与追溯
 
 ### 稳定 ID 与场景门禁

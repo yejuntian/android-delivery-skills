@@ -202,6 +202,15 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
             excluded.add(generated_path.relative_to(paths.project_path.resolve()).as_posix())
         except ValueError:
             pass
+    # 当 requirement_dir 落在 project_path/document/ 下时（多需求并行方案），
+    # 排除整个 document/ 目录，避免交付文档变化污染 snapshot_sha256 使门禁误失效。
+    project_resolved = paths.project_path.resolve()
+    document_dir = project_resolved / "document"
+    try:
+        if document_dir.is_dir():
+            excluded.add(document_dir.relative_to(project_resolved).as_posix())
+    except ValueError:
+        pass
     try:
         snapshot = current_delivery_snapshot(
             paths.project_path,

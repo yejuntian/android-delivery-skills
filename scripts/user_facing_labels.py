@@ -94,9 +94,13 @@ FAILURE_CLASS_LABELS = {
     "UNKNOWN": "暂时还没有定位到确切原因",
 }
 WORKFLOW_STATE_LABELS = {
+    # 原计划专项 Skill/工具正常工作；AI 继续专项诊断与验证，保留原始证据。
     "SPECIALIST_ACTIVE": "专项能力正在处理",
+    # 专项能力不可用或失败，但证据充分、修改低风险且有等价重验；已向用户明示降级，由通用 AI 做最小修复。
     "AI_FALLBACK_ACTIVE": "已由通用 AI 接管处理",
+    # 缺关键资料、设备操作、凭据、授权或用户决策；只报告已知事实和所需输入，不修改依赖该输入的生产代码。
     "USER_INPUT_REQUIRED": "需要你补充信息或完成操作",
+    # 专项与 AI 均无法安全关闭、同一根因连续 3 轮失败，或必需门禁无等价验证；停止试错，保留证据。
     "BLOCKED": "当前条件不足，暂时无法继续",
 }
 JOURNEY_STATUS_LABELS = {

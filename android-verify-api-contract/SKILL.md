@@ -40,25 +40,9 @@ description: Android API 实现与接口契约核验。用于涉及 Retrofit、O
 
 ## 序列化框架识别
 
-核对字段契约前，必须先从依赖、插件、DTO 注解、adapter/serializer 和网络配置识别本次真实使用的序列化框架。不能仅凭 Kotlin data class 或某个依赖存在就假定生效。
+核对字段契约前，必须先从依赖、插件、DTO 注解、adapter/serializer 和网络配置识别本次真实使用的序列化框架，不能仅凭 Kotlin data class 或某依赖存在就假定生效。按项目实际情况检查 kotlinx.serialization（`@Serializable`/`@SerialName`/`Json` 配置）、Moshi（`@JsonClass`/`@Json`/codegen adapter）、Gson（`@SerializedName`/TypeAdapter，注意 Kotlin 非空属性缺字段的运行时风险）、Jackson（Kotlin module/`@JsonProperty`/ObjectMapper 配置）或自定义混合方案（Converter/手写 parser/反射边界），逐框架核对未知字段策略、未知枚举处理和 nullable 真实行为。没有识别到框架或关键配置时写"序列化行为未确认"，不得默认按 kotlinx.serialization 解释，也不得为统一检查引入或迁移新框架。
 
-按项目实际情况检查：
-
-- **kotlinx.serialization**：`@Serializable`、`@SerialName`、自定义 serializer，以及实际 `Json` 的 `ignoreUnknownKeys`、`coerceInputValues`、`explicitNulls` 等配置。
-- **Moshi**：`@JsonClass`、`@Json`、Kotlin adapter/codegen、自定义 adapter，以及未知枚举或缺字段处理。
-- **Gson**：`@SerializedName`/alternate、自定义 TypeAdapter、GsonBuilder 配置，以及缺字段后 Kotlin 非空属性的真实运行时风险。
-- **Jackson**：Kotlin module、`@JsonProperty`/`@JsonSetter`、ObjectMapper 的 unknown property、null 和 unknown enum 配置。
-- **自定义或混合方案**：Converter、手写 parser、反射/代码生成边界和不同 endpoint 实际使用的 converter。
-
-没有识别到框架或关键配置时写“序列化行为未确认”，不得默认按 kotlinx.serialization 解释，也不得为统一检查而引入或迁移到新框架。
-
-Java DTO 或 Java/Kotlin 混合模型还必须核对：
-
-- primitive 与 boxed 类型对缺字段和显式 null 的不同结果，例如 `int` 与 `Integer`。
-- AndroidX、JetBrains、JSpecify 或项目自定义 Nullability 注解是否真实参与编译、静态分析或运行时 adapter。
-- 序列化实际使用字段、构造器、Getter/Setter 还是生成 adapter；不能根据 data class 规则推断 Java Bean。
-- 泛型、继承、多态和未知子类型的真实 adapter/TypeToken 配置。
-- 反射序列化或生成 adapter 受 R8/ProGuard 影响时，路由到稳定性和测试门禁执行项目已有 release/minify 验证；不自动增加宽泛 keep 规则。
+Java DTO 或 Java/Kotlin 混合模型还必须核对：primitive 与 boxed 对缺字段/显式 null 的不同结果（如 `int` vs `Integer`）；Nullability 注解是否真实参与编译/静态分析/运行时 adapter；序列化实际用字段/构造器/Getter/Setter 还是生成 adapter（不能按 data class 推断 Java Bean）；泛型/继承/多态/未知子类型的真实 adapter/TypeToken 配置；反射序列化或生成 adapter 受 R8/ProGuard 影响时路由到稳定性和测试门禁执行项目已有 release/minify 验证，不自动增加宽泛 keep 规则。
 
 ## 契约检查清单
 

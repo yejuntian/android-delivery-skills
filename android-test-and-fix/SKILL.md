@@ -120,25 +120,7 @@ detekt、Semgrep、CodeQL 或其他已有工具能够输出 SARIF 时，使用 `
 
 ## 测试用例生成
 
-编码后必须按需求和实际改动生成测试用例，至少考虑：
-
-- 正常路径。
-- 空数据、空列表、空对象。
-- 异常数据：null、缺字段、空字符串、未知枚举、类型异常。
-- 网络异常：无网络、超时、服务端错误、登录过期。
-- 权限异常：拒绝、永久拒绝、降级展示。
-- 生命周期：返回、旋转、后台切前台、页面销毁后回调。
-- Kotlin/Java 混合边界：null/platform type、primitive/boxed、异常、Callback/异步取消和公开 API 兼容。
-- 并发时序：旧请求晚返回、共享状态竞争、取消与回调同时发生；只在真实并发候选存在时生成。
-- 列表场景：快速滑动、分页、刷新、重复点击、复用错位、请求乱序。
-- 本地数据：旧缓存、清缓存、迁移失败、默认值。
-- UI 状态：加载、成功、失败、空态、禁用、选中。
-- 灰度开关：开启、关闭、默认值缺失。
-- Android 版本兼容：项目 `minSdk` 到目标 `targetSdk` 范围内的权限、存储、通知、后台任务、系统组件和 UI 行为差异。
-- 构建兼容：反射、生成代码、R8/ProGuard、Java language level 或 desugaring 变化时覆盖项目已有 release/minify/目标 variant。
-- 回归影响：相关入口、详情页、搜索、筛选、推送、DeepLink。
-
-每条用例标注：对应 `BDD/Then`、用例名、前置条件、步骤、预期结果、自动化类型、风险等级、是否本次必须执行。
+编码后必须按需求和实际改动生成测试用例，覆盖与本次 diff 相关的场景类：正常路径、空/异常数据（null/缺字段/未知枚举/类型异常）、网络异常（无网络/超时/服务端错误/登录过期）、权限异常（拒绝/永久拒绝/降级）、生命周期（返回/旋转/前后台/销毁后回调）、Kotlin/Java 混合边界（platform type/primitive/boxed/异步取消）、并发时序（旧请求晚返回/共享状态竞争，仅真实并发候选存在时）、列表场景（快速滑动/分页/复用错位/请求乱序）、本地数据（旧缓存/迁移失败/默认值）、UI 状态（加载/成功/失败/空态/禁用/选中）、灰度开关、Android 版本兼容（`minSdk` 到 `targetSdk` 的权限/存储/通知/后台/系统组件差异）、构建兼容（反射/生成代码/R8/desugaring 变化时覆盖 release/minify variant）和回归影响（相关入口/详情/搜索/筛选/推送/DeepLink）。**只选择与本次需求及实际 diff 相关的类别**，不要求每个需求机械生成全部组合；每条用例标注对应 `BDD/Then`、用例名、前置条件、步骤、预期结果、自动化类型、风险等级、是否本次必须执行。
 
 ### 已上线业务保护
 
@@ -200,101 +182,47 @@ detekt、Semgrep、CodeQL 或其他已有工具能够输出 SARIF 时，使用 `
 
 Journey 属于已安装 APK 的关键用户旅程冒烟测试，由本 Skill 根据已确认 BDD 生成和执行；它不是全部业务测试入口。`android-verify-ui` 只消费截图或结果做设计还原验收，不管理 Journey 用例。
 
-不得要求用户编写或提供 Journey XML、action/step、文件名或 Gradle task。必须先从已确认需求、BDD、实际 diff、现有测试和页面入口自动生成当前需求的测试用例；只有无法确定业务前置条件或预期结果时，才询问缺失的业务含义。`NO_JOURNEY_FOUND` 是本 Skill 需要补齐测试物化的内部门禁，不是把技术工作转交给用户的提示。
+不得要求用户编写或提供 Journey XML、action/step、文件名或 Gradle task。必须先从已确认需求、BDD、实际 diff、现有测试和页面入口自动生成测试用例；只有无法确定业务前置条件或预期结果时才询问缺失的业务含义。`NO_JOURNEY_FOUND` 是本 Skill 需要补齐测试物化的内部门禁，不是把技术工作转嫁给用户的提示。
 
 ### 适用性门禁
 
-生成 Journey 前先同时检查需求和实际 diff，不得因为项目有界面就默认运行。先判断 UI 影响：
+生成 Journey 前同时检查需求和实际 diff，不得因为项目有界面就默认运行。**适用性判断规则（`SKIPPED_NO_UI`/`SKIPPED_VISUAL_ONLY`、`FULL`/`PARTIAL`/`NONE` 三级聚合、两次判断一次执行、调用前置四条件）的完整清单和判定表**见 `assets/journey-harness/JOURNEY_USAGE.md`，本节只强调不可逾越的边界：
 
-| UI 影响 | Journey 处理 | 状态 |
-| --- | --- | --- |
-| 无 UI 文件、可见状态或用户交互变化 | 不生成用例，不启动 SDK、设备或壳 | `SKIPPED_NO_UI` |
-| 只有布局、颜色、字号、间距、图片等视觉变化 | 不运行 Journey；按需运行截图测试，并提示单独视觉验收 | `SKIPPED_VISUAL_ONLY` |
-| 用户操作、导航、输入、可见状态流转或系统交互变化 | 进入 `FULL/PARTIAL/NONE` 适用性判断 | 候选，不等于必须执行 |
-
-再按每个原子 Then 的能力分配，聚合出整条 BDD 用户旅程的三级适用性：
-
-| 适用性 | 判定 | Journey 处理 |
-| --- | --- | --- |
-| `FULL` | BDD 中全部用户可见操作和可见断言都能由 Journey 稳定完成 | 生成并执行完整 Journey；非 UI/不可见 Then 仍由其他测试层证明 |
-| `PARTIAL` | Journey 只能稳定完成其中部分用户可见操作或可见断言 | 只生成可覆盖部分；其余 Then 路由到 Unit、Integration、Compose/Espresso、UIAutomator、截图或实际人工路径 |
-| `NONE` | 前置、操作或结果无法可靠表达，或其他测试层更合适 | 不启动壳，使用其他证据 |
-
-`FULL/PARTIAL/NONE` 只是适用性，不是测试结果。Journey `PASS` 只允许把它实际断言的 Then 标为自动覆盖，不能替代同一 BDD 中的业务计算、接口、数据库、视觉、性能、泄漏或安全验证。`NO_JOURNEY_FOUND` 只允许出现在已有验证义务最终分配给 Journey、但用例未成功物化之后。无 UI 或纯视觉需求使用对应 `SKIPPED_*`，不算测试失败，也不得要求用户补 Journey 场景。
-
-Journey 是否适用必须由模型根据用户业务需求、已确认 BDD、实际 diff、前置条件和预期结果自动判断，不得要求用户选择 `none`、`visual` 或 `behavior`。调用前按每条 BDD 记录 `FULL/PARTIAL/NONE + 原因`，并逐个 Then 记录是否分配给 Journey。只有分配给 Journey 的验证义务同时满足以下条件才调用：
-
-1. 本次需求改变用户操作、导航、输入或可见状态流转。
-2. Given 前置条件可以稳定准备，不依赖验证码、真实支付或不可控第三方环境。
-3. Then 可以通过页面上可见的文本、控件或状态判断。
-4. 不要求像素级精度、复杂手势、精确时序或内部数据证明。
-
-任一条件不满足时，只把对应验证义务路由到 Unit、Integration、Espresso、Compose UI Test、UIAutomator、截图测试或实际人工路径；其他满足条件的验证义务仍可作为 `PARTIAL` Journey 执行。
-
-采用“两次判断、一次执行”：
-
-1. **需求确认后初判**：根据已确认 BDD 和原子 Then 分配，标记整条 Journey 候选 `FULL/PARTIAL/NONE`，用于提前设计测试。候选可覆盖时可以生成 Journey 用例草稿，但不得启动设备或壳。
-2. **编码完成后终判**：读取实际 diff、最终页面入口和可执行前置条件，重新判断并记录最终原因；能力缩小则拆分路由，影响扩大则补充其他测试层。
-3. **只执行一次**：只要终判仍有验证义务分配给 Journey，就物化最终 XML，并优先由当前 AI 会话按 action 顺序使用 Android CLI/adb 执行；只有默认路线不可用且共享壳已经初始化时，才携带适用性和 Then 参数调用壳脚本。没有分配项时选择其他测试，不运行任何 Journey 引擎。
-
-需求初判与实际 diff 不一致时，以编码后的终判为准，并在测试报告中说明变化原因。
+- `FULL/PARTIAL/NONE` 只是适用性，不是测试结果。Journey `PASS` 只允许把实际断言的 Then 标为自动覆盖，不能替代同一 BDD 中的业务计算、接口、数据库、视觉、性能、泄漏或安全验证。
+- `NO_JOURNEY_FOUND` 只允许出现在已有验证义务最终分配给 Journey、但用例未成功物化之后；无 UI 或纯视觉需求用对应 `SKIPPED_*`，不算测试失败，也不得要求用户补 Journey 场景。
+- Journey 是否适用必须由模型根据需求、BDD、实际 diff、前置条件和预期结果自动判断，不得要求用户选择 `none`/`visual`/`behavior`；调用前按每条 BDD 记录 `FULL/PARTIAL/NONE + 原因`，并逐个 Then 记录是否分配给 Journey。
+- 采用"两次判断、一次执行"：需求确认后初判（只标候选、生成草稿，不启动设备/壳）→ 编码完成后终判（读实际 diff，能力缩小则拆分路由）→ 只执行一次（终判仍有义务分配给 Journey 才物化 XML）。需求初判与实际 diff 不一致时以终判为准，并在测试报告中说明变化原因。
 
 ### BDD 物化规则
 
-- 把 `Given` 转成可复现前置条件：启动入口、DeepLink、登录/数据、权限、语言、主题、字体和方向。壳只负责启动应用，不能隐式满足前置条件。
-- 把每个 `When` 拆成独立 action，避免一个 action 包含多个操作。
-- 把每个 `Then` 写成独立 verify/check action，不得只隐含在操作描述中。
-- Journey 的用例名称、说明和 action 自然语言统一使用中文，方便用户直接审阅；界面真实文案、资源标识、包名、类名和 XML schema 保持原值，并在中文步骤中明确引用，不得为了翻译改变实际查找目标。
+- 把 `Given` 转成可复现前置条件（启动入口/DeepLink/登录/数据/权限/语言/主题/字体/方向）；壳只负责启动应用，不能隐式满足前置条件。
+- 把每个 `When` 拆成独立 action，把每个 `Then` 写成独立 verify/check，不得只隐含在操作描述中。多指、长按、双击、旋转/折叠、精确计数或复杂条件不稳定时改用项目已有 Compose/Espresso/UIAutomator 或人工测试。
+- Journey 用例名、说明和 action 自然语言用中文，界面真实文案、资源标识、包名、类名和 XML schema 保持原值并在中文步骤中引用，不为翻译改变查找目标。
 - XML 和最终报告必须标明覆盖的 `BDD/Then`；同一 BDD 中未分配给 Journey 的 Then 保持自己的测试与状态，不因 Journey 通过而改变。
-- 把 Journey XML 作为当前需求的测试用例，默认放入 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线、确认修订和需求正文/UI/API 输入摘要，单独调用时来自当前完整输入摘要。默认 Agent 路线使用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须使用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
-- 不把需求用例长期保存在共享壳源码中。默认 Agent 直接读取当前作用域；可选壳每次只同步当前用例集并清除上一次残留 XML，防止跨项目串用测试。
-- 多指、长按、双击、旋转/折叠、精确计数或复杂条件不稳定时，改用项目已有 Compose/Espresso/UIAutomator，或明确列为人工测试。
+- Journey XML 作为当前需求测试用例，默认放 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线、确认修订和需求正文/UI/API 输入摘要，单独调用时来自当前完整输入摘要。默认 Agent 路线用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
+- 不把需求用例长期保存在共享壳源码中；默认 Agent 直接读当前作用域，可选壳每次只同步当前用例集并清除上次残留 XML，防止跨项目串用。
 
 ### 默认 Android CLI Agent 执行
 
-默认路线在当前 AI 会话中完成，不存在可以由 Python 虚构调用的 `android journey` 或 `android agent` 子命令：
+默认路线在当前 AI 会话中完成，不存在可以由 Python 虚构调用的 `android journey` 或 `android agent` 子命令。使用目标项目自己的 Gradle wrapper 构建已确认 module/variant（不升级 AGP）或确认目标 APK 已安装，再用 `android run`/adb 启动、`android layout --device`/`android screen capture` 和必要 adb 输入逐个执行 XML action。
 
-1. 使用目标项目自己的 Gradle wrapper 构建已确认 module/variant，或确认目标 APK 已安装；不升级目标 AGP。
-2. 使用 `android run` 或 adb 启动目标包，通过 `android layout --device`、`android screen capture` 和必要的 adb 输入逐个执行 XML action。
-3. action 只包含一个操作或一个可见断言；严格按顺序独立判断。任一步失败、应用退出、崩溃或冻结时停止该 Journey，后续 action 标记跳过。
-4. 每一步记录脱敏命令、布局/截图 SHA-256、状态和说明；不得把 AI 观察描述当作不存在的工具返回值。
-5. 按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出 `specialist=android-test-and-fix/journey-agent` 的统一结果，`executed_tests` 为实际完成的 Journey 数，`executed_checks` 为实际判断的 action 数，最终报告使用 `AGENT` 证据类型。
-
-Android CLI、adb 或设备不可用时，先路由到项目已有 Compose/Espresso/UIAutomator；仍无等价能力时把对应 Then 标为未验证。设备只能完成部分步骤时，把能够独立闭环的已完成 Then 拆成短 Journey 并重跑通过，原中断结果记为 `PARTIAL + ENVIRONMENT_FAILED`：DNS 不可用的业务状态转 Fake/MockWebServer，ROM 禁止 shell 输入的 UI 操作转项目已有仪器测试或现有可控模拟器，性能转 Benchmark/Perfetto；只将剩余 Then 标为未验证。不得用中断前的截图直接冒充 Journey 通过，也不得把已保存但未执行的 Journey XML 写成通过。默认路线失败不会要求用户初始化 Android Studio 壳。
+- action 只包含一个操作或一个可见断言，严格按顺序独立判断；任一步失败、应用退出、崩溃或冻结时停止该 Journey，后续 action 标记跳过。
+- 每步记录脱敏命令、布局/截图 SHA-256、状态和说明；不得把 AI 观察描述当作不存在的工具返回值。按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出 `specialist=android-test-and-fix/journey-agent` 统一结果，`executed_tests` 为实际完成的 Journey 数，`executed_checks` 为实际判断的 action 数，最终报告用 `AGENT` 证据类型。
+- Android CLI、adb 或设备不可用时先路由到项目已有 Compose/Espresso/UIAutomator；仍无等价能力时把对应 Then 标为未验证。设备只能完成部分步骤时把能独立闭环的已完成 Then 拆成短 Journey 并重跑通过，原中断结果记为 `PARTIAL + ENVIRONMENT_FAILED`；不得用中断前截图冒充通过，也不得把未执行的 Journey XML 写成通过。默认路线失败不要求用户初始化 Android Studio 壳。
 
 ### 可选壳项目执行
 
-目标项目路径默认读取 `../profiles/local.yaml` 的全局 `project_path`，也允许通过 `--config` 指定项目自己的配置文件：
-
-`local.yaml` 是被 Git 忽略的本机运行配置，`local.example.yaml` 只是字段说明模板。测试 Skill 只读取真实配置和当前需求目录，不得覆盖它们、把示例值当成实际项目，或为了保存测试结果强行加入 Git。
+只有用户明确选择壳、默认 Agent 路线不可用且壳已经初始化时才调用 `scripts/run_journey.py`：
 
 ```bash
 python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journey.py \
   --config ai-skills/android-delivery-skills/profiles/local.yaml \
-  --ui-impact behavior \
-  --applicability PARTIAL \
-  --covered-then BDD-001/T1 \
-  --uncovered-then BDD-001/T2
-# 已安装目标 APK 时可使用 --skip-build；此时必须配置 app_package_name，但不要求源码项目存在。
-# 临时指定其他用例目录时可使用 --journeys-dir /path/to/journeys。
+  --ui-impact behavior --applicability PARTIAL \
+  --covered-then BDD-001/T1 --uncovered-then BDD-001/T2
+# 已安装目标 APK 时可用 --skip-build（必须配 app_package_name）；临时指定用例目录用 --journeys-dir。
 ```
 
-只有用户明确选择壳、默认 Agent 路线不可用且壳已经初始化时才调用。参数均由 Skill 根据需求、BDD 和最终 diff 生成，不要求用户提供。行为型 Journey 缺少 `FULL/PARTIAL` 或至少一个覆盖 Then 时脚本拒绝启动。无 UI 或纯视觉需求不调用本脚本。
-
-执行器必须：
-
-1. 拒绝零 Journey、空 action/step、成功日志中的 `NO-SOURCE`/`0 tests`，以及没有本轮结构化 JUnit XML 的成功退出；只有实际测试数大于 0 且失败数为 0 才判绿。
-2. 使用目标项目自己的 Gradle wrapper 构建指定 module/variant，不改变其 AGP。
-3. 从最终 APK 读取 applicationId，安装后通过 `pm path` 校验实际包名。
-4. 通过独立 AGP 9 壳注入 `JOURNEYS_CUSTOM_APP_ID`，并把隔离的 `GRADLE_USER_HOME`、Gradle 项目缓存与 build 输出放在 Skill 目录外的用户缓存位置。
-5. 每轮先 force-stop 并重新应用配置中明确的 Given 前置条件；优先用结构化失败结果归类。只有连续两次真实 UI 断言失败才返回 `APP_ASSERTION_FAILED`，且不证明生产代码必然有错。
-6. 只从 Journey/screenshot/capture 结果目录收集截图，禁止把普通构建资源当成证据。
-7. 按需求作用域输出 `<requirement_dir>/test-results/journey-harness/<需求作用域>/result.json` 和 `result.md`，记录实际测试数、结构化结果、命令、设备、包名、APK、task、轮次和截图。
-8. 对 adb、Gradle 和 Journey 命令设置超时；终端及报告中的 DeepLink 查询参数、Token、密码和密钥必须脱敏。
-
-退出码：`0` 表示壳 Journey 真实执行通过、明确不适用或仅预检；必须结合状态区分 `PASS`、`SKIPPED_*` 和 `PREFLIGHT_PASS`。`1` 表示可选壳的初始化、环境或结构化证据不足；此时默认降级到 Android CLI Agent 或其他测试层，不阻断全部流程。`2` 表示连续两次真实 UI 断言失败，可进入根因分析。确认是生产缺陷才修目标代码；用例、数据或前置条件错误只修测试侧。
-
-只有决定长期使用可选壳时，才使用当前 Android Studio 的 `New > Journey Test` 一次性生成与 Studio Labs 版本匹配的 XML schema、testSuites、依赖和任务。未初始化壳不再是默认 Journey 的前置条件。
+参数均由 Skill 根据需求、BDD 和最终 diff 生成，不要求用户提供；行为型 Journey 缺少 `FULL/PARTIAL` 或至少一个覆盖 Then 时脚本拒绝启动；无 UI 或纯视觉需求不调用本脚本。**壳执行器的零测试假绿防护、APK 包名校验、隔离缓存、force-stop 前置、截图证据收集、退出码语义和可选壳一次性初始化**等完整规则见 `assets/journey-harness/JOURNEY_USAGE.md`，本节不重复。退出码 `0` 必须结合状态区分 `PASS`/`SKIPPED_*`/`PREFLIGHT_PASS`；`1` 表示壳/环境/证据不足，默认降级到 Agent 路线不阻断流程；`2` 表示连续两次真实 UI 断言失败，确认生产缺陷才改目标代码，用例/数据错误只修测试侧。
 
 ## 命令选择规则
 

@@ -2,11 +2,8 @@
 name: android-implement-and-verify
 description: |
   Android 需求实现与闭环验证总入口。适用于完整完成 Android 新需求、需求变更、Bug 修复和功能迭代。五步：确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付。
-  三条最易违反、违反即阻断的铁律（详见正文与共享规则）：
-  1. 每个确认的答案先写回 requirement_file 再继续，聊天只是草稿；编码/测试/route/最终报告前重读已确认事实源。
-  2. 需求增量使义务语义摘要变化，旧测试映射自动标 STALE，不回填 CURRENT 最终门禁阻断；变异测试有存活变异也阻断。
-  3. 只改已确认范围，最小修改、单一职责；不顺手重构、不升级依赖、不脑补未确认字段或接口。
-  首次编码前确认 BDD、建基线、拆测试并展示和确认实施计划；编码后只做受影响测试和必要编译；用户要求最终检查/完整交付/准备提交时，按最终 diff 编排范围、接口、质量、稳定性、UI 专项并驱动全绿门禁。仅需单项审查时改用对应专项 Skill。
+  三条违反即阻断的铁律：每个确认答案先写回 requirement_file 再继续，聊天只是草稿；STALE 测试映射或变异存活阻断最终通过；只改已确认范围，最小修改、不脑补未确认字段或接口。
+  首次编码前确认 BDD、建基线、拆测试并确认计划；编码后只跑受影响测试和必要编译；用户要求最终交付时按最终 diff 驱动全绿门禁。仅需单项审查改用对应专项 Skill。
 ---
 
 # Android 需求实现与闭环验证
@@ -143,18 +140,7 @@ confirm-requirement-update 成功后，如果续接指南有 STALE 或新增义�
 
 ### 轻量 diff 触发规则
 
-进入最终交付时必须基于实际 diff 快速复核影响面，不做全量矩阵分析，只判断是否触发专项审查；局部迭代只对本轮修改做测试选择和高风险边界判断：
-
-- 修改 `res/layout`、`res/drawable`、`res/values`、Activity、Fragment、Adapter、Composable，且存在设计稿、截图或可对比基准：提示用户单独运行 `android-verify-ui`，不加入自动队列。
-- 修改 UI 相关文件但没有设计稿、截图或可对比基准：跳过设计稿一致性验证，只在变更审查、稳定性审查或代码质量审查中做必要的 UI 基础检查。
-- 修改 Api、Service、Request、Response、DTO、mapper、网络 Repository、缓存字段：触发 `android-verify-api-contract`。
-- 修改 Entity、Dao、Database、DataStore、SharedPreferences、缓存结构：触发数据兼容检查。
-- 修改 AndroidManifest、权限、通知、后台任务、WebView、DeepLink、文件访问：触发系统能力和版本兼容检查。
-- 修改 Gradle、version catalog、ProGuard/R8 或 build-logic：触发构建兼容、依赖解析和模块方向检查，不自动升级版本。
-- 修改 DI Module/Component、模块 API/impl 边界或项目依赖：触发架构边界检查；修改测试文件时复核断言有效性和追溯覆盖。
-- 仅修改 if/when 判断、状态计算、排序筛选、权限条件、开关逻辑：按业务逻辑路径处理。
-
-如果需求判断为未涉及 UI / 接口，但实际 diff 修改了相关文件，必须重新标记影响面并说明原因；否则按未涉及跳过，不展开额外报告。
+进入最终交付时基于实际 diff 快速复核影响面（`delivery.py route` 的 `classify_route_impacts` 已按路径+内容信号生成七类候选），不做全量矩阵分析，只判断是否触发专项审查。触发规则：UI 相关文件（res/Activity/Fragment/Adapter/Composable）有设计基准时提示用户单独运行 `android-verify-ui`，无基准时只在 diff/稳定性/质量审查中做 UI 基础检查；接口层（Api/Service/DTO/mapper/网络 Repository/缓存）触发 `android-verify-api-contract`；数据层（Entity/Dao/Database/DataStore/SharedPreferences）触发数据兼容；系统能力（Manifest/权限/通知/后台/WebView/DeepLink/文件）触发版本兼容；构建（Gradle/version catalog/R8/build-logic）触发依赖解析和模块方向，不自动升级版本；DI Module/模块 API 边界触发架构检查，测试文件复核断言有效性；纯 if/when/状态计算/排序/权限/开关逻辑按业务路径处理。脚本候选与 Diff Reviewer 的 `confirmed_impacts` 取并集，需求判断与实际 diff 不一致时重新标记并说明原因。详细路由顺序和条件能力映射见下方"路由规则"。
 
 ### 路由规则
 

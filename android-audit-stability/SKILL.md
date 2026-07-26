@@ -53,9 +53,7 @@ description: Android 运行时稳定性、性能、安全隐私与兼容性风�
 
 ### 崩溃与异常
 
-检查 `NullPointerException`、`IndexOutOfBoundsException`、`ClassCastException`、`IllegalStateException`、`IllegalArgumentException`、`NumberFormatException`、`ConcurrentModificationException`、`ActivityNotFoundException`、`Resources.NotFoundException`、`SecurityException`、`TransactionTooLargeException`、`OutOfMemoryError`。
-
-重点关注：`!!`、未判空调用、数组和列表越界、`first()` / `last()` / `single()` 无兜底、强转 `as`、解析异常、Bundle / Intent extra 类型不一致、Fragment 未 attach 时 `requireContext()`。
+检查常见崩溃类型（NPE、越界、强转、参数/状态非法、数字解析、并发修改、Activity/Resources/Security 异常、Binder 超限、OOM），重点看 `!!`、未判空调用、`first()`/`last()`/`single()` 无兜底、解析异常、Bundle/Intent extra 类型不一致、Fragment 未 attach 时 `requireContext()` 等高风险写法。
 
 ### 生命周期与内存泄漏
 

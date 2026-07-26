@@ -42,6 +42,17 @@ STABILITY_SKILL = "android-audit-stability"
 TEST_AND_FIX_SKILL = "android-test-and-fix"
 DIFF_REVIEW_SKILL = "android-review-diff"
 CODE_QUALITY_SKILL = "android-review-code-quality"
+# 允许声明产出来源的 Skill 白名单：provenance.skill 必须在此集合内，
+# 防止 AI 编造一个不存在的 Skill 名冒充原生专项产出。
+KNOWN_SPECIALIST_SKILLS = {
+    JOURNEY_AGENT_SKILL,
+    STABILITY_SKILL,
+    TEST_AND_FIX_SKILL,
+    DIFF_REVIEW_SKILL,
+    CODE_QUALITY_SKILL,
+    "android-verify-api-contract",
+    "android-verify-ui",
+}
 CODE_QUALITY_CHECK_IDS = {
     "architecture-layering",
     "responsibility-cohesion",
@@ -196,6 +207,25 @@ def _validate_mutation_testing(
                 errors.append("mutation_testing 变异测试报告文件摘要已变化")
         except OSError as exc:
             errors.append(f"mutation_testing 变异测试报告文件无法读取: {exc}")
+        # 交叉核对:报告文件里的真实计数必须与 JSON 声明一致,
+        # 防止只改 JSON 计数(survived=0)而报告仍有存活变异的造假绕过。
+        report_counts = _mutation_report_counts(report_path)
+        if report_counts is not None:
+            actual_survived, actual_killed = report_counts
+            if (
+                isinstance(survived, int) and not isinstance(survived, bool)
+                and survived != actual_survived
+            ):
+                errors.append(
+                    f"mutation_testing.survived({survived}) 与报告文件实际存活({actual_survived})不一致"
+                )
+            if (
+                isinstance(killed, int) and not isinstance(killed, bool)
+                and killed != actual_killed
+            ):
+                errors.append(
+                    f"mutation_testing.killed({killed}) 与报告文件实际杀死({actual_killed})不一致"
+                )
 
     # 通过结论必须同时满足：变异确实执行过，且没有应当杀掉却存活的变异。
     if conclusion == "PASS":
@@ -206,6 +236,31 @@ def _validate_mutation_testing(
                 f"变异测试仍有 {survived} 个存活变异，测试断言未真正约束行为，不能标记 PASS"
             )
     return errors
+
+
+_MUTATION_STATUS_RE = re.compile(r"status='([A-Z_]+)'")
+
+
+def _mutation_report_counts(report_path: Path) -> tuple[int, int] | None:
+    """从 PIT mutations.xml 提取真实 (survived, killed) 计数。
+
+    返回 None 表示文件不是可识别的 PIT 报告(无法交叉核对时静默跳过,不误判)。
+    """
+    try:
+        text = report_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "<mutation" not in text:
+        return None
+    survived = 0
+    killed = 0
+    for match in _MUTATION_STATUS_RE.finditer(text):
+        status = match.group(1)
+        if status == "SURVIVED":
+            survived += 1
+        elif status == "KILLED":
+            killed += 1
+    return survived, killed
 
 
 class SpecialistResultError(RuntimeError):
@@ -501,6 +556,29 @@ def validate_specialist_result(
     for field in ("id", "skill", "summary"):
         if not isinstance(payload.get(field), str) or not payload[field].strip():
             errors.append(f"专项结果缺少 {field}")
+    # provenance（产出来源）：堵"凭空捏造 JSON 不声明来源""张冠李戴""编造假 Skill 名"。
+    provenance = payload.get("provenance")
+    top_skill = payload.get("skill")
+    if not isinstance(provenance, dict):
+        errors.append("专项结果缺少 provenance 产出来源声明")
+    else:
+        prov_skill = provenance.get("skill")
+        if not isinstance(prov_skill, str) or not prov_skill.strip():
+            errors.append("provenance.skill 必须声明产出该结果的 Skill")
+        else:
+            if prov_skill not in KNOWN_SPECIALIST_SKILLS:
+                errors.append(
+                    f"provenance.skill 声明了未知 Skill: {prov_skill}，不允许编造产出来源"
+                )
+            if (
+                isinstance(top_skill, str)
+                and top_skill.strip()
+                and prov_skill != top_skill
+            ):
+                errors.append(
+                    f"provenance.skill({prov_skill}) 与顶层 skill({top_skill})不一致，"
+                    "产出来源与专项声明必须一致"
+                )
     for field in ("started_at", "finished_at"):
         value = payload.get(field)
         if value is not None and (not isinstance(value, str) or not value.strip()):

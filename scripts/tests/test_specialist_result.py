@@ -136,6 +136,7 @@ class SpecialistResultTests(unittest.TestCase):
             "producer": SPECIALIST_PRODUCER,
             "id": "E-DIFF",
             "skill": "android-review-diff",
+            "provenance": {"skill": "android-review-diff"},
             **self.context,
             "conclusion": "PASS",
             "summary": "范围与需求一致。",
@@ -187,6 +188,25 @@ class SpecialistResultTests(unittest.TestCase):
 
         self.assertTrue(any("版本或 producer 无效" in error for error in errors))
 
+    def test_provenance_missing_blocked(self) -> None:
+        """验证不声明产出来源的凭空捏造 JSON 被拦截。"""
+        self.payload.pop("provenance")
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("provenance" in error for error in errors))
+
+    def test_provenance_unknown_skill_blocked(self) -> None:
+        """验证 provenance 声明白名单外的假 Skill 名被拦截。"""
+        self.payload["provenance"] = {"skill": "android-super-reviewer"}
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("未知 Skill" in error for error in errors))
+
+    def test_provenance_skill_mismatch_blocked(self) -> None:
+        """验证 provenance.skill 与顶层 skill 不一致的张冠李戴被拦截。"""
+        self.payload["skill"] = "android-review-code-quality"
+        # 故意不改 provenance，保持 review-diff，制造不一致
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("不一致" in error for error in errors))
+
     def test_diff_review_requires_complete_confirmed_impacts(self) -> None:
         """验证 Diff Reviewer 不能漏写类别、重复类别或用空依据声明适用。"""
         self.payload["confirmed_impacts"] = self.payload["confirmed_impacts"][:-1]
@@ -227,6 +247,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_code_quality_requires_structured_core_checks(self) -> None:
         """验证代码质量审查不能省略分层、职责、核心注释和可测试性结论。"""
         self.payload["skill"] = "android-review-code-quality"
+        self.payload["provenance"] = {"skill": "android-review-code-quality"}
         self.payload.pop("confirmed_impacts")
 
         errors = validate_specialist_result(self.payload, self.context)
@@ -273,6 +294,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_journey_agent_requires_dynamic_extension(self) -> None:
         """验证 Journey Agent 不能只提交普通 Review 的最小信封。"""
         self.payload["skill"] = "android-test-and-fix/journey-agent"
+        self.payload["provenance"] = {"skill": "android-test-and-fix/journey-agent"}
         self.payload.pop("confirmed_impacts")
         errors = validate_specialist_result(self.payload, self.context)
 
@@ -294,6 +316,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_stability_requires_all_capability_decisions(self) -> None:
         """验证稳定性 PASS 必须记录静态语义和三项条件能力，并逐项执行固定检查。"""
         self.payload["skill"] = "android-audit-stability"
+        self.payload["provenance"] = {"skill": "android-audit-stability"}
         self.payload.pop("confirmed_impacts")
         errors = validate_specialist_result(self.payload, self.context)
         self.assertTrue(any("稳定性专项缺少能力适用性结论" in error for error in errors))
@@ -308,6 +331,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_stability_rejects_blocking_static_control_change(self) -> None:
         """验证新增抑制或排除尚未解释完成时，稳定性摘要不能写成通过。"""
         self.payload["skill"] = "android-audit-stability"
+        self.payload["provenance"] = {"skill": "android-audit-stability"}
         self.payload.pop("confirmed_impacts")
         self.payload["capabilities"] = stability_capabilities()
         self.payload["checks"] = passing_stability_checks()
@@ -337,6 +361,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_stability_rejects_omitted_or_stale_control_audit_candidates(self) -> None:
         """验证模型不能漏写候选，也不能复用其他代码摘要上的审计结果。"""
         self.payload["skill"] = "android-audit-stability"
+        self.payload["provenance"] = {"skill": "android-audit-stability"}
         self.payload.pop("confirmed_impacts")
         self.payload["capabilities"] = stability_capabilities()
         self.payload["checks"] = passing_stability_checks()
@@ -363,6 +388,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_stability_tool_coverage_requires_unchanged_evidence(self) -> None:
         """验证声明工具通过时必须绑定版本、模式、真实范围和未变化的证据文件。"""
         self.payload["skill"] = "android-audit-stability"
+        self.payload["provenance"] = {"skill": "android-audit-stability"}
         self.payload.pop("confirmed_impacts")
         self.payload["capabilities"] = stability_capabilities()
         self.payload["checks"] = passing_stability_checks()
@@ -387,6 +413,7 @@ class SpecialistResultTests(unittest.TestCase):
     def test_unresolved_finding_requires_stable_id(self) -> None:
         """验证换模型或需求修订后，未关闭问题不能继续使用临时顺序编号。"""
         self.payload["skill"] = "android-audit-stability"
+        self.payload["provenance"] = {"skill": "android-audit-stability"}
         self.payload.pop("confirmed_impacts")
         self.payload["capabilities"] = stability_capabilities()
         self.payload["checks"] = passing_stability_checks()
@@ -426,15 +453,30 @@ class SpecialistResultTests(unittest.TestCase):
         self.assertEqual("specialists", path.name)
         self.assertIn("-r1-", path.parent.name)
 
-    def _mutation_report(self) -> Path:
-        """写入绑定摘要的变异测试报告文件，供 PASS 场景复用。"""
+    def _mutation_report(self, survived: int = 0, killed: int = 0) -> Path:
+        """写入绑定摘要的变异测试报告文件，计数与声明一致供交叉核对通过。"""
         report = self.root / "mutations.xml"
-        report.write_text("<mutations/>\n", encoding="utf-8")
+        lines = ["<mutations>"]
+        for _ in range(killed):
+            lines.append(
+                "<mutation detected='true' status='KILLED' numberOfTestsRun='1'>"
+                "<sourceFile>F.kt</sourceFile><mutatedClass>com.sample.Feature</mutatedClass>"
+                "<killingTest>t</killingTest></mutation>"
+            )
+        for _ in range(survived):
+            lines.append(
+                "<mutation detected='false' status='SURVIVED' numberOfTestsRun='1'>"
+                "<sourceFile>F.kt</sourceFile><mutatedClass>com.sample.Feature</mutatedClass>"
+                "<killingTest/></mutation>"
+            )
+        lines.append("</mutations>")
+        report.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return report
 
     def _test_and_fix_payload(self) -> dict:
         """构造 android-test-and-fix 的最小有效专项结果。"""
         self.payload["skill"] = "android-test-and-fix"
+        self.payload["provenance"] = {"skill": "android-test-and-fix"}
         self.payload.pop("confirmed_impacts", None)
         return self.payload
 
@@ -446,7 +488,7 @@ class SpecialistResultTests(unittest.TestCase):
 
     def test_mutation_survived_blocks_pass(self) -> None:
         """验证存活变异存在时测试与修复专项不能标记 PASS。"""
-        report = self._mutation_report()
+        report = self._mutation_report(survived=1, killed=9)
         payload = self._test_and_fix_payload()
         payload["mutation_testing"] = {
             "producer": "pitest",
@@ -466,7 +508,7 @@ class SpecialistResultTests(unittest.TestCase):
 
     def test_mutation_all_killed_passes(self) -> None:
         """验证全部变异被杀死且报告有效时测试与修复专项可 PASS。"""
-        report = self._mutation_report()
+        report = self._mutation_report(survived=0, killed=8)
         payload = self._test_and_fix_payload()
         payload["mutation_testing"] = {
             "producer": "pitest",
@@ -482,6 +524,26 @@ class SpecialistResultTests(unittest.TestCase):
             "report_sha256": sha256_file(report),
         }
         self.assertEqual([], validate_specialist_result(payload, self.context))
+
+    def test_mutation_falsified_counts_blocked(self) -> None:
+        """验证造假把 survived 改 0 但报告实际有存活时被交叉核对拦截。"""
+        report = self._mutation_report(survived=4, killed=0)
+        payload = self._test_and_fix_payload()
+        payload["mutation_testing"] = {
+            "producer": "pitest",
+            "languages": ["KOTLIN"],
+            "target_classes": ["com.sample.Feature"],
+            "mutators": ["MATH"],
+            "generated_mutants": 4,
+            "killed": 4,
+            "survived": 0,
+            "killed_by_obligation": {"BDD-001/T1": ["M1"]},
+            "survival_blocked": [],
+            "report_path": str(report),
+            "report_sha256": sha256_file(report),
+        }
+        errors = validate_specialist_result(payload, self.context)
+        self.assertTrue(any("survived" in e and "不一致" in e for e in errors))
 
 
 if __name__ == "__main__":

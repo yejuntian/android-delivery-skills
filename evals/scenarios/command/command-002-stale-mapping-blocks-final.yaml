@@ -1,0 +1,16 @@
+id: command-002-stale-mapping-blocks-final
+title: STALE 测试映射阻断最终通过
+type: command
+rubric: command-gate-v1
+checks:
+  - name: delivery_gate 拒绝 STALE mapping 的通过结论
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_delivery_gate.DeliveryGateTests.test_stale_test_mapping_blocks_pass
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback

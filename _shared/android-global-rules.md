@@ -8,7 +8,7 @@
 - 日常执行具体 Android 需求时不要求全文加载该文档；不得因此增加无关上下文或固定流程步骤。
 - 开源项目只提供可验证的工程做法，不覆盖用户明确目标、目标项目事实或本文件的安全边界。
 - 修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前必须主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接，不复制第二套执行规则，用户无需提醒。
-- 修改本文件、任一 `*/SKILL.md` 或设计依据后，交付前必须从本仓库根目录执行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；修改 Skill、路由、门禁或脚本行为时还必须执行 `python3 evals/runners/run_artifact_evals.py`。普通 Android 需求没有修改流程仓库时不运行。
+- 修改本文件、任一 `*/SKILL.md` 或设计依据后，交付前必须从本仓库根目录执行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；修改 Skill、路由、门禁或脚本行为时还必须执行 `python3 evals/runners/run_artifact_evals.py`，流程契约或 Oracle 变化时执行 `python3 evals/runners/run_evals.py --suite fast`。普通 Android 需求没有修改流程仓库时不运行。
 
 ## 全局强制工程原则
 

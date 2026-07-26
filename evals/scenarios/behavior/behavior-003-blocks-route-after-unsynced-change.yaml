@@ -1,0 +1,18 @@
+id: behavior-003-blocks-route-after-unsynced-change
+title: 用户新增需求后未重新持久化不能 route
+type: behavior_trace
+rubric: behavior-flow-v1
+checks:
+  - name: 需求变化会重置事实源和确认门禁
+    oracle: flow_gates_hold
+    expect:
+      passed: false
+      violation_contracts:
+        - latest-requirement-is-persisted
+        - required-confirmations-before-route
+    trace:
+      - event: requirement_persisted
+      - event: requirement_confirmed
+      - event: plan_confirmed
+      - event: user_requirement_changed
+      - event: route

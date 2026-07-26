@@ -6,9 +6,11 @@ checks:
     path: "_shared/android-global-rules.md"
     contains:
       - "python3 evals/runners/run_artifact_evals.py"
+      - "python3 evals/runners/run_evals.py --suite fast"
       - "普通 Android 需求没有修改流程仓库时不运行"
   - name: 设计依据声明 Evals 不接入普通 delivery.py
     path: "references/open-source-design-rationale.md"
     contains:
       - "可由仓库产物直接证明的不变量用 `evals/runners/run_artifact_evals.py` 做本地确定性 Evals"
+      - "流程契约或 Oracle 变化时运行 `python3 evals/runners/run_evals.py --suite fast`"
       - "普通 Android 需求没有修改流程仓库时不运行"

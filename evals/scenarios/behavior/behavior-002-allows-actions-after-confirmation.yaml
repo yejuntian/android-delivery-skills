@@ -1,0 +1,16 @@
+id: behavior-002-allows-actions-after-confirmation
+title: 满足当前确认门禁后允许编码和 route
+type: behavior_trace
+rubric: behavior-flow-v1
+checks:
+  - name: 需求持久化、需求确认和计划确认后允许继续
+    oracle: flow_gates_hold
+    expect:
+      passed: true
+    trace:
+      - event: user_requirement_changed
+      - event: requirement_persisted
+      - event: requirement_confirmed
+      - event: plan_confirmed
+      - event: code_mutation
+      - event: route

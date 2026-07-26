@@ -1,0 +1,27 @@
+id: command-001-plan-confirmation-gate
+title: 计划确认收据缺失或失效会阻断后续流程
+type: command
+rubric: command-gate-v1
+checks:
+  - name: validate_plan_confirmation 要求计划确认收据
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_implementation_plan.ImplementationPlanTests.test_validation_requires_receipt_after_plan_is_written
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback
+  - name: 需求或计划变化会让旧确认失效
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_implementation_plan.ImplementationPlanTests.test_requirement_or_plan_change_invalidates_old_confirmation
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback

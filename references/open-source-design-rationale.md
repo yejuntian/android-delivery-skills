@@ -149,7 +149,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ### M09 Skill 行为评测集
 
 - **来源**：Superpowers 的 Skill forward testing、Spec Kit 的 self-test 和 Android 官方样例的场景化测试。
-- **决策**：用代表性 Android 需求验证需求门禁、路由、测试选择、阻断和禁止声明，而不只测试 Python 函数；可由仓库产物直接证明的不变量用 `evals/runners/run_artifact_evals.py` 做本地确定性 Evals，人工/多 Agent forward test 仍按场景文件评分。
+- **决策**：用代表性 Android 需求验证需求门禁、路由、测试选择、阻断和禁止声明，而不只测试 Python 函数；可由仓库产物直接证明的不变量用 `evals/runners/run_artifact_evals.py` 做本地确定性 Evals，当前有效约束用 contract + oracle 层做轻量索引，人工/多 Agent forward test 仍按场景文件评分。
 - **原因**：脚本单测通过不能证明更换 AI 后仍会正确理解并执行 Skill。
 
 ## 第二轮设计决策
@@ -399,7 +399,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ## 维护规则
 
 - 每次修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接。
-- 修改共享规则、任一 Skill 或本文后，必须从本仓库根目录运行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；修改 Skill、路由、门禁或脚本行为时还必须运行 `python3 evals/runners/run_artifact_evals.py`。这些维护门禁不接入 `delivery.py`，普通 Android 需求没有修改流程仓库时不运行。
+- 修改共享规则、任一 Skill 或本文后，必须从本仓库根目录运行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；修改 Skill、路由、门禁或脚本行为时还必须运行 `python3 evals/runners/run_artifact_evals.py`，流程契约或 Oracle 变化时运行 `python3 evals/runners/run_evals.py --suite fast`。这些维护门禁不接入 `delivery.py`，普通 Android 需求没有修改流程仓库时不运行。
 - 修改跨 Skill 原则时，同步 `_shared/android-global-rules.md` 和本文对应决策。
 - 修改完整流程时，同步 `android-implement-and-verify/SKILL.md`、导航文档和行为评测场景。
 - 修改路由逻辑时，同步 `scripts/delivery.py`、`scripts/tests/test_delivery.py` 和相关场景预期。

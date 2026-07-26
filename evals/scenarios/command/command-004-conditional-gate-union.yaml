@@ -1,0 +1,27 @@
+id: command-004-conditional-gate-union
+title: 条件 gate 必须来自 route 候选和专项语义影响并集
+type: command
+rubric: command-gate-v1
+checks:
+  - name: route 触发的条件 gate 不能漏
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_delivery_gate.DeliveryGateTests.test_requires_route_triggered_conditional_gate
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback
+  - name: Diff Reviewer 语义触发的条件 gate 不能漏
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_delivery_gate.DeliveryGateTests.test_requires_diff_review_semantic_conditional_gates
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback

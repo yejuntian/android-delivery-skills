@@ -7,7 +7,7 @@
 - 维护、扩展或质疑本流程时，先读取 `../references/open-source-design-rationale.md`，确认设计目标、开源参考、采用/拒绝原因和长期不变量；日常执行需求不要求全文加载。
 - 开源做法只提供可验证的工程经验，不覆盖用户明确目标、目标项目事实或本文件的安全边界。
 - 修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接，不复制第二套执行规则，用户无需提醒。
-- 修改本文件、任一 `*/SKILL.md`、设计依据、流程契约、Oracle、路由、门禁或脚本行为后，交付前必须从本仓库根目录执行 `python3 scripts/validate_maintenance.py`，统一运行规则归属测试和 fast eval。普通 Android 需求没有修改流程仓库时不运行。
+- 本机首次维护本流程时先执行 `python3 scripts/install_maintenance_hook.py` 安装 pre-commit 自动验证；修改本文件、任一 `*/SKILL.md`、设计依据、流程契约、Oracle、路由、门禁或脚本行为后，交付前必须从本仓库根目录执行 `python3 scripts/validate_maintenance.py`，统一运行规则归属测试和 fast eval。普通 Android 需求没有修改流程仓库时不运行。
 
 ## 全局强制工程原则
 

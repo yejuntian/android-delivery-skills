@@ -187,6 +187,8 @@ contracts:
       - references/open-source-design-rationale.md
       - evals/runners/run_artifact_evals.py
       - scripts/validate_maintenance.py
+      - scripts/maintenance_pre_commit.py
+      - scripts/install_maintenance_hook.py
     applies_to:
       - skill_maintenance
     covered_by:

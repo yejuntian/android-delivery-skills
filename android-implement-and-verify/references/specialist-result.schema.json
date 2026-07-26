@@ -9,6 +9,7 @@
     "producer",
     "id",
     "skill",
+    "provenance",
     "requirement_id",
     "requirement_revision",
     "requirement_file_sha256",
@@ -26,6 +27,14 @@
     "producer": { "const": "android-delivery-specialist-result" },
     "id": { "type": "string", "minLength": 1 },
     "skill": { "type": "string", "minLength": 1 },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill"],
+      "properties": {
+        "skill": { "type": "string", "minLength": 1 }
+      }
+    },
     "requirement_id": { "type": "string", "minLength": 1 },
     "requirement_revision": { "type": "integer", "minimum": 1 },
     "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },

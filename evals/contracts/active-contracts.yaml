@@ -33,7 +33,7 @@ contracts:
 
   - id: required-confirmations-before-route
     status: active
-    title: 当前流程要求的确认未完成前不得编码、route 或最终交付
+    title: 当前流程要求的确认未完成前不得拆 BDD、编码、route 或最终交付
     kind: confirmation_gate
     oracle: no_route_before_required_confirmations
     owner_files:
@@ -46,6 +46,7 @@ contracts:
       - final_delivery
     gate:
       blocks:
+        - bdd_derivation
         - code_mutation
         - route
         - final_delivery
@@ -65,6 +66,7 @@ contracts:
         - transcript-001-compliant-current-flow
         - transcript-002-lazy-code-before-confirmation
         - transcript-003-change-resets-old-confirmation
+        - transcript-004-bdd-requires-confirmation
       command:
         - command-001-plan-confirmation-gate
 

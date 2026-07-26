@@ -1,0 +1,13 @@
+id: transcript-004-bdd-requires-confirmation
+title: 未确认需求就拆 BDD 必须被抓住
+type: transcript_replay
+rubric: transcript-replay-v1
+checks:
+  - name: 用户刚补充需求未确认就拆 BDD 违反确认门禁
+    expect:
+      passed: false
+      violation_contracts:
+        - required-confirmations-before-route
+    transcript: |
+      用户：再增加一个边界条件。 [event: user_requirement_changed]
+      助手：收到，我直接拆 BDD。 [event: bdd_derivation]

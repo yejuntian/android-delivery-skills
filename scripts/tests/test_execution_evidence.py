@@ -229,6 +229,47 @@ class ExecutionEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(3, exit_code)
 
+    def test_junit_signature_stable_across_timestamp_change(self) -> None:
+        """验证 junit 报告仅 timestamp 变化时内容签名稳定，重跑收据不误失效（P7）。"""
+        from ..execution_evidence import junit_content_signature
+        report = self.repo / "TEST-sample.xml"
+        base = (
+            '<testsuite tests="2" failures="0" errors="0" skipped="0"'
+            ' timestamp="{ts}" hostname="h" time="0.001">'
+            '<testcase classname="T" name="caseA" time="0.0"/>'
+            '<testcase classname="T" name="caseB" time="0.0"/>'
+            '</testsuite>\n'
+        )
+        report.write_text(base.format(ts="2026-07-26T10:00:00"), encoding="utf-8")
+        sig1 = junit_content_signature(report)
+        # 重跑：仅 timestamp 不同
+        report.write_text(base.format(ts="2026-07-26T10:00:05"), encoding="utf-8")
+        sig2 = junit_content_signature(report)
+        self.assertIsNotNone(sig1)
+        self.assertEqual(sig1, sig2)
+
+    def test_junit_signature_detects_testcase_tamper(self) -> None:
+        """验证篡改 testcase（删用例/改状态/改名）时内容签名变化，仍能抓篡改。"""
+        from ..execution_evidence import junit_content_signature
+        report = self.repo / "TEST-tamper.xml"
+        original = (
+            '<testsuite tests="2" failures="0" errors="0" skipped="0"'
+            ' timestamp="2026-07-26T10:00:00">'
+            '<testcase classname="T" name="caseA"/>'
+            '<testcase classname="T" name="caseB"/>'
+            '</testsuite>\n'
+        )
+        report.write_text(original, encoding="utf-8")
+        sig_original = junit_content_signature(report)
+
+        # 篡改1：删掉一个 testcase
+        report.write_text(original.replace('<testcase classname="T" name="caseB"/>', ''), encoding="utf-8")
+        self.assertNotEqual(sig_original, junit_content_signature(report))
+
+        # 篡改2：改名
+        report.write_text(original.replace("caseA", "caseX"), encoding="utf-8")
+        self.assertNotEqual(sig_original, junit_content_signature(report))
+
     def test_test_gate_requires_nonzero_junit_report(self) -> None:
         """验证普通成功命令不能在没有 JUnit 执行结果时证明测试 gate。"""
         receipt, receipt_path, exit_code = run_and_record(

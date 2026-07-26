@@ -98,6 +98,46 @@ def _is_sarif_report(path: Path) -> bool:
     return lowered_name.endswith(".sarif") or lowered_name.endswith(".sarif.json")
 
 
+def _is_junit_report(path: Path) -> bool:
+    """识别 JUnit XML 报告（testsuite/testcases 根节点），用于剥离可变字段再签名。"""
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError):
+        return False
+    tag = root.tag.rsplit("}", 1)[-1]
+    return tag in ("testsuite", "testsuites")
+
+
+def junit_content_signature(path: Path) -> str | None:
+    """对 JUnit 报告算稳定的内容签名，剥离 timestamp/time 等可变噪音。
+
+    junit xml 每次重跑 timestamp 都变（实测 diff 仅时间戳差异），文件原样 sha
+    永远对不上，导致重跑后收据失效（P7）。这里只对 testcase 结构签名：
+    classname + name + status 排序后哈希，重跑稳定且能抓 testcase 篡改。
+    返回 None 表示无法解析（非 junit 或损坏），调用方回退到文件 sha。
+    """
+    summary = _junit_summary(path)
+    if summary is None:
+        return None
+    items = sorted(
+        (case.get("classname", ""), case.get("name", ""), case.get("status", ""))
+        for case in summary.get("test_cases", [])
+    )
+    payload = json.dumps(
+        {
+            "tests": summary.get("tests", 0),
+            "failures": summary.get("failures", 0),
+            "errors": summary.get("errors", 0),
+            "skipped": summary.get("skipped", 0),
+            "test_cases": items,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+
 def sha256_file(path: str | Path) -> str:
     """流式计算文件摘要，避免大型测试报告或日志一次性读入内存。"""
     digest = hashlib.sha256()
@@ -193,12 +233,19 @@ def _file_record(path: Path, started_epoch: float | None = None) -> dict[str, An
     stat = resolved.stat()
     # 文件系统时间戳可能只有秒级精度，允许两秒误差但不接受明显旧报告。
     fresh = started_epoch is None or stat.st_mtime >= started_epoch - 2
+    # junit xml 含可变 timestamp/time，文件原样 sha 每次重跑都变（P7）。
+    # 改用内容签名（剥离时间戳，只签 testcase 结构），重跑稳定且仍能抓篡改。
+    if _is_junit_report(resolved):
+        content_signature = junit_content_signature(resolved)
+        digest = content_signature if content_signature is not None else sha256_file(resolved)
+    else:
+        digest = sha256_file(resolved)
     return {
         "path": str(resolved),
         "exists": True,
         "fresh": fresh,
         "size": stat.st_size,
-        "sha256": sha256_file(resolved),
+        "sha256": digest,
     }
 
 
@@ -470,7 +517,16 @@ def validate_execution_receipt(
         if not record.get("fresh"):
             errors.append(f"自动证据 {evidence.get('id')} 的报告早于本次命令: {report_path}")
         try:
-            if sha256_file(report_path) != record.get("sha256"):
+            # junit 报告用内容签名比对（与 _file_record 保持一致，剥离可变 timestamp）。
+            if _is_junit_report(report_path):
+                content_signature = junit_content_signature(report_path)
+                actual_digest = (
+                    content_signature if content_signature is not None
+                    else sha256_file(report_path)
+                )
+            else:
+                actual_digest = sha256_file(report_path)
+            if actual_digest != record.get("sha256"):
                 errors.append(f"自动证据 {evidence.get('id')} 的报告摘要已变化: {report_path}")
         except OSError as exc:
             errors.append(f"自动证据 {evidence.get('id')} 的报告无法读取: {exc}")

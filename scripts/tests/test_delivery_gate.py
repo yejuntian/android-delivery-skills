@@ -32,7 +32,7 @@ from ..delivery_gate import (  # noqa: E402
     main,
     validate_delivery_result,
 )
-from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, sha256_file  # noqa: E402
+from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, junit_content_signature, sha256_file  # noqa: E402
 from ..git_changes import current_delivery_snapshot, write_baseline  # noqa: E402
 from ..requirement_snapshot import (  # noqa: E402
     apply_requirement_revision,
@@ -215,7 +215,7 @@ class DeliveryGateTests(unittest.TestCase):
             "exists": True,
             "fresh": True,
             "size": test_report.stat().st_size,
-            "sha256": sha256_file(test_report),
+            "sha256": junit_content_signature(test_report) or sha256_file(test_report),
             "junit": {
                 "tests": 2,
                 "failures": 0,
@@ -259,6 +259,7 @@ class DeliveryGateTests(unittest.TestCase):
                 "producer": SPECIALIST_PRODUCER,
                 "id": evidence_id,
                 "skill": skill,
+                "provenance": {"skill": skill},
                 "requirement_id": "baseline-1",
                 "requirement_revision": 2,
                 "requirement_file_sha256": self.requirement,
@@ -735,6 +736,7 @@ class DeliveryGateTests(unittest.TestCase):
             "producer": SPECIALIST_PRODUCER,
             "id": "E-UI-PENDING",
             "skill": "android-verify-ui",
+            "provenance": {"skill": "android-verify-ui"},
             "requirement_id": "baseline-1",
             "requirement_revision": 2,
             "requirement_file_sha256": self.requirement,
@@ -853,6 +855,7 @@ class DeliveryGateTests(unittest.TestCase):
             "producer": SPECIALIST_PRODUCER,
             "id": "E-JOURNEY",
             "skill": "android-test-and-fix/journey-agent",
+            "provenance": {"skill": "android-test-and-fix/journey-agent"},
             "requirement_id": "baseline-1",
             "requirement_revision": 2,
             "requirement_file_sha256": self.requirement,

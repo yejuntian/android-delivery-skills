@@ -1,6 +1,6 @@
 ---
 name: android-audit-stability
-description: Android 运行时稳定性、性能、安全隐私与兼容性风险审计。用于最终交付时检查崩溃、内存泄漏、生命周期、协程与 Flow、ANR、性能、资源释放、权限、导出组件、WebView、敏感数据和 Android 版本兼容，也可结合 logcat、Crashlytics、Leak Trace、Heap Dump 或 Perfetto 证据定位风险。编码后局部迭代只在直接触及相应高风险时调用；用户要求排查稳定性、泄漏、性能、安全隐私和兼容性时也可单独使用。
+description: Android 运行时稳定性、性能、安全隐私与兼容性风险审计。用于最终交付时检查崩溃、内存泄漏、生命周期、协程与 Flow、ANR、性能、资源释放、权限、导出组件、WebView、敏感数据和 Android 版本兼容，可结合 logcat、Crashlytics、Leak Trace、Heap Dump 或 Perfetto 证据定位风险。编码后局部迭代只在直接触及相应高风险时调用；用户要求排查稳定性、泄漏、性能、安全隐私或兼容性时也可单独使用。
 ---
 
 # Android 运行时稳定性审计

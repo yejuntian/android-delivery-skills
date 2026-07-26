@@ -1,6 +1,6 @@
 ---
 name: android-verify-api-contract
-description: Android API 实现与接口契约核验。用于涉及 Retrofit、OkHttp、Ktor、自研网络层、DTO、Repository、mapper、缓存、分页、鉴权、错误码、Mock 或 sampledata 的改动，依据 YApi、Apifox、Swagger、OpenAPI 等接口文档和实际 diff 核验 endpoint、请求参数、响应字段、nullable、枚举、错误码、映射和兼容性。检测到 API/DTO/Repository 网络行为变化、私有接口页面需要登录授权，或用户要求核对接口实现时使用；无接口契约变化时跳过。
+description: Android API 实现与接口契约核验。用于涉及网络层（Retrofit/OkHttp/Ktor/自研）、DTO、Repository、mapper、缓存、鉴权、错误码、Mock/sampledata 的改动，依据 YApi/Apifox/Swagger/OpenAPI 文档和实际 diff 核验 endpoint、请求参数、响应字段、nullable、枚举、错误码、映射和兼容性。检测到 API/DTO/Repository 网络行为变化、私有接口页需登录授权，或用户要求核对接口实现时使用；无接口契约变化时跳过。
 ---
 
 # Android API 契约核验

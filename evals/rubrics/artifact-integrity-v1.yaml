@@ -1,0 +1,12 @@
+id: artifact-integrity-v1
+name: Android Delivery artifact integrity
+purpose: >
+  本地确定性 Evals，用于维护流程仓库时验证不依赖真实 Android 项目也能机器判断的核心不变量。
+pass_criteria:
+  - 场景引用的运行时或脚本文件存在。
+  - 必须保留的门禁文本、脚本逻辑或 Schema 片段仍存在。
+  - 禁止出现的反模式文本或运行时引用不存在。
+non_goals:
+  - 不替代 Python 单元测试。
+  - 不替代人工或多 Agent forward test。
+  - 不在普通 Android 需求交付中执行。

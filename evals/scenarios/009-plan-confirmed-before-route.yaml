@@ -1,0 +1,17 @@
+id: 009-plan-confirmed-before-route
+title: 实施计划未确认不能 route 或最终交付
+rubric: artifact-integrity-v1
+checks:
+  - name: route 前校验计划确认收据
+    paths:
+      - "scripts/delivery.py"
+      - "scripts/delivery_gate.py"
+    contains:
+      - "validate_plan_confirmation"
+      - "plan_confirmation_receipt_sha256"
+      - "已确认实施计划"
+  - name: 计划变化后旧确认失效
+    path: "scripts/implementation_plan.py"
+    contains:
+      - "实施计划尚未确认，请用户确认后执行 delivery.py confirm-plan"
+      - "需求或实施计划已变化，旧计划确认失效"

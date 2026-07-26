@@ -1,0 +1,17 @@
+id: 005-zero-test-fake-green-blocked
+title: 零测试或未执行测试不能冒充自动覆盖
+rubric: artifact-integrity-v1
+checks:
+  - name: 最终门禁要求自动证据有实际执行测试
+    path: "scripts/delivery_gate.py"
+    contains:
+      - "executed_tests"
+      - "evidence.get(ref, {}).get(\"executed_tests\", 0) > 0"
+      - "自动证据没有实际执行测试"
+  - name: 执行收据解析 JUnit 而不是只看退出码
+    path: "scripts/execution_evidence.py"
+    contains:
+      - "junit"
+      - "tests"
+      - "failures"
+      - "errors"

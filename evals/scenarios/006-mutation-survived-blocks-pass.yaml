@@ -1,0 +1,18 @@
+id: 006-mutation-survived-blocks-pass
+title: mutation testing 存活变异阻断 android-test-and-fix PASS
+rubric: artifact-integrity-v1
+checks:
+  - name: 测试专项必须输出 mutation_testing
+    path: "scripts/specialist_result.py"
+    contains:
+      - "android-test-and-fix 必须输出 mutation_testing 变异测试摘要"
+      - "变异测试结论为 PASS 时必须生成至少一个变异"
+      - "存活变异"
+      - "不能标记 PASS"
+  - name: 专项 Schema 固定 mutation_testing 字段
+    path: "android-implement-and-verify/references/specialist-result.schema.json"
+    contains:
+      - '"mutation_testing"'
+      - '"generated_mutants"'
+      - '"survived"'
+      - '"killed_by_obligation"'

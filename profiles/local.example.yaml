@@ -28,9 +28,9 @@ branch: "feature/your-requirement"
 workspace_root: "/absolute/path/to/workspace"
 
 # 必填：当前需求的工作目录，可以是绝对路径，也可以相对于 workspace_root。
-# 需求正文、UI/API 证据、测试用例和交付报告都放在这里；该目录属于运行输入，默认不提交。
-# 多需求并行推荐放在 project_path/document/<日期-英文名>/（文档跟 worktree 走）；
-# 此时需在 Android 项目 .gitignore 加 document/，delivery_gate 已在代码摘要里排除 document/。
+# 需求正文、UI/API 证据、测试用例和交付报告都放在这里。
+# 多需求并行推荐放在 project_path/document/<日期-英文名>/（文档跟 worktree 走并随代码提交）；
+# 不要在 Android 项目 .gitignore 忽略 document/，delivery_gate 已在代码摘要里排除 document/。
 requirement_dir: "ai-skills/current-requirement"
 
 # 必填：需求正文文件，可以是绝对路径，也可以相对于 requirement_dir。

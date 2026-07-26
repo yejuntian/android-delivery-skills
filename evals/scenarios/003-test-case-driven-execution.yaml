@@ -1,0 +1,17 @@
+id: 003-test-case-driven-execution
+title: 编码后测试按测试用例选择执行器，不机械固定流水线
+rubric: artifact-integrity-v1
+checks:
+  - name: 总入口要求按测试计划逐条选择执行器
+    path: "android-implement-and-verify/SKILL.md"
+    contains:
+      - "按测试计划文档逐条选择执行器"
+      - "每条用例按 BDD、风险和实际 diff 选择"
+      - "不要求所有需求机械执行同一串命令"
+    not_contains:
+      - "Unit Test（`./gradlew testDebugUnitTest`）→ 构建（`./gradlew assembleDebug`）→ 安装"
+  - name: 测试路由参考保留证据边界
+    path: "android-test-and-fix/references/adaptive-test-routing.md"
+    contains:
+      - "把 Journey、Compose UI Test、Espresso、UIAutomator、Unit、Integration、Contract、Screenshot 和人工验收视为不同证据执行器"
+      - "不追求所有需求机械执行全部测试类型"

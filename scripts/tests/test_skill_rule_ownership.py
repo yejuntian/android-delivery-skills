@@ -3,7 +3,7 @@
 
 用途：验证 Android Delivery 各 Skill 的运行时规则保持唯一归属，防止维护时复制粘贴同一套约束。
 
-核心流程：扫描仓库级 AI 约束、共享规则、各 Skill、生产脚本和维护说明，检查维护命令接线、脚本职责表、
+核心流程：扫描仓库级 AI 约束、共享规则、各 Skill 和设计依据，检查维护命令接线、
 共享规则引用、关键章节归属、五步流程唯一来源及文件行数预算；同时拒绝跨运行时文件完全相同的长规则行。
 测试只读取当前仓库文档，不接触真实 Android 项目、设备或网络。
 
@@ -25,20 +25,13 @@ SKILL_FILES = sorted(REPOSITORY_ROOT.glob("*/SKILL.md"))
 RUNTIME_RULE_FILES = [SHARED_RULES, *SKILL_FILES]
 SHARED_RULE_REFERENCE = "../_shared/android-global-rules.md"
 FIVE_STEP_FLOW = "确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付"
-DOCUMENTATION_SYNC_RULE = "职责对应的运行时来源、整体说明、使用导航、设计依据和测试"
+DOCUMENTATION_SYNC_RULE = "职责对应的运行时来源、设计依据和测试"
 MAINTENANCE_GATE_COMMAND = "python3 -m unittest scripts.tests.test_skill_rule_ownership -q"
+ARTIFACT_EVAL_COMMAND = "python3 evals/runners/run_artifact_evals.py"
 DOCUMENTATION_SYNC_GUIDES = [
-    REPOSITORY_ROOT / "AI_DELIVERY_WORKFLOW_GUIDELINES.md",
     REPOSITORY_ROOT / "references" / "open-source-design-rationale.md",
 ]
-MAINTENANCE_GUIDES = [REPOSITORY_ROOT / "SIMPLE_USAGE.md", *DOCUMENTATION_SYNC_GUIDES]
-AI_WORKFLOW_GUIDE = REPOSITORY_ROOT / "AI_DELIVERY_WORKFLOW_GUIDELINES.md"
-SCRIPT_TABLE_START = "## 四、脚本职责划分"
-SCRIPT_TABLE_END = "## 五、端到端交付流程"
-DIRECT_SUPPORT_SCRIPTS = {
-    "../figma-android-xml/scripts/figma_workflow.py",
-    "scripts/tests/test_skill_rule_ownership.py",
-}
+MAINTENANCE_GUIDES = [*DOCUMENTATION_SYNC_GUIDES]
 SECTION_OWNERS = {
     "## 用户可见五步": "android-implement-and-verify/SKILL.md",
     "## 工作模式": "android-test-and-fix/SKILL.md",
@@ -68,25 +61,6 @@ def normalized_long_rule_lines(path: Path) -> list[str]:
         if len(normalized) >= 80:
             rules.append(normalized)
     return rules
-
-
-def production_script_paths() -> set[str]:
-    """返回本仓库全部非测试生产脚本，排除仅声明包的 ``__init__.py``。"""
-    candidates = list((REPOSITORY_ROOT / "scripts").glob("*.py"))
-    for scripts_dir in REPOSITORY_ROOT.glob("*/scripts"):
-        candidates.extend(scripts_dir.glob("*.py"))
-    return {
-        path.relative_to(REPOSITORY_ROOT).as_posix()
-        for path in candidates
-        if path.name != "__init__.py"
-    }
-
-
-def documented_script_paths() -> set[str]:
-    """读取 AI 接管说明中的脚本职责表，避免从其他章节误收集示例命令。"""
-    guide = read_text(AI_WORKFLOW_GUIDE)
-    table = guide.split(SCRIPT_TABLE_START, 1)[1].split(SCRIPT_TABLE_END, 1)[0]
-    return set(re.findall(r"^\| `([^`]+\.py)` \|", table, flags=re.MULTILINE))
 
 
 class SkillRuleOwnershipTests(unittest.TestCase):
@@ -163,18 +137,13 @@ class SkillRuleOwnershipTests(unittest.TestCase):
             with self.subTest(guide=guide.relative_to(REPOSITORY_ROOT).as_posix()):
                 self.assertIn(MAINTENANCE_GATE_COMMAND, read_text(guide))
 
-    def test_script_responsibility_table_covers_all_production_scripts(self) -> None:
-        """验证 AI 接管说明完整登记本仓库生产脚本，且没有保留已删除路径。"""
-        documented_production = {
-            path
-            for path in documented_script_paths()
-            if not path.startswith("../") and "/tests/" not in path
-        }
-        self.assertEqual(production_script_paths(), documented_production)
+    def test_artifact_evals_are_wired_for_flow_maintenance(self) -> None:
+        """验证流程行为变更必须运行本地确定性 Evals。"""
+        self.assertIn(ARTIFACT_EVAL_COMMAND, read_text(SHARED_RULES))
+        for guide in MAINTENANCE_GUIDES:
+            with self.subTest(guide=guide.relative_to(REPOSITORY_ROOT).as_posix()):
+                self.assertIn(ARTIFACT_EVAL_COMMAND, read_text(guide))
 
-    def test_script_responsibility_table_covers_direct_support_scripts(self) -> None:
-        """验证外部 Figma 下载和 Skill 维护门禁也有明确职责说明。"""
-        self.assertTrue(DIRECT_SUPPORT_SCRIPTS.issubset(documented_script_paths()))
 
     def test_specialized_sections_stay_with_declared_owner(self) -> None:
         """验证关键专业章节只存在于其主责 Skill。"""

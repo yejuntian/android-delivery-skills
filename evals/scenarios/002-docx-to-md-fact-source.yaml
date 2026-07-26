@@ -1,0 +1,23 @@
+id: 002-docx-to-md-fact-source
+title: docx 只作初始输入，init 后 md 成为事实源
+rubric: artifact-integrity-v1
+checks:
+  - name: init 首次 docx 自动转写 md
+    path: "scripts/delivery.py"
+    contains:
+      - "docx 仅作初始输入"
+      - "已自动读取 docx 并转写为"
+      - "以后所有增量、修订和门禁都以"
+  - name: 后续路径解析优先 md
+    path: "scripts/config_paths.py"
+    contains:
+      - "事实源优先 md"
+      - "自动切换到该 md"
+      - "不再绑 docx"
+  - name: 共享规则不再要求增量编辑 docx
+    path: "_shared/android-global-rules.md"
+    contains:
+      - "后续补充、修订和门禁只同步该 md"
+      - "图片型 docx 提取不到正文时使用需求模板骨架"
+    not_contains:
+      - "同步 `.docx` 时必须使用能保留现有结构和样式的文档编辑能力"

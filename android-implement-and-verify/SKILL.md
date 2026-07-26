@@ -15,7 +15,7 @@ description: |
 
 执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用总入口自修复授权：本次需求范围内的问题默认最小修复并重验，不采用专项 Skill 的 standalone report-only 默认值；是否进入完整交付仍按三阶段规则判断。
 
-维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。物化中途需求增删改时遵守 `references/requirement-revision.schema.json`，生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
+维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测，并运行 `../evals/runners/run_artifact_evals.py` 检查可机器验证的不变量。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。物化中途需求增删改时遵守 `references/requirement-revision.schema.json`，生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
 
 ## 职责边界
 
@@ -64,15 +64,15 @@ confirm-requirement-update 成功后，如果续接指南有 STALE 或新增义�
 编码完成后不能直接跳 route+gate。必须先走测试执行子阶段：
 
 1. **写测试计划文档**（`test-results/测试结果.md`）：每个 AC → 用例 → 验证点 → 预期 → 执行方式。先写计划，不是事后补记录。
-2. **按文档逐条执行**：Unit Test（`./gradlew testDebugUnitTest`）→ 构建（`./gradlew assembleDebug`）→ 安装（`adb install`）→ 真机 Journey（`adb shell input swipe/tap` + `screencap` + `logcat`）。
+2. **按测试计划文档逐条选择执行器**：每条用例按 BDD、风险和实际 diff 选择 Unit、集成、构建、安装、Journey、截图、日志或实际人工证据；不要求所有需求机械执行同一串命令，执行细节和产物按用例文档回填。
 3. **回填结果**：每条用例标 PASS/FAIL/UNVERIFIED + 截图路径 + 日志路径 + 覆盖结论表（每个 BDD/AC → 覆盖方式 → 结论）。
 4. **所有用例都有结果**（PASS 或明确 UNVERIFIED）才进 route+gate。
 5. 测试中发现需求漏洞 → 触发增量闭环（改需求→改代码→改测试→改测试文档→重测），闭环后回到测试继续。
 
 ## 并行需求通道（多窗口同时推进）
 
-- 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。`config_paths` 已按 profile 路径的 hash 隔离 Git 基线/快照/route/证据/能力（机器保证，非自觉）。
-- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走）；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。Android 项目需在 `.gitignore` 加 `document/`，且 `delivery_gate` 已在代码摘要里排除 `document/`，文档变化不污染 `snapshot_sha256`。
+- 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。机器状态位于各自 `requirement_dir/.state`；隔离边界是需求目录，不是 profile 名称。
+- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交）；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`delivery_gate` 已在代码摘要里排除 `document/`，文档变化不污染 `snapshot_sha256`。
 - 不冲突的需求（改不同文件）各窗口独立闭环，从 `init`/`check-env` 到 `route`/`delivery_gate` 全套自带 `--config`。改同一文件时 git 合入自然报冲突，不做预检。
 - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 使 worktree 证据失效）、不用 cherry-pick（丢追溯链）。合入后在最终代码上重跑受影响门禁。
 - 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md`，各通道标 `MERGED`+批次号；`index --main-worktree <主工作树>` 刷新全局总览到 `<主工作树>/document/需求总览.md`（六列含分支和集成批次）。

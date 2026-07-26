@@ -7,8 +7,8 @@
 - 维护、扩展或质疑本流程时，必须先读取 `../references/open-source-design-rationale.md`，确认设计目标、开源参考、采用/拒绝原因和长期不变量。
 - 日常执行具体 Android 需求时不要求全文加载该文档；不得因此增加无关上下文或固定流程步骤。
 - 开源项目只提供可验证的工程做法，不覆盖用户明确目标、目标项目事实或本文件的安全边界。
-- 修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前必须主动核对并最小同步职责对应的运行时来源、整体说明、使用导航、设计依据和测试；不相关文档不改，说明文档只摘要或链接，不复制第二套执行规则，用户无需提醒。
-- 修改本文件、任一 `*/SKILL.md`、`SIMPLE_USAGE.md`、`AI_DELIVERY_WORKFLOW_GUIDELINES.md` 或设计依据后，交付前必须从本仓库根目录执行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；未执行或失败不得声明维护完成。普通 Android 需求没有修改这些文件时不运行。
+- 修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前必须主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接，不复制第二套执行规则，用户无需提醒。
+- 修改本文件、任一 `*/SKILL.md` 或设计依据后，交付前必须从本仓库根目录执行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；修改 Skill、路由、门禁或脚本行为时还必须执行 `python3 evals/runners/run_artifact_evals.py`。普通 Android 需求没有修改流程仓库时不运行。
 
 ## 全局强制工程原则
 
@@ -53,7 +53,7 @@
 
 ### 串行状态与输入边界
 
-- 同一配置文件同时只允许一个活动交付窗口写入基线、需求修订、实施计划收据、route 或最终证据；其他窗口只能只读检查和提供建议。工作区轮换与回收还必须使用单写锁，第二个写窗口直接停止且不得删除持有者的锁或产物；进程异常退出遗留锁时，只有确认没有操作仍在运行后才可移除。原子写入防止半文件，不代表支持多个 AI 并行推进同一需求。多需求并行靠每需求独立 git worktree + 独立 profile + 独立 requirement_dir（config_paths 已按 profile 路径 hash 隔离外部状态）；推荐文档放 `project_path/document/<日期-英文名>/`（该目录需进 Android 项目 .gitignore，delivery_gate 已在代码摘要排除 document/）；不冲突的需求各窗口独立闭环，改同一文件由 git 合入自然报冲突无需预检，合并用 `git merge --no-ff`（保留提交 hash，证据链不断）。
+- 同一配置文件同时只允许一个活动交付窗口写入基线、需求修订、实施计划收据、route 或最终证据；其他窗口只能只读检查和提供建议。工作区轮换与回收还必须使用单写锁，第二个写窗口直接停止且不得删除持有者的锁或产物；进程异常退出遗留锁时，只有确认没有操作仍在运行后才可移除。原子写入防止半文件，不代表支持多个 AI 并行推进同一需求。多需求并行靠每需求独立 git worktree + 独立 profile + 独立 requirement_dir，机器状态位于各自 `requirement_dir/.state`；推荐文档放 `project_path/document/<日期-英文名>/` 并随代码提交，delivery_gate 已在代码摘要排除 `document/`；不冲突的需求各窗口独立闭环，改同一文件由 git 合入自然报冲突无需预检，合并用 `git merge --no-ff`（保留提交 hash，证据链不断）。
 - `requirement_workspace.mode=rotate` 时，每个新串行需求使用独立目录；目录名同时包含稳定机器编号和中文需求名称，用户读取 `需求说明.md`，脚本读取 `requirement-workspace.json`。`reuse` 只保留旧式固定目录行为，不得由 AI 擅自切换策略。
 - `scripts/requirement_workspace.py` 是需求目录轮换和延迟回收的唯一入口。同一需求的补充、修改、删除、局部重测不得轮换；只有用户明确确认上一需求已经完成或取消并说“开始下一个需求”时，才先执行 `next` 预览，用户确认预览后追加 `--confirm`。
 - 新需求正文必须先放在旧活动目录之外；轮换前目标 Android 项目必须干净。脚本只迁移项目外需求资料并更新 `local.yaml` 的 `requirement_dir`、`requirement_file`，不得提交、暂存、清理或修改 Android 代码。
@@ -150,7 +150,7 @@
 - 不要求需求文档包含 UI 截图、设计稿或接口文档。
 - UI 资料优先从 `ui.links`、`ui.screenshots` 或用户补充中读取。
 - 接口资料优先从 `api.links`、`api.files` 或用户补充中读取。
-- 同步 `.md`、`.markdown`、`.txt` 时只做保留原结构的最小编辑；同步 `.docx` 时必须使用能保留现有结构和样式的文档编辑能力，修改后重新执行 `delivery.py init` 核对正文，排版有验收意义时还要渲染检查。缺少可靠编辑能力时进入 `USER_INPUT_REQUIRED`，不得声称已同步，也不得未经用户同意转换格式或另建第二份需求事实源。
+- 同步 `.md`、`.markdown`、`.txt` 时只做保留原结构的最小编辑；`requirement_file` 指向 `.docx` 时，`delivery.py init` 首次自动提取正文并转写到同目录 md，后续补充、修订和门禁只同步该 md，原 docx 仅保留初始输入。图片型 docx 提取不到正文时使用需求模板骨架并进入待填充，不得脑补。
 - 如果需求文档无法读取或信息不足，必须说明缺失内容，不得脑补。
 
 ## 需求理解规则

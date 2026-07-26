@@ -1,0 +1,13 @@
+id: 001-flow-overview-not-runtime-source
+title: FLOW_OVERVIEW 只作外部设计总览，不进入运行时规则
+rubric: artifact-integrity-v1
+checks:
+  - name: 运行时规则和脚本不引用 FLOW_OVERVIEW
+    globs:
+      - "_shared/**/*.md"
+      - "android-*/SKILL.md"
+      - "android-*/references/*.md"
+      - "scripts/**/*.py"
+    not_contains:
+      - "FLOW_OVERVIEW.md"
+      - "/Users/example/work/MyPython/doc/FLOW_OVERVIEW.md"

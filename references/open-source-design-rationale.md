@@ -149,7 +149,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ### M09 Skill 行为评测集
 
 - **来源**：Superpowers 的 Skill forward testing、Spec Kit 的 self-test 和 Android 官方样例的场景化测试。
-- **决策**：用代表性 Android 需求验证需求门禁、路由、测试选择、阻断和禁止声明，而不只测试 Python 函数。
+- **决策**：用代表性 Android 需求验证需求门禁、路由、测试选择、阻断和禁止声明，而不只测试 Python 函数；可由仓库产物直接证明的不变量用 `evals/runners/run_artifact_evals.py` 做本地确定性 Evals，人工/多 Agent forward test 仍按场景文件评分。
 - **原因**：脚本单测通过不能证明更换 AI 后仍会正确理解并执行 Skill。
 
 ## 第二轮设计决策
@@ -245,7 +245,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ### M22 本机配置与当前需求运行输入隔离
 
 - **问题**：`local.yaml`、当前需求正文、截图、接口证据和测试报告会随项目与需求持续变化；把它们作为 Skill 源码跟踪会让工作区长期变脏，并增加误提交业务资料、覆盖用户输入或把需求变化混入流程改动的风险。
-- **决策**：仓库只版本化带详细中文注释、没有真实路径和业务资料的 `profiles/local.example.yaml`；真实 `profiles/local.yaml` 与 `requirement_dir` 由 Git 忽略并归用户所有。已有本机文件不得被模板覆盖，取消 Git 跟踪不得删除物理文件，也不得用 `git add -f` 绕过边界。
+- **决策**：仓库只版本化带详细中文注释、没有真实路径和业务资料的 `profiles/local.example.yaml`；真实 `profiles/local.yaml` 与项目外 `requirement_dir` 由 Git 忽略并归用户所有。放在 Android 项目 `document/` 下的需求目录是交付文档，随目标项目代码提交。已有本机文件不得被模板覆盖，取消 Git 跟踪不得删除物理文件，也不得用 `git add -f` 绕过边界。
 - **证据边界**：不进入源码版本控制不等于不校验。脚本继续读取真实配置、需求文件和已确认实施计划，完整输入摘要绑定需求正文、计划与已登记 UI/API 资料；任何输入变化仍使旧路由、证据和最终报告失效。
 - **拒绝**：不使用 `skip-worktree` 或 `assume-unchanged` 隐藏已跟踪文件，因为它们是本机隐式状态，换机器或换 AI 后难以复核；需要长期归档的需求由用户明确选择独立归档位置。
 
@@ -279,7 +279,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **问题**：共享规则、总入口和测试 Skill 重复抄写输入、工具、失败分类与降级模板，会增加上下文占用，并让后续修改容易只同步其中一份。
 - **决策**：跨 Skill 不变量只保留在 `_shared/android-global-rules.md`；三阶段编排和需求修订只保留在总入口；测试选择与执行只保留在测试 Skill；详细条件能力继续按需读取 `references/`。Skill 的触发场景只写在 YAML `description`，正文不重复“定位/调用”说明；专项正文只补充检查、执行和输出，不复述共享规则。
-- **边界**：面向用户的整体说明和简明用法可以解释同一能力，但不得成为运行时规则来源。去重只删除重复说明，不改变命令、机器契约、门禁、状态或职责。
+- **边界**：面向用户的外部说明可以解释同一能力，但不得成为运行时规则来源。去重只删除重复说明，不改变命令、机器契约、门禁、状态或职责。
 - **拒绝**：不为了缩短行数删除安全边界，也不把所有规则塞进单一巨型 Skill；没有重复证据时不做无目的重写。
 
 ### M27 Matt Pocock Skills 精华适配
@@ -335,15 +335,15 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **调研日期**：2026-07-25。
 - **问题**：单配置流程默认一个 `profiles/local.yaml` 对应一个活动需求；多需求共用同一配置/工作树/需求目录并行会互相污染（Git 基线、route 快照、证据覆盖、未提交代码阻塞）。
 - **来源**：[git worktree 官方](https://git-scm.com/docs/git-worktree)、[Claude Code worktrees](https://code.claude.com/docs/en/worktrees)、[OpenAI Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)；Spec Kit spec continuity（集成批次汇总）。
-- **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 按 profile 绝对路径 SHA-256 hash 隔离 baseline/snapshot/route/evidence/capabilities（req-login→`306d8e48`、req-pay→`ff6a9ed1`，5 类路径全不同）；同文件同行冲突 git merge 自然检出；改不同文件无冲突；`git worktree remove/prune` 可回收；同 config 并发第二写窗口被 O_EXCL 锁拒。
+- **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 以各自 `requirement_dir/.state` 隔离 baseline/snapshot/route/evidence/capabilities；同文件同行冲突 git merge 自然检出；改不同文件无冲突；`git worktree remove/prune` 可回收；同 config 并发第二写窗口被 O_EXCL 锁拒。
 - **决策**：
   - 业界标准 = 纯 git worktree，零自研并行 wrapper 脚本。一个需求 = 一个 worktree + 独立分支 + 独立 profile + 独立 requirement_dir。
   - 文档落地：`requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），目录名英文 slug（kebab-case），中文名存 `需求说明.md` 首行 + workspace state 的 title，只在总览/集成报告显示。
   - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 断证据链）、不用 cherry-pick（丢追溯链）。
   - `requirement_workspace.py` 新增 `integrate`（汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md` + 各通道标 MERGED+批次号）、扩展 `index --main-worktree`（刷新全局 `<主工作树>/document/需求总览.md`，六列含分支和集成批次，分支自动从 workspace state 填）。
-  - 不污染门禁：document/ 进 Android 项目需 .gitignore；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。
-- **对不变量 #18 / M22 的覆盖说明**：M22 原则"需求资料默认不进 Android 项目"。本决策由用户明确确认：文档放 project_path/document/ 时配套 .gitignore + 摘要排除，保证不污染门禁，覆盖旧默认。rotate 单配置通道仍可用项目外 requirements-runtime，不变。
-- **拒绝**：不新增 parallel_channel.py 或任何自研并行 wrapper（业界无此实践）；不做冲突预检机器门禁（git 合入自然报冲突）；不用 rebase/cherry-pick 合并；不改 config_paths 核心逻辑（hash 隔离已完备）。
+  - 不污染门禁：document/ 随 Android 项目代码提交；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。
+- **对不变量 #18 / M22 的覆盖说明**：M22 原则"需求资料默认不进 Android 项目"。本决策由用户明确确认：文档放 project_path/document/ 时跟代码提交 + 摘要排除，保证可追溯且不污染代码门禁，覆盖旧默认。rotate 单配置通道仍可用项目外 requirements-runtime，不变。
+- **拒绝**：不新增 parallel_channel.py 或任何自研并行 wrapper（业界无此实践）；不做冲突预检机器门禁（git 合入自然报冲突）；不用 rebase/cherry-pick 合并；不把 `document/` 加入目标项目 `.gitignore`。
 
 ### 运行时规则唯一归属
 
@@ -398,8 +398,8 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ## 维护规则
 
-- 每次修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、整体说明、使用导航、设计依据和测试；不相关文档不改，说明文档只摘要或链接。
-- 修改共享规则、任一 Skill、`SIMPLE_USAGE.md`、整体流程说明或本文后，必须从本仓库根目录运行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；失败不得完成维护。该门禁不接入 `delivery.py`，普通 Android 需求没有修改 Skill 仓库时不运行。
+- 每次修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接。
+- 修改共享规则、任一 Skill 或本文后，必须从本仓库根目录运行 `python3 -m unittest scripts.tests.test_skill_rule_ownership -q`；修改 Skill、路由、门禁或脚本行为时还必须运行 `python3 evals/runners/run_artifact_evals.py`。这些维护门禁不接入 `delivery.py`，普通 Android 需求没有修改流程仓库时不运行。
 - 修改跨 Skill 原则时，同步 `_shared/android-global-rules.md` 和本文对应决策。
 - 修改完整流程时，同步 `android-implement-and-verify/SKILL.md`、导航文档和行为评测场景。
 - 修改路由逻辑时，同步 `scripts/delivery.py`、`scripts/tests/test_delivery.py` 和相关场景预期。

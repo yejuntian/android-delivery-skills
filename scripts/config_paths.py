@@ -60,7 +60,7 @@ class ConfigPaths:
 
     @property
     def state_dir(self) -> Path:
-        """机器状态根目录（基线/快照/route/证据/能力），跟 requirement_dir 走，gitignore。"""
+        """机器状态根目录（基线/快照/route/证据/能力），跟 requirement_dir 走。"""
         return (self.requirement_dir / ".state").resolve()
 
 

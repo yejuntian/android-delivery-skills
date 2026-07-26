@@ -1,0 +1,12 @@
+id: transcript-replay-v1
+name: Android Delivery transcript replay
+purpose: >
+  把真实或模拟对话记录中的显式动作标记回放为流程事件，用当前 active contract 检查 AI 是否提前越过门禁。
+pass_criteria:
+  - transcript 必须通过显式事件标记表达动作，不依赖自然语言猜测。
+  - 合规记录在当前 contract 下通过，偷懒记录必须命中期望违规契约。
+  - 场景不复制 Skill 全流程，只保存用户行为序列和关键动作。
+non_goals:
+  - 不替代模型现场 forward test。
+  - 不做 LLM-as-judge。
+  - 不运行 Android 构建、设备或真实交付脚本。

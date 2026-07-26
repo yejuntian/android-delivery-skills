@@ -27,7 +27,12 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from evals.oracles.contract_coverage import evaluate_contract_coverage  # noqa: E402
 from evals.oracles.contract_loader import ContractError  # noqa: E402
-from evals.runners import run_artifact_evals, run_behavior_evals, run_command_evals  # noqa: E402
+from evals.runners import (  # noqa: E402
+    run_artifact_evals,
+    run_behavior_evals,
+    run_command_evals,
+    run_transcript_evals,
+)
 
 
 SUITE_ALIASES = {
@@ -35,8 +40,9 @@ SUITE_ALIASES = {
     "behavior": ("behavior",),
     "command": ("command",),
     "contracts": ("contracts",),
-    "fast": ("artifact", "contracts", "behavior", "command"),
-    "all": ("artifact", "contracts", "behavior", "command"),
+    "transcript": ("transcript",),
+    "fast": ("artifact", "contracts", "behavior", "transcript", "command"),
+    "all": ("artifact", "contracts", "behavior", "transcript", "command"),
 }
 
 
@@ -67,6 +73,8 @@ def run_suite(root: Path, suite: str) -> dict[str, Any]:
         report = run_behavior_evals.run_evals(root)
     elif suite == "command":
         report = run_command_evals.run_evals(root)
+    elif suite == "transcript":
+        report = run_transcript_evals.run_evals(root)
     else:
         raise EvalRunnerError(f"未实现 suite: {suite}")
     summary = report.get("summary")
@@ -114,6 +122,8 @@ def print_text_report(report: dict[str, Any]) -> None:
             print_behavior_failures(suite_report)
         elif suite == "command":
             print_command_failures(suite_report)
+        elif suite == "transcript":
+            print_transcript_failures(suite_report)
 
 
 def print_artifact_failures(report: dict[str, Any]) -> None:
@@ -168,6 +178,20 @@ def print_command_failures(report: dict[str, Any]) -> None:
                 print(f"      - {message}")
 
 
+def print_transcript_failures(report: dict[str, Any]) -> None:
+    """输出 transcript suite 的失败场景，成功场景保持折叠。"""
+    for scenario in report.get("scenarios", []):
+        if scenario.get("passed"):
+            continue
+        print(f"  - FAIL {scenario.get('id')} {scenario.get('title')}")
+        for check in scenario.get("checks", []):
+            if check.get("passed"):
+                continue
+            print(f"    - {check.get('name')}")
+            for message in check.get("messages", []):
+                print(f"      - {message}")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="Run Android Delivery local eval suites.")
@@ -198,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         run_artifact_evals.ArtifactEvalError,
         run_behavior_evals.BehaviorEvalError,
         run_command_evals.CommandEvalError,
+        run_transcript_evals.TranscriptEvalError,
     ) as exc:
         print(f"Android Delivery Evals 配置错误: {exc}", file=sys.stderr)
         return 2

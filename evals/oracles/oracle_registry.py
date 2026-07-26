@@ -22,6 +22,8 @@ KNOWN_ORACLES = frozenset(
         "conditional_gate_union_is_complete",
         "maintenance_evals_are_wired",
         "flow_gates_hold",
+        "fresh_evidence_required",
+        "unverified_is_not_pass",
     }
 )
 

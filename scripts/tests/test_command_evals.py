@@ -51,6 +51,8 @@ class CommandEvalTests(unittest.TestCase):
                 "command-002-stale-mapping-blocks-final",
                 "command-003-zero-test-fake-green-blocked",
                 "command-004-conditional-gate-union",
+                "command-005-fresh-evidence-required",
+                "command-006-unverified-is-not-pass",
             },
         )
 

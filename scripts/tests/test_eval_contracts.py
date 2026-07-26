@@ -33,7 +33,7 @@ class EvalContractTests(unittest.TestCase):
         """读取当前契约文件，并确认 active contract 保持可维护的最小数量。"""
         contract_set = load_contracts(default_contract_path(REPOSITORY_ROOT))
         self.assertEqual(1, contract_set.version)
-        self.assertGreaterEqual(len(contract_set.active()), 8)
+        self.assertGreaterEqual(len(contract_set.active()), 10)
         self.assertEqual(0, len(contract_set.retired()))
 
     def test_contract_coverage_passes(self) -> None:
@@ -41,7 +41,7 @@ class EvalContractTests(unittest.TestCase):
         report = evaluate_contract_coverage(REPOSITORY_ROOT)
         self.assertEqual("android-delivery-contract-evals", report["producer"])
         self.assertEqual(0, report["summary"]["failed"])
-        self.assertGreaterEqual(report["summary"]["total"], 8)
+        self.assertGreaterEqual(report["summary"]["total"], 10)
 
     def test_unified_fast_runner_passes(self) -> None:
         """执行统一 fast suite，确认 artifact 与 contracts 两层 eval 都被纳入汇总。"""
@@ -70,7 +70,7 @@ class EvalContractTests(unittest.TestCase):
         self.assertEqual("android-delivery-evals", report["producer"])
         self.assertEqual("fast", report["suite"])
         self.assertEqual(0, report["summary"]["failed"])
-        self.assertEqual(["artifact", "contracts", "behavior", "command"], [suite["suite"] for suite in report["suites"]])
+        self.assertEqual(["artifact", "contracts", "behavior", "transcript", "command"], [suite["suite"] for suite in report["suites"]])
 
 
 if __name__ == "__main__":

@@ -27,6 +27,9 @@ contracts:
       behavior:
         - behavior-001-blocks-code-before-confirmation
         - behavior-003-blocks-route-after-unsynced-change
+      transcript:
+        - transcript-002-lazy-code-before-confirmation
+        - transcript-003-change-resets-old-confirmation
 
   - id: required-confirmations-before-route
     status: active
@@ -58,6 +61,10 @@ contracts:
       behavior:
         - behavior-001-blocks-code-before-confirmation
         - behavior-002-allows-actions-after-confirmation
+      transcript:
+        - transcript-001-compliant-current-flow
+        - transcript-002-lazy-code-before-confirmation
+        - transcript-003-change-resets-old-confirmation
       command:
         - command-001-plan-confirmation-gate
 
@@ -140,6 +147,35 @@ contracts:
         - 008-route-specialist-union-gates
       command:
         - command-004-conditional-gate-union
+
+  - id: fresh-evidence-required
+    status: active
+    title: 最终通过必须绑定当前需求、输入和最终代码的新鲜证据
+    kind: evidence_freshness
+    oracle: fresh_evidence_required
+    owner_files:
+      - android-implement-and-verify/SKILL.md
+      - scripts/delivery_gate.py
+      - scripts/execution_evidence.py
+    applies_to:
+      - final_delivery
+    covered_by:
+      command:
+        - command-005-fresh-evidence-required
+
+  - id: unverified-is-not-pass
+    status: active
+    title: 未验证、阻塞或设备待验项不能被声明为完整通过
+    kind: anti_fake_green
+    oracle: unverified_is_not_pass
+    owner_files:
+      - android-implement-and-verify/SKILL.md
+      - scripts/delivery_gate.py
+    applies_to:
+      - final_delivery
+    covered_by:
+      command:
+        - command-006-unverified-is-not-pass
 
   - id: maintenance-evals-are-wired
     status: active

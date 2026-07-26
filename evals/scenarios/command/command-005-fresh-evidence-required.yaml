@@ -1,0 +1,38 @@
+id: command-005-fresh-evidence-required
+title: 需求、输入或代码变化后旧证据必须失效
+type: command
+rubric: command-gate-v1
+checks:
+  - name: snapshot 变化和缺失证据会阻断最终结果
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_delivery_gate.DeliveryGateTests.test_rejects_stale_snapshot_and_missing_evidence
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback
+  - name: 需求语义变化会拒绝旧义务证据
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_delivery_gate.DeliveryGateTests.test_changed_then_rejects_evidence_bound_to_old_semantics
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback
+  - name: 需求输入摘要变化会拒绝最终结果
+    command:
+      - python3
+      - -m
+      - unittest
+      - scripts.tests.test_delivery_gate.DeliveryGateTests.test_requirement_input_change_invalidates_result
+      - -q
+    expect:
+      exit_code: 0
+      combined_not_contains:
+        - Traceback

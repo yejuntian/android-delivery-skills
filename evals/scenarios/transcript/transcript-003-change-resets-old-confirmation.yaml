@@ -1,0 +1,17 @@
+id: transcript-003-change-resets-old-confirmation
+title: 需求变化后旧确认不能继续用于 route
+type: transcript_replay
+rubric: transcript-replay-v1
+checks:
+  - name: 用户新增需求会重置旧事实源和确认
+    expect:
+      passed: false
+      violation_contracts:
+        - latest-requirement-is-persisted
+        - required-confirmations-before-route
+    transcript: |
+      助手：需求已持久化。 [event: requirement_persisted]
+      用户：确认需求。 [event: requirement_confirmed]
+      用户：确认计划。 [event: plan_confirmed]
+      用户：再增加一个边界条件。 [event: user_requirement_changed]
+      助手：我复用旧确认直接 route。 [event: route]

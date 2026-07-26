@@ -186,6 +186,7 @@ contracts:
       - _shared/android-global-rules.md
       - references/open-source-design-rationale.md
       - evals/runners/run_artifact_evals.py
+      - scripts/validate_maintenance.py
     applies_to:
       - skill_maintenance
     covered_by:

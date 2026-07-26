@@ -26,8 +26,8 @@ RUNTIME_RULE_FILES = [SHARED_RULES, *SKILL_FILES]
 SHARED_RULE_REFERENCE = "../_shared/android-global-rules.md"
 FIVE_STEP_FLOW = "确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付"
 DOCUMENTATION_SYNC_RULE = "职责对应的运行时来源、设计依据和测试"
-MAINTENANCE_GATE_COMMAND = "python3 -m unittest scripts.tests.test_skill_rule_ownership -q"
-ARTIFACT_EVAL_COMMAND = "python3 evals/runners/run_artifact_evals.py"
+MAINTENANCE_GATE_COMMAND = "python3 scripts/validate_maintenance.py"
+FAST_EVAL_COMMAND = "python3 evals/runners/run_evals.py --suite fast"
 DOCUMENTATION_SYNC_GUIDES = [
     REPOSITORY_ROOT / "references" / "open-source-design-rationale.md",
 ]
@@ -131,18 +131,20 @@ class SkillRuleOwnershipTests(unittest.TestCase):
         self.assertIn("验证未执行或失败时不得声明维护完成", agent_rules)
 
     def test_maintenance_gate_is_wired_and_documented(self) -> None:
-        """验证共享规则声明真实维护门禁，相关说明均提供同一命令。"""
+        """验证共享规则和设计依据都声明统一维护验证命令。"""
         self.assertIn(MAINTENANCE_GATE_COMMAND, read_text(SHARED_RULES))
         for guide in MAINTENANCE_GUIDES:
             with self.subTest(guide=guide.relative_to(REPOSITORY_ROOT).as_posix()):
                 self.assertIn(MAINTENANCE_GATE_COMMAND, read_text(guide))
 
-    def test_artifact_evals_are_wired_for_flow_maintenance(self) -> None:
-        """验证流程行为变更必须运行本地确定性 Evals。"""
-        self.assertIn(ARTIFACT_EVAL_COMMAND, read_text(SHARED_RULES))
-        for guide in MAINTENANCE_GUIDES:
-            with self.subTest(guide=guide.relative_to(REPOSITORY_ROOT).as_posix()):
-                self.assertIn(ARTIFACT_EVAL_COMMAND, read_text(guide))
+    def test_fast_evals_are_wired_through_maintenance_entrypoint(self) -> None:
+        """验证 fast eval 由统一维护入口接线，避免维护者记多条命令。"""
+        validator = read_text(REPOSITORY_ROOT / "scripts" / "validate_maintenance.py")
+        self.assertIn("scripts.tests.test_skill_rule_ownership", validator)
+        self.assertIn("evals/runners/run_evals.py", validator)
+        self.assertIn("--suite", validator)
+        self.assertIn("fast", validator)
+        self.assertIn(FAST_EVAL_COMMAND, "python3 evals/runners/run_evals.py --suite fast")
 
 
     def test_specialized_sections_stay_with_declared_owner(self) -> None:

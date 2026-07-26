@@ -257,6 +257,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 - 本 Skill 的专项结果必须输出 `mutation_testing` 摘要（`producer=pitest`），包含语言范围、目标类、变异算子、生成/杀死/存活变异数、按义务记录的 `killed_by_obligation`、存活动义 `survival_blocked`，以及报告文件路径和 SHA-256。
 - 有变异存活 = 断言没有真正约束行为（测试是假的，或需求增量后断言没更新）。通过结论要求 `generated_mutants > 0` 且 `survived = 0`；存活变异阻断完整通过，必须补强断言并重跑。
 - 优先复用项目已有 pitest 配置；没有时只对本次 diff 涉及的类以最小变异算子集运行，不自动升级 AGP/Gradle、不新增重型依赖。Kotlin 目标需要 pitest Kotlin 插件。
+- Kotlin 项目的编译器生成代码（`kotlin.jvm.internal.Intrinsics` 的 null-check、`checkParameterIsNotNull` 等）不是业务逻辑，业务测试无法也无需杀死这些变异。必须配置 `excludedClasses = ["kotlin.jvm.internal.Intrinsics"]` 排除，否则正常 Kotlin 交付永远无法满足 `survived=0`，使 FULL_PASS 形同虚设。排除的是编译器插桩，不排除任何业务代码。
 - 诚实边界：变异测试基于 JVM 字节码，覆盖 Unit Test 层业务逻辑（“AI 不更新断言”风险最高、命中最高的层），不覆盖 Robolectric 和 instrumented 测试。机器能证明“断言杀掉了变异”，仍读不懂测试语义正确性——后者由 route 阶段 `android-review-diff` 复核“映射声称改了测试 vs 测试文件真实 diff”。
 
 ## 架构测试层（ArchUnit，补 M16 六条不变量）

@@ -26,6 +26,7 @@ RUNTIME_RULE_FILES = [SHARED_RULES, *SKILL_FILES]
 SHARED_RULE_REFERENCE = "../_shared/android-global-rules.md"
 FIVE_STEP_FLOW = "确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付"
 DOCUMENTATION_SYNC_RULE = "职责对应的运行时来源、设计依据和测试"
+LEGACY_CONSTRAINT_PROTECTION_RULE = "旧约束保护清单"
 MAINTENANCE_GATE_COMMAND = "python3 scripts/validate_maintenance.py"
 MAINTENANCE_HOOK_INSTALL_COMMAND = "python3 scripts/install_maintenance_hook.py"
 FAST_EVAL_COMMAND = "python3 evals/runners/run_evals.py --suite fast"
@@ -124,6 +125,25 @@ class SkillRuleOwnershipTests(unittest.TestCase):
         for guide in DOCUMENTATION_SYNC_GUIDES:
             with self.subTest(guide=guide.relative_to(REPOSITORY_ROOT).as_posix()):
                 self.assertIn(DOCUMENTATION_SYNC_RULE, read_text(guide))
+
+    def test_rule_changes_preserve_existing_constraints(self) -> None:
+        """验证新增规则目标不会覆盖既有约束保护要求。"""
+        required_shared_rules = [
+            "本次新增目标",
+            LEGACY_CONSTRAINT_PROTECTION_RULE,
+            "不得因只关注新增目标而删弱",
+            "无法确认旧约束是否仍适用时先保留并说明",
+        ]
+        shared_rules = read_text(SHARED_RULES)
+        for rule in required_shared_rules:
+            self.assertIn(rule, shared_rules)
+
+        for guide in DOCUMENTATION_SYNC_GUIDES:
+            guide_text = read_text(guide)
+            with self.subTest(guide=guide.relative_to(REPOSITORY_ROOT).as_posix()):
+                self.assertIn("本次新增目标", guide_text)
+                self.assertIn(LEGACY_CONSTRAINT_PROTECTION_RULE, guide_text)
+                self.assertIn("不得为适配新增目标删弱旧约束", guide_text)
 
     def test_repository_ai_rules_require_project_validation(self) -> None:
         """验证仓库级 AI 约束要求执行子项目声明的验证命令。"""

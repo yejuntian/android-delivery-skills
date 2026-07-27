@@ -409,6 +409,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ## 维护规则
 
 - 每次修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接。
+- 修改规则时先分离"本次新增目标"和"旧约束保护清单"：新增目标只允许最小增量落地，旧有需求确认、旧业务保护、新鲜证据、影响半径、职责归属、Git 授权、设备降级和维护验证等约束默认保留；除非用户明确要求废弃并同步运行时来源、设计依据和测试，否则不得为适配新增目标删弱旧约束。
 - 本机首次维护本流程时先运行 `python3 scripts/install_maintenance_hook.py` 安装 pre-commit 自动验证；修改共享规则、任一 Skill、本文、流程契约、Oracle、路由、门禁或脚本行为后，必须从本仓库根目录运行 `python3 scripts/validate_maintenance.py`；该命令统一运行规则归属测试和 fast eval。这些维护门禁不接入 `delivery.py`，普通 Android 需求没有修改流程仓库时不运行。
 - 修改跨 Skill 原则时，同步 `_shared/android-global-rules.md` 和本文对应决策。
 - 修改完整流程时，同步 `android-implement-and-verify/SKILL.md`、导航文档和行为评测场景。

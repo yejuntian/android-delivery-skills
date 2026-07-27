@@ -9,6 +9,9 @@ checks:
       - "python3 scripts/validate_maintenance.py"
       - "统一运行规则归属测试和 fast eval"
       - "普通 Android 需求没有修改流程仓库时不运行"
+      - "本次新增目标"
+      - "旧约束保护清单"
+      - "不得因只关注新增目标而删弱"
   - name: pre-commit 安装脚本接线维护检查入口
     path: "scripts/install_maintenance_hook.py"
     contains:
@@ -36,3 +39,6 @@ checks:
       - "python3 scripts/validate_maintenance.py"
       - "这些维护门禁不接入 `delivery.py`"
       - "普通 Android 需求没有修改流程仓库时不运行"
+      - "本次新增目标"
+      - "旧约束保护清单"
+      - "不得为适配新增目标删弱旧约束"

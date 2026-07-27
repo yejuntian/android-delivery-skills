@@ -295,9 +295,48 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
 - 最终中文摘要必须把 `【修改已上线业务】` 和 `【保护已上线业务】` 义务置顶分组展示；任一必需保护项缺少新鲜证据时，沿用现有义务门禁阻断完整通过。
 
-所有必需项完成后，先执行 `delivery_gate.py snapshot` 获取当前确认修订、有效义务、Git 基线和最终代码摘要，按 `references/delivery-result.schema.json` 写入 `<requirement_dir>/test-results/delivery-result.json`，再执行：
+所有必需项完成后，获取当前确认修订、有效义务、Git 基线和最终代码摘要，生成 `<requirement_dir>/test-results/delivery-result.json`。**优先用 `assemble` 自动组装**（消除手填 sha/字段摩擦），只在 assemble 不适用时才手写：
 
 通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/A11y 和安全隐私条件 gate 由最新 route 快照与 Diff Reviewer 的 `confirmed_impacts` 并集要求，不能由最终报告自行决定是否出现。
+
+**方式一（推荐）：assemble 自动组装**。跑完测试/审查后，写一份 YAML 产物清单（只声明事实，不算指纹），再执行：
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
+  --config <配置> --manifest <产物清单.yaml>
+```
+
+产物清单只含业务事实，所有 `sha256`、`obligation_test_cases`、`receipt` 引用由脚本从执行收据/专项结果/junit 报告自动计算：
+
+```yaml
+conclusion: FULL_PASS          # 或 LOCAL_PASS_DEVICE_PENDING / INCOMPLETE
+evidence:                       # 自动证据：声明 id/gate/receipt 路径
+  - id: build
+    gate: android-build
+    receipt: .state/evidence/.../build/attempt-001/receipt.json
+  - id: unit
+    gate: android-test-and-fix
+    receipt: .state/evidence/.../unit/attempt-001/receipt.json
+  - id: ui-journey              # 可选 MANUAL 证据
+    kind: MANUAL
+    gate: android-ui-a11y
+    summary: 真机 Journey 结果…
+    executor: 驱动AI
+    environment: Pixel 8
+    performed_at: "2026-07-27T10:00:00+08:00"
+    artifacts: [{path: ui/01.png, kind: screenshot}]
+specialists:                     # 专项结果：声明 specialist JSON 路径
+  - path: .state/evidence/.../specialists/android-review-diff.json
+obligations:                     # 业务映射：哪个义务由哪些证据覆盖（agent 给，机器不算）
+  BDD-001/T1: [unit, ui-journey]
+  BDD-005/T1: [ui-journey]
+gates:                           # 可选：覆盖 gate 的 required/status/reason
+  android-ui-a11y: {required: false, reason: 无设计稿}
+```
+
+`obligations` 映射是业务判断（哪个测试覆盖哪个义务），必须由 agent 提供；其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）全部由 assemble 从当前 context 和产物自动填充。assemble 组装完会**立即 validate**，失败直接回显具体字段错误。junit 报告用内容签名（剥离可变 timestamp），重跑收据不再失效。
+
+**方式二（向后兼容）：手写后 validate**。若 assemble 不适用（如需特殊字段），按 `references/delivery-result.schema.json` 手写 `delivery-result.json`，再执行：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import argparse
 from datetime import datetime
 import json
 from pathlib import Path
@@ -1007,9 +1008,10 @@ def write_delivery_summary(
 def main(argv: list[str] | None = None) -> int:
     """输出当前摘要或校验最终报告；返回 0 仅表示最终通过结论真实有效。"""
     parser = ChineseArgumentParser(description="校验 Android 需求交付的最终证据")
-    parser.add_argument("command", choices=("snapshot", "validate"))
+    parser.add_argument("command", choices=("snapshot", "validate", "assemble"))
     parser.add_argument("--config", default=None, help="配置文件路径")
     parser.add_argument("--result", default=None, help="delivery-result.json 路径")
+    parser.add_argument("--manifest", default=None, help="assemble 模式: 产物清单 YAML 路径")
     args = parser.parse_args(argv)
 
     config_path = Path(args.config).expanduser().resolve() if args.config else (
@@ -1021,6 +1023,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "snapshot":
             print(json.dumps(context, ensure_ascii=False, indent=2))
             return 0
+        if args.command == "assemble":
+            return _cmd_assemble(args, config_path, context)
         result_path = Path(args.result).expanduser().resolve() if args.result else Path(context["result_path"])
         payload = load_result(result_path)
         errors = validate_delivery_result(payload, context)
@@ -1044,6 +1048,43 @@ def main(argv: list[str] | None = None) -> int:
         conclusion = user_label(payload["conclusion"], DELIVERY_CONCLUSION_LABELS)
         print(f"❌ 报告结论：{conclusion}", file=sys.stderr)
         return 2
+    print("✅ 最终交付证据与当前需求、Git 基线和代码摘要一致。")
+    return 0
+
+
+def _cmd_assemble(args: argparse.Namespace, config_path: Path, context: dict[str, Any]) -> int:
+    """assemble 子命令：从产物清单组装 delivery-result.json 并立即 validate。"""
+    from .assemble_result import AssembleError, assemble_delivery_result
+    if not args.manifest:
+        print("❌ assemble 模式必须提供 --manifest <产物清单 YAML>", file=sys.stderr)
+        return 2
+    result_path = Path(args.result).expanduser().resolve() if args.result else Path(context["result_path"])
+    try:
+        payload = assemble_delivery_result(args.manifest, context, result_path)
+    except AssembleError as exc:
+        print(f"❌ 组装失败: {localize_machine_terms(str(exc))}", file=sys.stderr)
+        return 2
+    print(f"📦 已组装: {result_path}")
+    # 立即 validate
+    errors = validate_delivery_result(payload, context)
+    if errors:
+        print("❌ 组装结果未通过门禁:", file=sys.stderr)
+        for error in errors:
+            print(f"- {localize_machine_terms(error)}", file=sys.stderr)
+        return 1
+    summary_path = result_path.with_name("delivery-summary.md")
+    try:
+        write_delivery_summary(summary_path, payload, context, result_path.name)
+    except DeliveryGateError as exc:
+        print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
+        return 1
+    print(f"📝 中文交付摘要: {summary_path}")
+    if payload["conclusion"] not in PASSING_CONCLUSIONS:
+        conclusion = user_label(payload["conclusion"], DELIVERY_CONCLUSION_LABELS)
+        print(f"❌ 报告结论：{conclusion}", file=sys.stderr)
+        return 2
+    print("✅ assemble + validate 通过")
+    return 0
     print("✅ 最终交付证据与当前需求、Git 基线和代码摘要一致。")
     return 0
 

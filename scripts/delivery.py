@@ -11,7 +11,7 @@
 1. `init`: 负责首次需求提炼，或对比最近确认修订汇总中途需求变化并制定 BDD。
 2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求起点建立。
 3. `confirm-requirement-update`: 负责确认原子义务修订，不修改 Git 基线。
-4. `confirm-plan`: 负责把用户确认的实施计划绑定当前需求修订，不修改业务文件。
+4. `confirm-plan`: 负责把用户确认的实施计划和影响半径绑定当前需求修订，不修改业务文件。
 5. `route`: 识别七类工程影响和第二轮条件能力候选，保存绑定当前代码的路由快照，
    再负责编码后的动态审查、测试与自修复闭环分发；泄漏和性能仍由 AI 语义终判。
 
@@ -285,7 +285,7 @@ def print_bdd_instruction():
     print("把复合预期结果拆成 BDD-001/T1 形式的原子验收项；每个功能写用户故事+AC+主流程/异常边界。")
     print("检测到变化时面向用户只展示：新增、修改、删除、未变化。决策只展示：已确认、待确认、已撤回、冲突。")
     print("首次确认前每次补充/修改/删除/纠正，先展示本轮变化摘要，再合并写回 requirement_file，重新 init 读取。")
-    print("用户纯确认（不带新变化）才执行 check-env 和 confirm-requirement-update。确认后不得编码，先写实施计划等待确认。")
+    print("用户纯确认（不带新变化）才执行 check-env 和 confirm-requirement-update。确认后不得编码，先写实施计划和影响半径等待确认。")
     print("建立 test-cases/traceability.md 追溯表，按 requirement-revision.schema.json 物化修订清单。")
     print("输出完毕必须停止，等待用户确认！")
 
@@ -317,7 +317,7 @@ def print_environment_rules():
     """打印通用编码约束，明确局部迭代与最终交付的执行边界。"""
     print("\n---")
     print("👉 AI 指令：实施计划确认完成。你已获准开始编码。")
-    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求修订清单、追溯表和实施计划；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
+    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求修订清单、追溯表、实施计划和影响半径；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
     print("【强制规约】:")
     print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
@@ -328,7 +328,7 @@ def print_environment_rules():
     print("  7. 真实任务：根据实际模块、variant 和项目已有任务选择命令，不得写死 assembleDebug 或 lintDebug。")
     print("  8. 追溯与证据：局部结果只证明本轮范围；最终代码必须重新执行全部必需命令，需求映射率为 100%。")
     print("  9. 闭环：失败时定位根因并重跑受影响项；同一根因连续 3 轮失败才暂停。")
-    print(" 10. 计划门禁：需求或实施计划变化后，旧计划确认自动失效；重新展示并确认前不得继续受影响编码。")
+    print(" 10. 计划门禁：需求、实施计划或影响半径变化后，旧计划确认自动失效；重新展示并确认前不得继续受影响编码。")
     print(" 11. 不得自动提交 Git；只有用户明确要求时才提交。")
 
 
@@ -1002,16 +1002,21 @@ def cmd_confirm_requirement_update(args):
     _sync_test_mapping_after_revision(paths, snapshot)
     _render_resume_guide(paths, manifest)
     plan_path = implementation_plan_path(paths.requirement_dir)
+    impact_path = getattr(paths, "impact_radius_path", None) or (
+        paths.requirement_dir / "test-cases" / "impact-radius.json"
+    )
     print("\n📋 进入计划阶段（只读，暂不编码）")
     print("┌─ 实施计划 ─────────────────────────────────────────────┐")
     print(f"│ 写入: {plan_path}")
+    print(f"│ 影响半径: {impact_path}")
     print("│ 必含: 实现范围 / 已上线业务影响 / 预计修改文件")
     print("│       / 测试方案 / 明确不修改范围")
     print("└─ 用户确认后执行 delivery.py confirm-plan ──────────────┘")
     print("\n👉 下一步")
     print("  1. 把实施计划写入上述 md（填 android-implement-and-verify/templates/plan.md 骨架）")
-    print("  2. 展示简短摘要给用户，停止等待确认")
-    print("  3. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
+    print("  2. 把影响半径写入上述 JSON（填 android-implement-and-verify/templates/impact-radius.json 骨架）")
+    print("  3. 展示简短摘要给用户，停止等待确认")
+    print("  4. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
     mapping_path = getattr(paths, "test_mapping_path", None)
     if mapping_path is not None:
         print(
@@ -1023,7 +1028,7 @@ def cmd_confirm_requirement_update(args):
         requirement_path,
         revision_file,
         (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
-        action="拆分测试并生成实施计划",
+        action="拆分测试并生成实施计划和影响半径",
     )
     return 0
 
@@ -1042,11 +1047,12 @@ def cmd_confirm_plan(args):
     if Path(str(snapshot["requirement_path"])).resolve() != requirement_path.resolve():
         raise DeliveryError("当前 requirement_file 与需求修订记录路径不一致")
 
-    _, receipt_path = confirm_implementation_plan(snapshot, content, paths.requirement_dir)
+    receipt, receipt_path = confirm_implementation_plan(snapshot, content, paths.requirement_dir)
     plan_path = implementation_plan_path(paths.requirement_dir)
     print(f"✅ 实施计划已确认: {plan_path}")
+    print(f"✅ 影响半径已确认: {receipt['impact_radius_path']}")
     print(f"✅ 计划确认收据: {receipt_path}")
-    print("✅ 收据已绑定当前需求修订、需求摘要和计划摘要；任一内容变化后自动失效。")
+    print("✅ 收据已绑定当前需求修订、需求摘要、计划摘要和影响半径；任一内容变化后自动失效。")
     print_confirmed_fact_sources(
         requirement_path.resolve(),
         (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),
@@ -1122,6 +1128,7 @@ def cmd_route(args):
         resolved_config,
         requirement_sha256,
         implementation_plan_sha256=plan_context["implementation_plan_sha256"],
+        impact_radius_sha256=plan_context["impact_radius_sha256"],
     )
     print_confirmed_fact_sources(
         paths.requirement_path.resolve(),

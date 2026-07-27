@@ -4,7 +4,7 @@
 用途：验证命令级 Evals 可以运行真实脚本/单测门禁，补足 artifact 和 behavior eval 的盲区。
 
 核心流程：执行 run_command_evals.py 的 JSON 输出，要求命令场景全部通过，并确认覆盖了计划确认、
-STALE 测试映射、零测试假绿和条件 gate 并集四类硬门禁。
+STALE 测试映射、零测试假绿、条件 gate 并集和影响半径等硬门禁。
 测试只运行本仓库最小 unittest 命令，不接触真实 Android 项目、设备、网络或模型服务。
 
 职责边界：只验证 command eval runner 和场景接线，不重新实现具体门禁判断。
@@ -53,6 +53,7 @@ class CommandEvalTests(unittest.TestCase):
                 "command-004-conditional-gate-union",
                 "command-005-fresh-evidence-required",
                 "command-006-unverified-is-not-pass",
+                "command-007-impact-radius-out-of-scope-blocked",
             },
         )
 

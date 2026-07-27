@@ -35,7 +35,13 @@ from .execution_evidence import (  # noqa: E402
     sha256_file,
     validate_execution_receipt,
 )
-from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
+from .git_changes import GitInspectionError, collect_changed_entries, current_delivery_snapshot  # noqa: E402
+from .impact_radius import (  # noqa: E402
+    ImpactRadiusError,
+    changed_files_outside_radius,
+    impact_radius_digest,
+    load_impact_radius,
+)
 from .implementation_plan import (  # noqa: E402
     ImplementationPlanError,
     implementation_plan_path,
@@ -145,6 +151,15 @@ def requirement_file_digest(path: Path) -> str:
         raise DeliveryGateError(str(exc)) from exc
 
 
+def _path_excluded(path: str, excluded: set[str]) -> bool:
+    """判断仓库相对路径是否属于交付文档或最终报告等排除范围。"""
+    normalized = path.replace("\\", "/")
+    return any(
+        normalized == prefix or normalized.startswith(prefix.rstrip("/") + "/")
+        for prefix in excluded
+    )
+
+
 def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
     """返回最终报告必须绑定的确认修订、有效义务、基线和当前代码摘要。"""
     paths = resolve_config_paths(config, config_path)
@@ -189,7 +204,18 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         config_path,
         requirement_sha256,
         implementation_plan_sha256=plan_context["implementation_plan_sha256"],
+        impact_radius_sha256=plan_context["impact_radius_sha256"],
     )
+    try:
+        radius_payload = load_impact_radius(
+            paths.impact_radius_path,
+            requirement_snapshot,
+            requirement_content,
+        )
+    except ImpactRadiusError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    if impact_radius_digest(radius_payload) != plan_context["impact_radius_sha256"]:
+        raise DeliveryGateError("影响半径已变化，请重新展示实施计划并执行 delivery.py confirm-plan")
 
     expected_obligations = {
         item["id"]: {
@@ -226,6 +252,18 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         )
     except GitInspectionError as exc:
         raise DeliveryGateError(str(exc)) from exc
+    try:
+        all_changes, _ = collect_changed_entries(
+            paths.project_path,
+            baseline_path_for_config(config_path),
+        )
+    except GitInspectionError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    changed_files = [
+        change.path.replace("\\", "/")
+        for change in all_changes
+        if not _path_excluded(change.path.replace("\\", "/"), excluded)
+    ]
     context = {
         **snapshot,
         "project_path": str(paths.project_path.resolve()),
@@ -241,6 +279,10 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
             (paths.requirement_dir / "test-cases" / "traceability.md").resolve()
         ),
         "implementation_plan_path": str(implementation_plan_path(paths.requirement_dir)),
+        "impact_radius_path": str(paths.impact_radius_path),
+        "impact_radius_sha256": plan_context["impact_radius_sha256"],
+        "impact_radius": radius_payload,
+        "changed_files": sorted(set(changed_files)),
     }
     for field in (
         "requirement_id",
@@ -248,6 +290,7 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "requirement_file_sha256",
         "requirement_inputs_sha256",
         "implementation_plan_sha256",
+        "impact_radius_sha256",
         "plan_confirmation_receipt_sha256",
         "baseline_id",
         "snapshot_sha256",
@@ -394,6 +437,19 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             errors.append(f"最终报告漏掉当前确认义务: {', '.join(missing)}")
         if unexpected:
             errors.append(f"最终报告包含非当前义务: {', '.join(unexpected)}")
+
+    radius_payload = context.get("impact_radius")
+    changed_files = context.get("changed_files", [])
+    if isinstance(radius_payload, dict) and isinstance(changed_files, list):
+        outside = changed_files_outside_radius(
+            [str(path) for path in changed_files],
+            radius_payload,
+        )
+        if outside:
+            errors.append(
+                "最终 diff 超出已确认影响半径，请更新需求/实施计划/impact-radius 并重新 confirm-plan: "
+                + ", ".join(outside)
+            )
 
     business_ids = {
         identifier

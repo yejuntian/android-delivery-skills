@@ -83,11 +83,14 @@ from ..implementation_plan import (  # noqa: E402
     implementation_plan_path,
     plan_confirmation_receipt_path,
 )
+from ..impact_radius import impact_radius_path  # noqa: E402
 from ..requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     apply_requirement_revision,
     load_requirement_snapshot,
     obligation_digest,
+    requirement_digest,
+    requirement_summary_digest,
     render_requirement_diff,
     write_requirement_snapshot,
 )
@@ -254,7 +257,7 @@ class UserInstructionTests(unittest.TestCase):
         self.assertIn("合并写回 requirement_file", text)
         self.assertIn("重新 init 读取", text)
         self.assertIn("纯确认", text)
-        self.assertIn("先写实施计划等待确认", text)
+        self.assertIn("先写实施计划和影响半径等待确认", text)
         self.assertIn("不得编码", text)
 
     def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
@@ -323,7 +326,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("局部迭代", text)
         self.assertIn("不自动 route 或全量审查", text)
-        self.assertIn("重新读取已确认的 requirement_file、需求修订清单、追溯表和实施计划", text)
+        self.assertIn("重新读取已确认的 requirement_file、需求修订清单、追溯表、实施计划和影响半径", text)
         self.assertIn("旧聊天理解、旧总结或旧方案不得作为执行依据", text)
         self.assertIn("最终交付", text)
         self.assertIn("最终检查、完整交付或准备提交", text)
@@ -913,7 +916,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("需求文件:", text)
         self.assertIn(str(self.requirement), text)
         self.assertIn("本轮变化摘要: 新增 1 项", text)
-        self.assertIn("拆分测试并生成实施计划前必须重新读取", text)
+        self.assertIn("拆分测试并生成实施计划和影响半径前必须重新读取", text)
         self.assertIn("AI 执行前必须读取（只展示路径，不展示正文）", text)
         self.assertIn("需求修订清单:", text)
         self.assertIn("requirement-revision.json", text)
@@ -944,7 +947,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         manifest = self._manifest(0, [
             self._change("BDD-001/T1", "ADDED", text="显示登录错误", required=True),
         ])
-        apply_requirement_revision(
+        applied_snapshot, _ = apply_requirement_revision(
             self.snapshot,
             self.requirement,
             "登录失败显示错误",
@@ -964,6 +967,29 @@ class RequirementSnapshotTests(unittest.TestCase):
 ## 明确不修改范围
 - 不修改接口。
 """,
+            encoding="utf-8",
+        )
+        impact_radius_path(self.requirement_dir).parent.mkdir(parents=True, exist_ok=True)
+        impact_radius_path(self.requirement_dir).write_text(
+            json.dumps({
+                "version": 1,
+                "generated_at": "2026-07-27T00:00:00+00:00",
+                "requirement_id": applied_snapshot["requirement_id"],
+                "requirement_revision": applied_snapshot["revision"],
+                "requirement_file_sha256": requirement_digest("登录失败显示错误"),
+                "requirement_summary_sha256": requirement_summary_digest(applied_snapshot),
+                "allowed_files": ["LoginViewModel.kt"],
+                "allowed_globs": [],
+                "impacts": [{
+                    "id": "BDD-001/T1",
+                    "change_type": "ADDED",
+                    "reason": "只修改登录错误提示。",
+                    "risk_level": "L1",
+                    "expected_files": ["LoginViewModel.kt"],
+                    "expected_tests": ["LoginViewModelTest#failure"],
+                    "affected_modules": [":app"],
+                }],
+            }, ensure_ascii=False),
             encoding="utf-8",
         )
         paths = SimpleNamespace(
@@ -987,6 +1013,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertTrue(plan_confirmation_receipt_path(self.requirement_dir).is_file())
         text = output.getvalue()
         self.assertIn("实施计划已确认", text)
+        self.assertIn("影响半径已确认", text)
         self.assertIn("你已获准开始编码", text)
         self.assertIn("已确认实施计划", text)
 
@@ -1593,6 +1620,7 @@ class RouteCommandTests(unittest.TestCase):
                     "scripts.delivery.validate_plan_confirmation",
                     return_value={
                         "implementation_plan_sha256": "d" * 64,
+                        "impact_radius_sha256": "f" * 64,
                         "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                 ),
@@ -1629,6 +1657,7 @@ class RouteCommandTests(unittest.TestCase):
         route_payload = json.loads(route_path.read_text(encoding="utf-8"))
         self.assertNotIn("impacts", route_payload)
         self.assertEqual("d" * 64, route_payload["implementation_plan_sha256"])
+        self.assertEqual("f" * 64, route_payload["impact_radius_sha256"])
         route_gates = {
             item["id"]: item for item in route_payload["conditional_gates"]
         }

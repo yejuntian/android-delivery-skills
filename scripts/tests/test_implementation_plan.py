@@ -10,11 +10,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import stat
 import tempfile
 import unittest
 
+from ..impact_radius import impact_radius_path
 from ..implementation_plan import (
     ImplementationPlanError,
     confirm_implementation_plan,
@@ -22,7 +24,7 @@ from ..implementation_plan import (
     plan_confirmation_receipt_path,
     validate_plan_confirmation,
 )
-from ..requirement_snapshot import obligation_digest, requirement_digest
+from ..requirement_snapshot import obligation_digest, requirement_digest, requirement_summary_digest
 
 
 def valid_plan(extra: str = "") -> str:
@@ -61,7 +63,51 @@ def confirmed_snapshot(requirement: str) -> dict:
             "required": True,
             "sha256": obligation_digest("BDD-001/T1", text, True),
         }],
+        "history": [{
+            "revision": 1,
+            "changes": [{
+                "id": "BDD-001/T1",
+                "change_type": "ADDED",
+                "decision": "CONFIRMED",
+                "text": text,
+                "required": True,
+            }],
+        }],
     }
+
+
+def write_valid_impact_radius(root: Path, snapshot: dict, requirement: str) -> None:
+    """生成与当前需求修订一致的最小影响半径。"""
+    target = impact_radius_path(root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps({
+            "version": 1,
+            "generated_at": "2026-07-27T00:00:00+00:00",
+            "requirement_id": snapshot["requirement_id"],
+            "requirement_revision": snapshot["revision"],
+            "requirement_file_sha256": requirement_digest(requirement),
+            "requirement_summary_sha256": requirement_summary_digest(snapshot),
+            "allowed_files": [
+                "app/src/main/java/LoginViewModel.kt",
+                "app/src/test/java/LoginViewModelTest.kt",
+            ],
+            "allowed_globs": [],
+            "impacts": [{
+                "id": "BDD-001/T1",
+                "change_type": "ADDED",
+                "reason": "登录失败提示只影响 ViewModel 和对应单测。",
+                "risk_level": "L1",
+                "expected_files": [
+                    "app/src/main/java/LoginViewModel.kt",
+                    "app/src/test/java/LoginViewModelTest.kt",
+                ],
+                "expected_tests": ["LoginViewModelTest#failureMessage"],
+                "affected_modules": [":app"],
+            }],
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 class ImplementationPlanTests(unittest.TestCase):
@@ -75,6 +121,7 @@ class ImplementationPlanTests(unittest.TestCase):
         self.requirement = "登录失败时显示错误"
         self.snapshot = confirmed_snapshot(self.requirement)
         implementation_plan_path(self.root).write_text(valid_plan(), encoding="utf-8")
+        write_valid_impact_radius(self.root, self.snapshot, self.requirement)
 
     def test_confirmation_is_idempotent_and_validates_current_context(self) -> None:
         """验证重复确认不改时间，且收据绑定需求摘要与计划摘要。"""
@@ -90,7 +137,9 @@ class ImplementationPlanTests(unittest.TestCase):
         self.assertEqual(receipt_path, second_path)
         self.assertEqual(0o600, stat.S_IMODE(receipt_path.stat().st_mode))
         self.assertEqual(64, len(first["requirement_summary_sha256"]))
+        self.assertEqual(64, len(first["impact_radius_sha256"]))
         self.assertEqual(first["implementation_plan_sha256"], context["implementation_plan_sha256"])
+        self.assertEqual(first["impact_radius_sha256"], context["impact_radius_sha256"])
         self.assertEqual(
             hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
             context["plan_confirmation_receipt_sha256"],
@@ -119,13 +168,24 @@ class ImplementationPlanTests(unittest.TestCase):
         changed_requirement = self.requirement + "，允许重试"
         changed_snapshot = confirmed_snapshot(changed_requirement)
         changed_snapshot["revision"] = 2
-        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效"):
+        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效|影响半径"):
             validate_plan_confirmation(changed_snapshot, changed_requirement, self.root)
 
         implementation_plan_path(self.root).write_text(
             valid_plan("并记录重试入口。"),
             encoding="utf-8",
         )
+        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效"):
+            validate_plan_confirmation(self.snapshot, self.requirement, self.root)
+
+    def test_impact_radius_change_invalidates_old_confirmation(self) -> None:
+        """验证影响半径变化后也必须重新确认计划。"""
+        confirm_implementation_plan(self.snapshot, self.requirement, self.root)
+        target = impact_radius_path(self.root)
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        payload["allowed_files"].append("app/src/main/java/Unexpected.kt")
+        target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
         with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效"):
             validate_plan_confirmation(self.snapshot, self.requirement, self.root)
 

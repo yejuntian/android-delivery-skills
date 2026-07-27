@@ -1,0 +1,39 @@
+id: 011-impact-radius-blocks-out-of-scope-diff
+title: 影响半径阻断最终越界 diff
+rubric: artifact-integrity-v1
+checks:
+  - name: 总入口要求计划阶段写入影响半径并确认
+    path: "android-implement-and-verify/SKILL.md"
+    contains:
+      - "<requirement_dir>/test-cases/impact-radius.json"
+      - "影响半径必须登记本轮 ADDED/CHANGED/REMOVED/SUPERSEDED"
+      - "最终 diff 中出现不在已确认 `impact-radius.json` 的代码文件时"
+  - name: 影响半径脚本绑定需求摘要并识别越界文件
+    path: "scripts/impact_radius.py"
+    contains:
+      - "IMPACT_RADIUS_RELATIVE_PATH"
+      - "requirement_summary_sha256"
+      - "changed_files_outside_radius"
+      - "影响半径漏掉本轮语义变化"
+  - name: 计划确认收据绑定影响半径摘要
+    paths:
+      - "scripts/implementation_plan.py"
+      - "android-implement-and-verify/references/implementation-plan-receipt.schema.json"
+    contains:
+      - "load_impact_radius"
+      - "impact_radius_sha256"
+      - "impact_radius_path"
+  - name: 最终门禁阻断影响半径外 diff
+    path: "scripts/delivery_gate.py"
+    contains:
+      - "changed_files_outside_radius"
+      - "最终 diff 超出已确认影响半径"
+      - "impact_radius_sha256"
+  - name: route 输入摘要包含影响半径避免复用旧 route
+    paths:
+      - "scripts/requirement_inputs.py"
+      - "scripts/route_impact.py"
+      - "android-implement-and-verify/references/route-impact.schema.json"
+    contains:
+      - "impact_radius_sha256"
+      - '"const": 4'

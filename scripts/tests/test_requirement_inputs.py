@@ -110,6 +110,24 @@ class RequirementInputsTests(unittest.TestCase):
         )
         self.assertNotEqual(first, second)
 
+    def test_confirmed_impact_radius_change_invalidates_input_digest(self) -> None:
+        """验证影响半径变化会让旧 route、测试收据和专项证据失效。"""
+        first = requirement_inputs_digest(
+            self.config,
+            self.config_path,
+            "a" * 64,
+            implementation_plan_sha256="b" * 64,
+            impact_radius_sha256="c" * 64,
+        )
+        second = requirement_inputs_digest(
+            self.config,
+            self.config_path,
+            "a" * 64,
+            implementation_plan_sha256="b" * 64,
+            impact_radius_sha256="d" * 64,
+        )
+        self.assertNotEqual(first, second)
+
 
 if __name__ == "__main__":
     unittest.main()

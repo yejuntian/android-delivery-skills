@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """脚本名称：implementation_plan.py
 
-用途：校验实施计划并生成绑定当前已确认需求的机器收据。
+用途：校验实施计划与影响半径，并生成绑定当前已确认需求的机器收据。
 
 核心流程：读取固定的 ``实施计划.md``，检查用户需要查看的五类内容；用户明确
-确认后保存需求修订、需求摘要和计划摘要。后续编码入口和最终门禁重新校验收据，
-需求或计划变化时旧收据自动失效。
+确认后保存需求修订、需求摘要、计划摘要和影响半径摘要。后续编码入口和最终门禁
+重新校验收据，需求、计划或影响半径变化时旧收据自动失效。
 
 职责边界：不生成计划、不判断业务、不修改需求或 Android 代码，也不操作 Git。
 """
@@ -19,7 +19,13 @@ from pathlib import Path
 import re
 from typing import Any
 
-from .requirement_snapshot import requirement_digest
+from .impact_radius import (
+    ImpactRadiusError,
+    impact_radius_digest,
+    impact_radius_path,
+    load_impact_radius,
+)
+from .requirement_snapshot import requirement_digest, requirement_summary_digest
 
 
 PLAN_FILE_NAME = "实施计划.md"
@@ -90,30 +96,6 @@ def read_implementation_plan(path: str | Path) -> str:
     return content.strip()
 
 
-def requirement_summary_digest(snapshot: dict[str, Any]) -> str:
-    """摘要当前有效原子义务，防止只绑定修订号却遗漏需求内容变化。"""
-    summary = {
-        "requirement_id": snapshot.get("requirement_id"),
-        "requirement_revision": snapshot.get("revision"),
-        "obligations": [
-            {
-                "id": item.get("id"),
-                "text": item.get("text"),
-                "required": item.get("required"),
-                "sha256": item.get("sha256"),
-            }
-            for item in snapshot.get("obligations", [])
-        ],
-    }
-    encoded = json.dumps(
-        summary,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _validate_confirmed_requirement(
     snapshot: dict[str, Any],
     requirement_content: str,
@@ -133,11 +115,17 @@ def _validate_confirmed_requirement(
 def _receipt_context(
     snapshot: dict[str, Any],
     requirement_content: str,
+    requirement_dir: str | Path,
     plan_path: Path,
     plan_content: str,
 ) -> dict[str, Any]:
     """构造确认和复核共用的最小上下文，避免两条路径计算规则漂移。"""
     _validate_confirmed_requirement(snapshot, requirement_content)
+    radius_path = impact_radius_path(requirement_dir)
+    try:
+        radius_payload = load_impact_radius(radius_path, snapshot, requirement_content)
+    except ImpactRadiusError as exc:
+        raise ImplementationPlanError(str(exc)) from exc
     return {
         "requirement_id": snapshot["requirement_id"],
         "requirement_revision": snapshot["revision"],
@@ -145,6 +133,8 @@ def _receipt_context(
         "requirement_summary_sha256": requirement_summary_digest(snapshot),
         "implementation_plan_path": str(plan_path.resolve()),
         "implementation_plan_sha256": implementation_plan_digest(plan_content),
+        "impact_radius_path": str(radius_path),
+        "impact_radius_sha256": impact_radius_digest(radius_payload),
     }
 
 
@@ -167,7 +157,7 @@ def confirm_implementation_plan(
     """在用户明确确认计划后生成幂等收据，不修改任何业务文件。"""
     plan_path = implementation_plan_path(requirement_dir)
     plan_content = read_implementation_plan(plan_path)
-    context = _receipt_context(snapshot, requirement_content, plan_path, plan_content)
+    context = _receipt_context(snapshot, requirement_content, requirement_dir, plan_path, plan_content)
     receipt_path = plan_confirmation_receipt_path(requirement_dir)
 
     if receipt_path.is_file():
@@ -203,7 +193,7 @@ def validate_plan_confirmation(
     """复核当前需求与计划仍匹配收据，并返回最终路由需要绑定的摘要。"""
     plan_path = implementation_plan_path(requirement_dir)
     plan_content = read_implementation_plan(plan_path)
-    expected = _receipt_context(snapshot, requirement_content, plan_path, plan_content)
+    expected = _receipt_context(snapshot, requirement_content, requirement_dir, plan_path, plan_content)
     receipt_path = plan_confirmation_receipt_path(requirement_dir)
     if not receipt_path.is_file():
         raise ImplementationPlanError(
@@ -223,7 +213,7 @@ def validate_plan_confirmation(
     for key, value in expected.items():
         if payload.get(key) != value:
             raise ImplementationPlanError(
-                "需求或实施计划已变化，旧计划确认失效；"
+                "需求或实施计划已变化，旧计划确认失效；影响半径变化同样需要重新确认；"
                 "请重新展示 实施计划.md 并执行 delivery.py confirm-plan"
             )
     try:
@@ -232,5 +222,6 @@ def validate_plan_confirmation(
         raise ImplementationPlanError(f"计划确认收据无法读取: {receipt_path}: {exc}") from exc
     return {
         "implementation_plan_sha256": expected["implementation_plan_sha256"],
+        "impact_radius_sha256": expected["impact_radius_sha256"],
         "plan_confirmation_receipt_sha256": receipt_sha256,
     }

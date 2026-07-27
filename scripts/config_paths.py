@@ -34,6 +34,11 @@ class ConfigPaths:
         return (self.requirement_dir / "test-cases" / "test-mapping.json").resolve()
 
     @property
+    def impact_radius_path(self) -> Path:
+        """返回当前需求影响半径路径，供计划确认和最终 diff 越界门禁共用。"""
+        return (self.requirement_dir / "test-cases" / "impact-radius.json").resolve()
+
+    @property
     def plan_dir(self) -> Path:
         """返回计划补充/影响预览目录，AI 手写产物，轮换时自动创建。"""
         return (self.requirement_dir / "plan").resolve()

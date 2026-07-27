@@ -52,6 +52,30 @@ def obligation_digest(identifier: str, text: str, required: bool) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def requirement_summary_digest(snapshot: dict[str, Any]) -> str:
+    """摘要当前有效原子义务，供计划和影响半径共同绑定需求语义。"""
+    summary = {
+        "requirement_id": snapshot.get("requirement_id"),
+        "requirement_revision": snapshot.get("revision"),
+        "obligations": [
+            {
+                "id": item.get("id"),
+                "text": item.get("text"),
+                "required": item.get("required"),
+                "sha256": item.get("sha256"),
+            }
+            for item in snapshot.get("obligations", [])
+        ],
+    }
+    encoded = json.dumps(
+        summary,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
     """代理到公共原子写；统一行为与 0600 权限。"""
     from .atomic_write import write_json_atomic

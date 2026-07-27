@@ -12,7 +12,9 @@
     "requirement_file_sha256",
     "requirement_summary_sha256",
     "implementation_plan_path",
-    "implementation_plan_sha256"
+    "implementation_plan_sha256",
+    "impact_radius_path",
+    "impact_radius_sha256"
   ],
   "properties": {
     "version": { "const": 1 },
@@ -22,6 +24,8 @@
     "requirement_file_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "requirement_summary_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "implementation_plan_path": { "type": "string", "minLength": 1 },
-    "implementation_plan_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    "implementation_plan_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "impact_radius_path": { "type": "string", "minLength": 1 },
+    "impact_radius_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
   }
 }

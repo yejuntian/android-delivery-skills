@@ -23,6 +23,7 @@ KNOWN_ORACLES = frozenset(
         "maintenance_evals_are_wired",
         "flow_gates_hold",
         "fresh_evidence_required",
+        "impact_radius_blocks_out_of_scope_diff",
         "unverified_is_not_pass",
     }
 )

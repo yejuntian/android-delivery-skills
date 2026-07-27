@@ -179,6 +179,26 @@ contracts:
       command:
         - command-006-unverified-is-not-pass
 
+  - id: impact-radius-blocks-out-of-scope-diff
+    status: active
+    title: 最终 diff 超出已确认影响半径必须阻断通过
+    kind: scope_gate
+    oracle: impact_radius_blocks_out_of_scope_diff
+    owner_files:
+      - android-implement-and-verify/SKILL.md
+      - scripts/impact_radius.py
+      - scripts/implementation_plan.py
+      - scripts/delivery_gate.py
+    applies_to:
+      - code_mutation
+      - route
+      - final_delivery
+    covered_by:
+      artifact:
+        - 011-impact-radius-blocks-out-of-scope-diff
+      command:
+        - command-007-impact-radius-out-of-scope-blocked
+
   - id: maintenance-evals-are-wired
     status: active
     title: 流程维护必须能运行本地 eval 回归

@@ -34,8 +34,10 @@ from ..delivery_gate import (  # noqa: E402
 )
 from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, junit_content_signature, sha256_file  # noqa: E402
 from ..git_changes import current_delivery_snapshot, write_baseline  # noqa: E402
+from ..impact_radius import impact_radius_digest, impact_radius_path  # noqa: E402
 from ..requirement_snapshot import (  # noqa: E402
     apply_requirement_revision,
+    requirement_summary_digest,
     write_requirement_snapshot,
 )
 from ..requirement_inputs import requirement_inputs_digest  # noqa: E402
@@ -124,6 +126,17 @@ class DeliveryGateTests(unittest.TestCase):
             "expected_conditional_gates": [],
             "result_path": "/tmp/result.json",
             "traceability_path": str(self.traceability),
+            "changed_files": [
+                "app/src/main/java/sample/Feature.kt",
+                "app/src/test/java/sample/FeatureTest.kt",
+            ],
+            "impact_radius": {
+                "allowed_files": [
+                    "app/src/main/java/sample/Feature.kt",
+                    "app/src/test/java/sample/FeatureTest.kt",
+                ],
+                "allowed_globs": [],
+            },
             "test_mapping": {
                 "BDD-001/T1": {
                     "obligation_id": "BDD-001/T1",
@@ -423,6 +436,14 @@ class DeliveryGateTests(unittest.TestCase):
     def test_accepts_complete_fresh_result(self) -> None:
         """验证全部必需义务和门禁引用当前代码证据时允许通过。"""
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_out_of_scope_diff_blocks_passing_result(self) -> None:
+        """验证最终 diff 超出影响半径时不能声明通过。"""
+        self.context["changed_files"].append("app/src/main/java/sample/Unexpected.kt")
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("超出已确认影响半径" in error for error in errors))
 
     def test_rejects_legacy_self_reported_result_version(self) -> None:
         """验证旧 version 3 报告不能绕过 gate 专属证据和人工收据门禁。"""
@@ -991,11 +1012,35 @@ class DeliveryGateTests(unittest.TestCase):
                 "requirement_dir": str(requirement_dir),
                 "requirement_file": str(requirement),
             }
+            radius_payload = {
+                "version": 1,
+                "generated_at": "2026-07-27T00:00:00+00:00",
+                "requirement_id": confirmed["requirement_id"],
+                "requirement_revision": 1,
+                "requirement_file_sha256": confirmed["sha256"],
+                "requirement_summary_sha256": requirement_summary_digest(confirmed),
+                "allowed_files": ["App.kt"],
+                "allowed_globs": [],
+                "impacts": [{
+                    "id": "BDD-001/T1",
+                    "change_type": "ADDED",
+                    "reason": "App 行为修改只影响 App.kt。",
+                    "risk_level": "L1",
+                    "expected_files": ["App.kt"],
+                    "expected_tests": ["AppTest#changed"],
+                    "affected_modules": [":app"],
+                }],
+            }
+            radius_file = impact_radius_path(requirement_dir)
+            radius_file.parent.mkdir(parents=True, exist_ok=True)
+            radius_file.write_text(json.dumps(radius_payload, ensure_ascii=False), encoding="utf-8")
+            radius_sha = impact_radius_digest(radius_payload)
             inputs_sha256 = requirement_inputs_digest(
                 config,
                 root / "local.yaml",
                 confirmed["sha256"],
                 implementation_plan_sha256="d" * 64,
+                impact_radius_sha256=radius_sha,
             )
             git_snapshot = current_delivery_snapshot(repo, baseline)
             route_path = root / "route-impact.json"
@@ -1009,6 +1054,7 @@ class DeliveryGateTests(unittest.TestCase):
                         "requirement_file_sha256": confirmed["sha256"],
                         "requirement_inputs_sha256": inputs_sha256,
                         "implementation_plan_sha256": "d" * 64,
+                        "impact_radius_sha256": radius_sha,
                         "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                     {category: [] for category in (
@@ -1032,6 +1078,7 @@ class DeliveryGateTests(unittest.TestCase):
                     "scripts.delivery_gate.validate_plan_confirmation",
                     return_value={
                         "implementation_plan_sha256": "d" * 64,
+                        "impact_radius_sha256": radius_sha,
                         "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                 ),
@@ -1047,6 +1094,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(64, len(context["requirement_file_sha256"]))
         self.assertEqual(64, len(context["requirement_inputs_sha256"]))
         self.assertEqual("d" * 64, context["implementation_plan_sha256"])
+        self.assertEqual(radius_sha, context["impact_radius_sha256"])
         self.assertEqual(confirmed["requirement_id"], context["requirement_id"])
         self.assertEqual(1, context["requirement_revision"])
         self.assertIn("BDD-001/T1", context["expected_obligations"])

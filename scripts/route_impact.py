@@ -4,7 +4,7 @@
 用途：保存和校验最近一次 ``delivery.py route`` 产生的最小条件门禁快照。
 
 核心流程：只保存四类条件门禁及直接依据文件，并绑定当前需求修订、实施计划、
-UI/API 输入、Git 基线和代码摘要；七类完整影响继续用于当次终端路由，不重复持久化。
+影响半径、UI/API 输入、Git 基线和代码摘要；七类完整影响继续用于当次终端路由，不重复持久化。
 
 职责边界：不读取 Git、不判断业务是否真的适用、不执行 Skill 或测试，也不修改项目。
 """
@@ -56,13 +56,14 @@ def build_route_impact(
             "basis_files": basis_files,
         })
     return {
-        "version": 3,
+        "version": 4,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "requirement_id": context["requirement_id"],
         "requirement_revision": context["requirement_revision"],
         "requirement_file_sha256": context["requirement_file_sha256"],
         "requirement_inputs_sha256": context["requirement_inputs_sha256"],
         "implementation_plan_sha256": context["implementation_plan_sha256"],
+        "impact_radius_sha256": context["impact_radius_sha256"],
         "plan_confirmation_receipt_sha256": context["plan_confirmation_receipt_sha256"],
         "baseline_id": context["baseline_id"],
         "snapshot_sha256": context["snapshot_sha256"],
@@ -75,13 +76,14 @@ def validate_route_impact(payload: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["路由影响快照根节点必须是 object"]
-    if payload.get("version") != 3:
-        errors.append("路由影响快照 version 必须为 3")
+    if payload.get("version") != 4:
+        errors.append("路由影响快照 version 必须为 4")
     for field in (
         "requirement_id",
         "requirement_file_sha256",
         "requirement_inputs_sha256",
         "implementation_plan_sha256",
+        "impact_radius_sha256",
         "plan_confirmation_receipt_sha256",
         "baseline_id",
         "snapshot_sha256",
@@ -93,6 +95,7 @@ def validate_route_impact(payload: Any) -> list[str]:
         "requirement_file_sha256",
         "requirement_inputs_sha256",
         "implementation_plan_sha256",
+        "impact_radius_sha256",
         "plan_confirmation_receipt_sha256",
         "snapshot_sha256",
     ):

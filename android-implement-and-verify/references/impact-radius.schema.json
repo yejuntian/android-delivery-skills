@@ -12,7 +12,7 @@
     "requirement_file_sha256",
     "requirement_summary_sha256",
     "allowed_files",
-    "allowed_globs",
+    "allowed_dirs",
     "impacts"
   ],
   "properties": {
@@ -24,12 +24,14 @@
     "requirement_summary_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "allowed_files": {
       "type": "array",
+      "description": "精确文件白名单；每项必须被某个 impacts[].expected_files 解释。",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
     },
-    "allowed_globs": {
+    "allowed_dirs": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "description": "目录前缀列表，每项必须以 / 结尾且禁止通配符；最终实际文件仍需被 impacts[].expected_files 精确或目录前缀解释。",
+      "items": { "type": "string", "pattern": "^[^*?\\[\\]]*/$" },
       "uniqueItems": true
     },
     "no_code_change_reason": { "type": "string", "minLength": 1 },
@@ -61,6 +63,7 @@
         "risk_level": { "enum": ["L1", "L2", "L3", "BLOCKED"] },
         "expected_files": {
           "type": "array",
+          "description": "该义务解释的预期文件；需要覆盖目录时可使用以 / 结尾的目录前缀。",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true
         },

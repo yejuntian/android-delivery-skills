@@ -28,12 +28,13 @@ if __package__ in {None, ""}:
 
 from ..delivery_gate import (  # noqa: E402
     DeliveryGateError,
+    _changed_paths_for_radius,
     current_context,
     main,
     validate_delivery_result,
 )
 from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, junit_content_signature, sha256_file  # noqa: E402
-from ..git_changes import current_delivery_snapshot, write_baseline  # noqa: E402
+from ..git_changes import GitChange, current_delivery_snapshot, write_baseline  # noqa: E402
 from ..impact_radius import impact_radius_digest, impact_radius_path  # noqa: E402
 from ..requirement_snapshot import (  # noqa: E402
     apply_requirement_revision,
@@ -135,7 +136,14 @@ class DeliveryGateTests(unittest.TestCase):
                     "app/src/main/java/sample/Feature.kt",
                     "app/src/test/java/sample/FeatureTest.kt",
                 ],
-                "allowed_globs": [],
+                "allowed_dirs": [],
+                "impacts": [{
+                    "id": "BDD-001/T1",
+                    "expected_files": [
+                        "app/src/main/java/sample/Feature.kt",
+                        "app/src/test/java/sample/FeatureTest.kt",
+                    ],
+                }],
             },
             "test_mapping": {
                 "BDD-001/T1": {
@@ -443,6 +451,25 @@ class DeliveryGateTests(unittest.TestCase):
 
         errors = validate_delivery_result(self.payload, self.context)
 
+        self.assertTrue(any("超出已确认影响半径" in error for error in errors))
+
+    def test_rename_old_path_is_checked_against_radius(self) -> None:
+        """验证重命名同时检查旧路径，不能把越界文件搬进允许目录绕过门禁。"""
+        paths = _changed_paths_for_radius(
+            [
+                GitChange(
+                    "R",
+                    "app/src/main/java/sample/Feature.kt",
+                    old_path="app/src/main/java/payment/PaymentRepository.kt",
+                )
+            ],
+            excluded=set(),
+        )
+        self.context["changed_files"] = paths
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertIn("app/src/main/java/payment/PaymentRepository.kt", paths)
         self.assertTrue(any("超出已确认影响半径" in error for error in errors))
 
     def test_rejects_legacy_self_reported_result_version(self) -> None:
@@ -1020,7 +1047,7 @@ class DeliveryGateTests(unittest.TestCase):
                 "requirement_file_sha256": confirmed["sha256"],
                 "requirement_summary_sha256": requirement_summary_digest(confirmed),
                 "allowed_files": ["App.kt"],
-                "allowed_globs": [],
+                "allowed_dirs": [],
                 "impacts": [{
                     "id": "BDD-001/T1",
                     "change_type": "ADDED",

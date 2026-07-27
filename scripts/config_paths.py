@@ -218,3 +218,25 @@ def specialist_directory_for_config(
 def capabilities_path_for_config(config_path: str | Path) -> Path:
     """返回 Android 项目能力发现结果路径，供不同模型复用同一工程事实。"""
     return _state_dir_for(config_path) / "capabilities.json"
+
+
+def delivery_snapshot_exclusions(project_path: str | Path, requirement_dir: str | Path) -> set[str]:
+    """返回 route/final 共同排除的交付文档路径，避免代码摘要规则漂移。"""
+    project_resolved = Path(project_path).expanduser().resolve()
+    requirement_resolved = Path(requirement_dir).expanduser().resolve()
+    excluded: set[str] = set()
+    for generated_path in (
+        requirement_resolved / "test-results" / "delivery-result.json",
+        requirement_resolved / "test-results" / "delivery-summary.md",
+    ):
+        try:
+            excluded.add(generated_path.resolve().relative_to(project_resolved).as_posix())
+        except ValueError:
+            pass
+    document_dir = project_resolved / "document"
+    try:
+        if document_dir.is_dir():
+            excluded.add(document_dir.relative_to(project_resolved).as_posix())
+    except ValueError:
+        pass
+    return excluded

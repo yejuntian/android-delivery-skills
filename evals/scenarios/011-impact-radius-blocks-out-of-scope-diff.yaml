@@ -6,7 +6,7 @@ checks:
     path: "android-implement-and-verify/SKILL.md"
     contains:
       - "<requirement_dir>/test-cases/impact-radius.json"
-      - "影响半径必须登记本轮 ADDED/CHANGED/REMOVED/SUPERSEDED"
+      - "影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED"
       - "最终 diff 中出现不在已确认 `impact-radius.json` 的代码文件时"
   - name: 影响半径脚本绑定需求摘要并识别越界文件
     path: "scripts/impact_radius.py"

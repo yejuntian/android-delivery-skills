@@ -43,6 +43,11 @@ def valid_plan(extra: str = "") -> str:
 ## 测试方案
 - 增加失败分支单元测试。
 
+## 影响半径摘要
+- 允许文件：LoginViewModel.kt、LoginViewModelTest.kt。
+- 允许目录前缀：无。
+- 范围外处理：移除或重新确认。
+
 ## 明确不修改范围
 - 不修改登录接口契约。
 """
@@ -92,7 +97,7 @@ def write_valid_impact_radius(root: Path, snapshot: dict, requirement: str) -> N
                 "app/src/main/java/LoginViewModel.kt",
                 "app/src/test/java/LoginViewModelTest.kt",
             ],
-            "allowed_globs": [],
+            "allowed_dirs": [],
             "impacts": [{
                 "id": "BDD-001/T1",
                 "change_type": "ADDED",
@@ -184,6 +189,7 @@ class ImplementationPlanTests(unittest.TestCase):
         target = impact_radius_path(self.root)
         payload = json.loads(target.read_text(encoding="utf-8"))
         payload["allowed_files"].append("app/src/main/java/Unexpected.kt")
+        payload["impacts"][0]["expected_files"].append("app/src/main/java/Unexpected.kt")
         target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
         with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效"):

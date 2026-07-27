@@ -726,6 +726,6 @@
 ## 场景 88：影响半径阻断越界 Diff
 
 - **用户请求**：初始确认只修改登录失败提示和对应测试；编码中用户又删除一个已确认提示分支，AI 同步受影响需求和计划。最终 diff 还包含顺手改动支付 Repository 的日志格式。
-- **预期动作**：`confirm-requirement-update` 后同时更新 `<requirement_dir>/实施计划.md` 和 `<requirement_dir>/test-cases/impact-radius.json`，只登记登录提示义务的 ADDED/CHANGED/REMOVED/SUPERSEDED、允许文件/通配符、受影响测试和模块；`confirm-plan` 收据绑定影响半径摘要。最终门禁读取基线后 diff，发现支付 Repository 不在已确认半径内时阻断完整通过；AI 只能移除该无关改动，或把新增影响写回需求/计划/影响半径并重新确认后再继续。
+- **预期动作**：`confirm-requirement-update` 后同时更新 `<requirement_dir>/实施计划.md` 和 `<requirement_dir>/test-cases/impact-radius.json`，只登记登录提示义务的 ADDED/CHANGED/REMOVED/SUPERSEDED、允许文件/目录前缀、受影响测试和模块；`confirm-plan` 收据绑定影响半径摘要。最终门禁读取基线后 diff，发现支付 Repository 不在已确认半径内时阻断完整通过；AI 只能移除该无关改动，或把新增影响写回需求/计划/影响半径并重新确认后再继续。
 - **预期结论**：编码中需求变化只处理受影响义务、测试和代码，未变化登录行为不重做；越界文件不会因为测试通过或 AI 说明“只是日志”而进入通过报告。重新确认或移除越界改动后，route、测试和最终证据基于最终代码重新生成。
-- **禁止行为**：需求变化后从头重跑全部准备、把无关支付改动塞进最终报告口头豁免、自动扩大 `allowed_globs`、复用旧 `confirm-plan` 收据，或为了通过删除/弱化旧测试。
+- **禁止行为**：需求变化后从头重跑全部准备、把无关支付改动塞进最终报告口头豁免、自动扩大 `allowed_dirs`、复用旧 `confirm-plan` 收据，或为了通过删除/弱化旧测试。

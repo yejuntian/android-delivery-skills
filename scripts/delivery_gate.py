@@ -25,6 +25,7 @@ if __package__ in {None, ""}:
 
 from .config_paths import (  # noqa: E402
     baseline_path_for_config,
+    delivery_snapshot_exclusions,
     requirement_snapshot_path_for_config,
     resolve_config_paths,
     route_impact_path_for_config,
@@ -160,6 +161,19 @@ def _path_excluded(path: str, excluded: set[str]) -> bool:
     )
 
 
+def _changed_paths_for_radius(changes: list[Any], excluded: set[str]) -> list[str]:
+    """返回影响半径要检查的路径；重命名同时检查旧路径和新路径。"""
+    paths: set[str] = set()
+    for change in changes:
+        for raw_path in (getattr(change, "old_path", None), getattr(change, "path", None)):
+            if not raw_path:
+                continue
+            normalized = str(raw_path).replace("\\", "/")
+            if not _path_excluded(normalized, excluded):
+                paths.add(normalized)
+    return sorted(paths)
+
+
 def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]:
     """返回最终报告必须绑定的确认修订、有效义务、基线和当前代码摘要。"""
     paths = resolve_config_paths(config, config_path)
@@ -229,21 +243,7 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         raise DeliveryGateError("当前确认修订没有原子 BDD/Then")
     result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
     summary_path = result_path.with_name("delivery-summary.md")
-    excluded: set[str] = set()
-    for generated_path in (result_path, summary_path):
-        try:
-            excluded.add(generated_path.relative_to(paths.project_path.resolve()).as_posix())
-        except ValueError:
-            pass
-    # 当 requirement_dir 落在 project_path/document/ 下时（多需求并行方案），
-    # 排除整个 document/ 目录，避免交付文档变化污染 snapshot_sha256 使门禁误失效。
-    project_resolved = paths.project_path.resolve()
-    document_dir = project_resolved / "document"
-    try:
-        if document_dir.is_dir():
-            excluded.add(document_dir.relative_to(project_resolved).as_posix())
-    except ValueError:
-        pass
+    excluded = delivery_snapshot_exclusions(paths.project_path, paths.requirement_dir)
     try:
         snapshot = current_delivery_snapshot(
             paths.project_path,
@@ -259,11 +259,7 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         )
     except GitInspectionError as exc:
         raise DeliveryGateError(str(exc)) from exc
-    changed_files = [
-        change.path.replace("\\", "/")
-        for change in all_changes
-        if not _path_excluded(change.path.replace("\\", "/"), excluded)
-    ]
+    changed_files = _changed_paths_for_radius(all_changes, excluded)
     context = {
         **snapshot,
         "project_path": str(paths.project_path.resolve()),

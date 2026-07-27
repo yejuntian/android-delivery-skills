@@ -36,6 +36,7 @@ if __package__ in {None, ""}:
 
 from .config_paths import (  # noqa: E402
     baseline_path_for_config,
+    delivery_snapshot_exclusions,
     requirement_snapshot_path_for_config,
     route_impact_path_for_config,
     resolve_config_paths as resolve_paths,
@@ -1010,11 +1011,11 @@ def cmd_confirm_requirement_update(args):
     print(f"│ 写入: {plan_path}")
     print(f"│ 影响半径: {impact_path}")
     print("│ 必含: 实现范围 / 已上线业务影响 / 预计修改文件")
-    print("│       / 测试方案 / 明确不修改范围")
+    print("│       / 测试方案 / 影响半径摘要 / 明确不修改范围")
     print("└─ 用户确认后执行 delivery.py confirm-plan ──────────────┘")
     print("\n👉 下一步")
     print("  1. 把实施计划写入上述 md（填 android-implement-and-verify/templates/plan.md 骨架）")
-    print("  2. 把影响半径写入上述 JSON（填 android-implement-and-verify/templates/impact-radius.json 骨架）")
+    print("  2. 把影响半径写入上述 JSON（参考 android-implement-and-verify/references/impact-radius.example.json，并按 references/impact-radius.schema.json 生成，覆盖当前需求基线以来的全部语义变化）")
     print("  3. 展示简短摘要给用户，停止等待确认")
     print("  4. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
     mapping_path = getattr(paths, "test_mapping_path", None)
@@ -1087,7 +1088,12 @@ def cmd_route(args):
 
     baseline_path = baseline_path_for_config(resolved_config)
     changes, warnings = get_diff_changes(baseline_path)
-    diff_files = [change.path for change in changes]
+    diff_files = sorted({
+        path.replace("\\", "/")
+        for change in changes
+        for path in (change.old_path, change.path)
+        if path
+    })
     print("=== 审查路由分析 ===")
 
     for warning in warnings:
@@ -1138,12 +1144,7 @@ def cmd_route(args):
         plan_path=implementation_plan_path(paths.requirement_dir),
     )
 
-    result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
-    excluded: set[str] = set()
-    try:
-        excluded.add(result_path.relative_to(project_path.resolve()).as_posix())
-    except ValueError:
-        pass
+    excluded = delivery_snapshot_exclusions(project_path, paths.requirement_dir)
     try:
         code_snapshot = current_delivery_snapshot(
             project_path,

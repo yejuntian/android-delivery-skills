@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "generated_at": "2026-07-27T00:00:00+00:00",
+  "requirement_id": "<requirement_id>",
+  "requirement_revision": 1,
+  "requirement_file_sha256": "<64-char-sha256>",
+  "requirement_summary_sha256": "<64-char-sha256>",
+  "allowed_files": [
+    "app/src/main/java/example/Feature.kt"
+  ],
+  "allowed_dirs": [
+    "app/src/test/java/example/"
+  ],
+  "impacts": [
+    {
+      "id": "BDD-001/T1",
+      "change_type": "ADDED",
+      "reason": "说明该验收项为什么只影响这些文件或目录前缀。",
+      "risk_level": "L1",
+      "expected_files": [
+        "app/src/main/java/example/Feature.kt",
+        "app/src/test/java/example/FeatureTest.kt"
+      ],
+      "expected_tests": [
+        "FeatureTest#thenT1"
+      ],
+      "affected_modules": [
+        ":app"
+      ]
+    }
+  ]
+}

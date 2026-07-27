@@ -49,7 +49,7 @@ confirm-requirement-update 成功后，如果续接指南有 STALE 或新增义�
 1. **改实现代码**：只改增量需求涉及的文件（看 `impact-radius.json` 和续接指南波及清单），不动已交付逻辑；未变化义务的代码不碰。
 2. **改测试代码**：为 STALE/新增义务加断言，不删旧测试、不弱化旧断言。
 3. **更新测试结果文档**：受影响用例标"需重测"，新增用例补到用例表。
-4. **更新影响半径**：同步 `<requirement_dir>/test-cases/impact-radius.json`，登记本轮 ADDED/CHANGED/REMOVED/SUPERSEDED 义务、允许文件/通配符、受影响模块和测试；范围扩大必须随同一份实施计划重新展示并确认。
+4. **更新影响半径**：同步 `<requirement_dir>/test-cases/impact-radius.json`，登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED 义务、允许文件/目录前缀、受影响模块和测试；范围扩大必须随同一份实施计划重新展示并确认。
 5. **回填映射**：init-test-mapping + 把 STALE 回填 CURRENT，登记新义务的 test_ids。
 6. **增量回归**：跑受影响模块的全量测试（含旧测试），确认已交付功能无回归；旧测试失败必须修到通过，不能跳过。
 7. **重跑受影响用例**：按测试结果文档重测，回填新结果（PASS/FAIL）。
@@ -238,7 +238,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
 ```
 
-退出码 `0` 只表示最新版总需求已确认，不表示已经允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。修订确认后先重新读取已确认的 `requirement_file`、需求修订清单和追溯表，丢弃确认前旧聊天理解；把全部原子 Then 映射为测试清单，将唯一实施计划写到 `<requirement_dir>/实施计划.md`，并按 `templates/impact-radius.json` 写 `<requirement_dir>/test-cases/impact-radius.json`。计划必须用中文包含“实现范围、已上线业务影响、预计修改文件、测试方案、明确不修改范围”；影响半径必须登记本轮 ADDED/CHANGED/REMOVED/SUPERSEDED 义务、允许文件/通配符、受影响模块和测试。此时保持只读，不修改 Android 代码、不运行构建或设备任务。聊天只展示计划摘要、影响半径摘要和 Markdown 链接，然后停止等待用户确认。
+退出码 `0` 只表示最新版总需求已确认，不表示已经允许编码；`2` 表示仍有 `PENDING/CONFLICT`，继续澄清而不覆盖上一确认版本；`1` 表示清单、路径、版本或同步关系无效。修订确认后先重新读取已确认的 `requirement_file`、需求修订清单和追溯表，丢弃确认前旧聊天理解；把全部原子 Then 映射为测试清单，将唯一实施计划写到 `<requirement_dir>/实施计划.md`，并参考 `references/impact-radius.example.json`、遵守 `references/impact-radius.schema.json` 写 `<requirement_dir>/test-cases/impact-radius.json`。计划必须用中文包含“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”；影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED 义务、允许文件/目录前缀、受影响模块和测试。此时保持只读，不修改 Android 代码、不运行构建或设备任务。聊天只展示计划摘要、影响半径摘要和 Markdown 链接，然后停止等待用户确认。
 
 用户明确确认已经展示的计划后运行：
 

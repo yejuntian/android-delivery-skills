@@ -350,7 +350,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **调研日期**：2026-07-27。
 - **问题**：用户在编码中新增、修改或删除需求时，希望只处理受影响部分；仅靠中文计划和 AI 自觉容易发生两类失控：旧需求被整体重做，或最终 diff 悄悄越过已确认范围。
 - **来源**：Spec Kit 的稳定需求 ID 和跨产物一致性、Cucumber Example Mapping 的需求到测试映射、AndroidX/LeakCanary/Detekt 等 CI 对变更文件选择受影响验证、M21 的局部反馈与最终兜底、M29 的计划确认收据。
-- **决策**：新增机器可读 `<requirement_dir>/test-cases/impact-radius.json`。它绑定当前 `requirement_id`、修订号、需求正文 SHA 和有效义务摘要 SHA；本轮 ADDED/CHANGED/REMOVED/SUPERSEDED 义务必须逐项登记影响原因、风险、允许文件/通配符、预计测试和模块。`confirm-plan` 把影响半径 digest 写入计划收据，`route` 和最终门禁继续绑定该 digest；最终 diff 中任何代码文件不在已确认范围内时阻断完整通过。
+- **决策**：新增机器可读 `<requirement_dir>/test-cases/impact-radius.json`。它绑定当前 `requirement_id`、修订号、需求正文 SHA 和有效义务摘要 SHA；当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED 义务必须逐项登记影响原因、风险、允许文件/目录前缀、预计测试和模块。`confirm-plan` 把影响半径 digest 写入计划收据，`route` 和最终门禁继续绑定该 digest；最终 diff 中任何代码文件不在已确认范围内时阻断完整通过。
 - **增量边界**：影响半径是“允许触达范围”，不是 AI 自动扩大范围的许可证。语义变化时只更新受影响义务、测试映射、实施计划和影响半径并重新确认；语义不变的实现完善只能在已确认半径内做最小改动。确需扩大范围时，先把新增影响写回需求/计划/影响半径并重新确认；无关改动应移除。
 - **拒绝**：不引入全仓精准依赖图服务、预测测试 SaaS 或复杂状态机；不因为增量而跳过最终兜底；不允许 AI 在最终报告中口头豁免越界 diff，也不把所有需求变化重跑成完整从头流程。
 

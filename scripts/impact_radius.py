@@ -5,7 +5,9 @@
 
 核心流程：读取 ``test-cases/impact-radius.json``，绑定当前需求修订、需求正文摘要和
 原子义务摘要；要求最新一轮非 UNCHANGED 义务都有影响记录；最终门禁用 allowed_files
-与 allowed_globs 检查基线后的代码文件是否都在已确认范围内。
+（精确路径）与 allowed_dirs（目录前缀，/ 结尾）检查基线后的代码文件是否都在
+已确认范围内。两套语义均确定性强匹配，不允许通配符（``*`` ``?``），
+避免 ``**/*.kt`` 这类无锚点通配放行整个仓库使门禁失效。
 
 职责边界：只校验 AI 已物化并经计划确认绑定的影响半径，不推断业务、不读取 Git、
 不自动扩展范围、不修改 Android 项目。
@@ -14,7 +16,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import fnmatch
 import hashlib
 import json
 from pathlib import Path
@@ -86,33 +87,86 @@ def _repo_path_list(value: Any, label: str, errors: list[str]) -> list[str]:
     return result
 
 
-def _latest_semantic_changes(snapshot: dict[str, Any]) -> dict[str, str]:
-    """返回当前修订最近一轮已确认的语义变化，作为影响半径必须覆盖的集合。"""
+def _allowed_dirs(value: Any, errors: list[str]) -> list[str]:
+    """读取并校验 allowed_dirs：必须是 ``/`` 结尾、无通配符、无上跳的目录前缀。
+
+    弃用 fnmatch 通配后，allowed_dirs 用目录前缀（startswith）放行目录下全部文件。
+    强制 ``/`` 结尾消除歧义（``src`` 会同时放行 ``src_new``），禁止 ``*`` ``?``
+    防止误把通配符当字面量或残留旧 ``allowed_globs`` 习惯。
+    """
+    label = "allowed_dirs"
+    raw = _string_list(value, label, errors)
+    result: list[str] = []
+    for item in raw:
+        path = Path(item)
+        if path.is_absolute() or item.startswith("../") or "/../" in item or item == "..":
+            errors.append(f"{label} 只能使用仓库相对路径: {item}")
+        if item.startswith(".git/") or item == ".git":
+            errors.append(f"{label} 不得指向 .git: {item}")
+        if any(ch in item for ch in "*?["):
+            errors.append(f"{label} 不得包含通配符，请改用具体目录前缀: {item}")
+        if not item.endswith("/"):
+            errors.append(f"{label} 必须以 / 结尾表示目录前缀: {item}")
+        result.append(item)
+    return result
+
+
+def _confirmed_semantic_changes(snapshot: dict[str, Any]) -> dict[str, str]:
+    """返回当前需求基线以来的已确认语义变化，作为累计影响半径覆盖集合。"""
     history = snapshot.get("history") or []
-    if not history:
-        return {}
-    latest = history[-1]
-    changes = latest.get("changes") if isinstance(latest, dict) else None
-    if not isinstance(changes, list):
-        return {}
     semantic: dict[str, str] = {}
-    for item in changes:
+    for revision in history:
+        changes = revision.get("changes") if isinstance(revision, dict) else None
+        if not isinstance(changes, list):
+            continue
+        for item in changes:
+            if not isinstance(item, dict):
+                continue
+            if item.get("decision") != "CONFIRMED":
+                continue
+            change_type = item.get("change_type")
+            identifier = item.get("id")
+            if change_type in IMPACT_CHANGE_TYPES and isinstance(identifier, str):
+                # 同一义务多次变化时以最近一次语义变化类型为准。
+                semantic[identifier] = change_type
+    return semantic
+
+
+def _latest_semantic_changes(snapshot: dict[str, Any]) -> dict[str, str]:
+    """兼容旧调用名；当前影响半径按需求基线以来的累计语义变化校验。"""
+    return _confirmed_semantic_changes(snapshot)
+
+
+def _expected_paths_from_impacts(impacts: Any) -> set[str]:
+    """提取每个 impact 明确解释的文件或目录前缀。"""
+    expected: set[str] = set()
+    if not isinstance(impacts, list):
+        return expected
+    for item in impacts:
         if not isinstance(item, dict):
             continue
-        if item.get("decision") != "CONFIRMED":
-            continue
-        change_type = item.get("change_type")
-        identifier = item.get("id")
-        if change_type in IMPACT_CHANGE_TYPES and isinstance(identifier, str):
-            semantic[identifier] = change_type
-    return semantic
+        for path in item.get("expected_files") or []:
+            if isinstance(path, str) and path.strip():
+                expected.add(path.strip().replace("\\", "/"))
+    return expected
+
+
+def _path_explained_by_expected(path: str, expected_paths: set[str]) -> bool:
+    """确认路径是否被某个 impact.expected_files 精确解释或目录前缀解释。"""
+    normalized = path.replace("\\", "/")
+    if normalized in expected_paths:
+        return True
+    return any(
+        expected.endswith("/") and normalized.startswith(expected)
+        for expected in expected_paths
+    )
 
 
 def _validate_impact_item(
     item: Any,
     index: int,
     allowed_files: set[str],
-    allowed_globs: list[str],
+    allowed_dirs: list[str],
     expected_changes: dict[str, str],
     errors: list[str],
 ) -> dict[str, Any] | None:
@@ -150,10 +204,13 @@ def _validate_impact_item(
     if not expected_files and not isinstance(item.get("no_code_change_reason"), str):
         errors.append(f"{label} 无 expected_files 时必须说明 no_code_change_reason")
     for path in expected_files:
-        if path in allowed_files or any(fnmatch.fnmatchcase(path, pattern) for pattern in allowed_globs):
+        normalized = path.replace("\\", "/")
+        if normalized in allowed_files or any(normalized.startswith(d) for d in allowed_dirs):
             continue
-        errors.append(f"{label}.expected_files 未纳入 allowed_files/allowed_globs: {path}")
-    return item if identifier else None
+        errors.append(f"{label}.expected_files 未纳入 allowed_files/allowed_dirs: {path}")
+    normalized_item = dict(item)
+    normalized_item["expected_files"] = expected_files
+    return normalized_item if identifier else None
 
 
 def validate_impact_radius(
@@ -173,7 +230,7 @@ def validate_impact_radius(
         "requirement_file_sha256",
         "requirement_summary_sha256",
         "allowed_files",
-        "allowed_globs",
+        "allowed_dirs",
         "impacts",
         "no_code_change_reason",
     }
@@ -202,11 +259,11 @@ def validate_impact_radius(
         errors.append("影响半径 requirement_summary_sha256 已失效")
 
     allowed_files = set(_repo_path_list(payload.get("allowed_files"), "allowed_files", errors))
-    allowed_globs = _repo_path_list(payload.get("allowed_globs"), "allowed_globs", errors)
-    if not allowed_files and not allowed_globs and not isinstance(payload.get("no_code_change_reason"), str):
+    allowed_dirs = _allowed_dirs(payload.get("allowed_dirs"), errors)
+    if not allowed_files and not allowed_dirs and not isinstance(payload.get("no_code_change_reason"), str):
         errors.append("影响半径没有允许文件时必须说明 no_code_change_reason")
 
-    expected_changes = _latest_semantic_changes(snapshot)
+    expected_changes = _confirmed_semantic_changes(snapshot)
     impacts = payload.get("impacts")
     if not isinstance(impacts, list) or not impacts:
         errors.append("影响半径 impacts 必须是非空数组")
@@ -217,7 +274,7 @@ def validate_impact_radius(
             item,
             index,
             allowed_files,
-            allowed_globs,
+            allowed_dirs,
             expected_changes,
             errors,
         )
@@ -233,9 +290,34 @@ def validate_impact_radius(
         missing = sorted(expected_ids - actual_ids)
         unexpected = sorted(actual_ids - expected_ids)
         if missing:
-            errors.append("影响半径漏掉本轮语义变化: " + ", ".join(missing))
+            errors.append(
+                "影响半径漏掉本轮语义变化（当前累计半径必须覆盖所有已确认语义变化）: "
+                + ", ".join(missing)
+            )
         if unexpected:
-            errors.append("影响半径包含非本轮语义变化: " + ", ".join(unexpected))
+            errors.append("影响半径包含非当前累计语义变化: " + ", ".join(unexpected))
+    expected_paths = _expected_paths_from_impacts(list(indexed.values()))
+    unexplained_files = sorted(
+        path for path in allowed_files
+        if not _path_explained_by_expected(path, expected_paths)
+    )
+    if unexplained_files:
+        errors.append(
+            "allowed_files 存在未被任何 impacts.expected_files 解释的路径: "
+            + ", ".join(unexplained_files)
+        )
+    unexplained_dirs = sorted(
+        directory for directory in allowed_dirs
+        if not any(
+            expected == directory or expected.startswith(directory)
+            for expected in expected_paths
+        )
+    )
+    if unexplained_dirs:
+        errors.append(
+            "allowed_dirs 存在未被任何 impacts.expected_files 解释的目录前缀: "
+            + ", ".join(unexplained_dirs)
+        )
     return errors
 
 
@@ -259,15 +341,23 @@ def load_impact_radius(
 
 
 def path_allowed_by_radius(path: str, payload: dict[str, Any]) -> bool:
-    """判断一个仓库相对路径是否落在影响半径允许范围内。"""
+    """判断一个仓库相对路径是否落在影响半径允许范围内。
+
+    匹配语义只有两种，均确定性、无通配歧义：
+    - allowed_files：精确路径命中。
+    - allowed_dirs：目录前缀匹配（必须是 ``/`` 结尾的目录，放行其下所有文件）。
+    弃用 fnmatch 通配符：``**/*.kt`` 这类无锚点通配会放行整个仓库任意 .kt，
+    让"防越界"门禁失效。
+    """
     normalized = path.replace("\\", "/")
-    allowed_files = set(payload.get("allowed_files") or [])
-    if normalized in allowed_files:
-        return True
-    return any(
-        fnmatch.fnmatchcase(normalized, pattern)
-        for pattern in payload.get("allowed_globs") or []
+    allowed = normalized in set(payload.get("allowed_files") or []) or any(
+        normalized.startswith(directory)
+        for directory in payload.get("allowed_dirs") or []
     )
+    if not allowed:
+        return False
+    expected_paths = _expected_paths_from_impacts(payload.get("impacts") or [])
+    return not expected_paths or _path_explained_by_expected(normalized, expected_paths)
 
 
 def changed_files_outside_radius(

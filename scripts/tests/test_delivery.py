@@ -63,6 +63,7 @@ from ..delivery import (  # noqa: E402
 from ..config_paths import (  # noqa: E402
     baseline_path_for_config,
     capabilities_path_for_config,
+    delivery_snapshot_exclusions,
     evidence_directory_for_config,
     requirement_snapshot_path_for_config,
     route_impact_path_for_config,
@@ -123,6 +124,18 @@ class RequirementPathTests(unittest.TestCase):
         self.assertEqual(
             requirement, (workspace / "current-requirement" / "requirement.md").resolve()
         )
+
+    def test_delivery_snapshot_exclusions_are_shared(self) -> None:
+        """验证 route 和 final 共用同一组交付文档排除路径。"""
+        project = self.root / "project"
+        requirement_dir = project / "document" / "2026-07-27-login"
+        requirement_dir.mkdir(parents=True)
+
+        excluded = delivery_snapshot_exclusions(project, requirement_dir)
+
+        self.assertIn("document", excluded)
+        self.assertIn("document/2026-07-27-login/test-results/delivery-result.json", excluded)
+        self.assertIn("document/2026-07-27-login/test-results/delivery-summary.md", excluded)
 
     def test_absolute_paths_are_not_rebased(self) -> None:
         """验证绝对路径保持原意，不被配置文件或工作区目录重复拼接。"""
@@ -964,6 +977,9 @@ class RequirementSnapshotTests(unittest.TestCase):
 - `LoginViewModel.kt`
 ## 测试方案
 - 增加失败分支测试。
+## 影响半径摘要
+- 允许文件：LoginViewModel.kt。
+- 允许目录前缀：无。
 ## 明确不修改范围
 - 不修改接口。
 """,
@@ -979,7 +995,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 "requirement_file_sha256": requirement_digest("登录失败显示错误"),
                 "requirement_summary_sha256": requirement_summary_digest(applied_snapshot),
                 "allowed_files": ["LoginViewModel.kt"],
-                "allowed_globs": [],
+                "allowed_dirs": [],
                 "impacts": [{
                     "id": "BDD-001/T1",
                     "change_type": "ADDED",

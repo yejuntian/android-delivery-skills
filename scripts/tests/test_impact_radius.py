@@ -3,7 +3,7 @@
 
 用途：验证需求增量影响半径能绑定当前修订，并阻断范围外 diff。
 
-覆盖范围：当前修订摘要绑定、本轮语义变化覆盖、allowed 文件匹配和越界文件识别。
+覆盖范围：当前修订摘要绑定、累计语义变化覆盖、allowed 文件匹配和越界文件识别。
 测试只使用内存夹具，不读取真实 Android 项目。
 """
 
@@ -62,7 +62,7 @@ def payload(snapshot_payload: dict, requirement: str) -> dict:
         "requirement_file_sha256": requirement_digest(requirement),
         "requirement_summary_sha256": requirement_summary_digest(snapshot_payload),
         "allowed_files": ["app/src/main/java/LoginViewModel.kt"],
-        "allowed_globs": ["app/src/test/java/**"],
+        "allowed_dirs": ["app/src/test/java/"],
         "impacts": [{
             "id": "BDD-001/T1",
             "change_type": "CHANGED",
@@ -82,7 +82,7 @@ class ImpactRadiusTests(unittest.TestCase):
     """验证影响半径机器协议。"""
 
     def test_valid_radius_passes_and_allows_matching_files(self) -> None:
-        """验证合法影响半径通过，且 glob 覆盖测试文件。"""
+        """验证合法影响半径通过，且目录前缀覆盖测试文件。"""
         requirement = "登录失败显示新的错误提示"
         snap = snapshot()
         radius = payload(snap, requirement)
@@ -119,6 +119,114 @@ class ImpactRadiusTests(unittest.TestCase):
         ], radius)
 
         self.assertEqual(["app/src/main/java/PaymentRepository.kt"], outside)
+
+    def test_allowed_file_must_be_explained_by_an_impact(self) -> None:
+        """验证不能把无关文件直接塞进 allowed_files 自我授权。"""
+        requirement = "登录失败显示新的错误提示"
+        snap = snapshot()
+        radius = payload(snap, requirement)
+        radius["allowed_files"].append("app/src/main/java/PaymentRepository.kt")
+
+        errors = validate_impact_radius(radius, snap, requirement)
+
+        self.assertTrue(any("未被任何 impacts.expected_files 解释" in error for error in errors))
+
+    def test_allowed_dir_only_allows_expected_paths(self) -> None:
+        """验证目录前缀不能放行同目录未登记文件。"""
+        requirement = "登录失败显示新的错误提示"
+        snap = snapshot()
+        radius = payload(snap, requirement)
+
+        outside = changed_files_outside_radius([
+            "app/src/test/java/LoginViewModelTest.kt",
+            "app/src/test/java/OtherTest.kt",
+        ], radius)
+
+        self.assertEqual(["app/src/test/java/OtherTest.kt"], outside)
+
+    def test_cumulative_semantic_changes_are_required(self) -> None:
+        """验证影响半径覆盖当前需求基线以来的全部已确认语义变化。"""
+        requirement = "登录失败显示新的错误提示，并保留成功登录"
+        first_text = "成功登录进入首页"
+        second_text = "登录失败显示新的错误提示"
+        snap = {
+            "requirement_id": "requirement-1",
+            "revision": 2,
+            "obligations": [
+                {
+                    "id": "BDD-001/T1",
+                    "text": first_text,
+                    "required": True,
+                    "sha256": obligation_digest("BDD-001/T1", first_text, True),
+                },
+                {
+                    "id": "BDD-002/T1",
+                    "text": second_text,
+                    "required": True,
+                    "sha256": obligation_digest("BDD-002/T1", second_text, True),
+                },
+            ],
+            "history": [
+                {
+                    "revision": 1,
+                    "changes": [{
+                        "id": "BDD-001/T1",
+                        "change_type": "ADDED",
+                        "decision": "CONFIRMED",
+                    }],
+                },
+                {
+                    "revision": 2,
+                    "changes": [
+                        {
+                            "id": "BDD-001/T1",
+                            "change_type": "UNCHANGED",
+                            "decision": "CONFIRMED",
+                        },
+                        {
+                            "id": "BDD-002/T1",
+                            "change_type": "ADDED",
+                            "decision": "CONFIRMED",
+                        },
+                    ],
+                },
+            ],
+        }
+        radius = payload(snap, requirement)
+        radius["impacts"][0]["id"] = "BDD-002/T1"
+        radius["impacts"][0]["change_type"] = "ADDED"
+
+        errors = validate_impact_radius(radius, snap, requirement)
+
+        self.assertTrue(any("BDD-001/T1" in error for error in errors))
+
+    def test_wildcard_glob_is_rejected(self) -> None:
+        """验证 allowed_dirs 拒绝通配符，堵死无锚点通配放行全仓库的后门。"""
+        requirement = "登录失败显示新的错误提示"
+        snap = snapshot()
+        radius = payload(snap, requirement)
+        radius["allowed_dirs"] = ["**/*.kt"]
+
+        errors = validate_impact_radius(radius, snap, requirement)
+
+        self.assertTrue(any("不得包含通配符" in error for error in errors))
+        # 通配符被拒后，原本由它覆盖的测试文件应被识别为越界
+        outside = changed_files_outside_radius(
+            ["app/src/test/java/LoginViewModelTest.kt"], radius
+        )
+        self.assertEqual(
+            ["app/src/test/java/LoginViewModelTest.kt"], outside,
+        )
+
+    def test_dir_prefix_requires_trailing_slash(self) -> None:
+        """验证 allowed_dirs 必须以 / 结尾，否则会误放行兄弟目录。"""
+        requirement = "登录失败显示新的错误提示"
+        snap = snapshot()
+        radius = payload(snap, requirement)
+        radius["allowed_dirs"] = ["app/src/test"]
+
+        errors = validate_impact_radius(radius, snap, requirement)
+        self.assertTrue(any("必须以 / 结尾" in error for error in errors))
 
 
 if __name__ == "__main__":

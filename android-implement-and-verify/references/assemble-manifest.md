@@ -1,0 +1,81 @@
+# assemble 产物清单格式
+
+> 本文件是 `android-implement-and-verify` 最终交付阶段"方式一：assemble 自动组装"的详细说明。
+> SKILL.md 只保留命令和边界，字段细节以此为准。
+
+## 用途
+
+跑完测试/审查后，agent 只写一份 YAML 产物清单（只声明业务事实，不算指纹），由 `delivery_gate.py assemble` 自动组装 `delivery-result.json` 并立即 `validate`。所有 `sha256`、`obligation_test_cases`、`receipt` 引用由脚本从执行收据/专项结果/junit 报告自动计算，消除手填字段摩擦。
+
+## 命令
+
+```bash
+python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
+  --config <配置> --manifest <产物清单.yaml>
+```
+
+`--result` 可选，缺省写到 `<requirement_dir>/test-results/delivery-result.json`。
+
+## 完整产物清单示例
+
+```yaml
+conclusion: FULL_PASS          # 或 LOCAL_PASS_DEVICE_PENDING / INCOMPLETE
+evidence:                       # 自动证据：声明 id/gate/receipt 路径
+  - id: build
+    gate: android-build
+    receipt: .state/evidence/.../build/attempt-001/receipt.json
+  - id: unit
+    gate: android-test-and-fix
+    receipt: .state/evidence/.../unit/attempt-001/receipt.json
+  - id: ui-journey              # 可选 MANUAL 证据
+    kind: MANUAL
+    gate: android-ui-a11y
+    summary: 真机 Journey 结果…
+    executor: 驱动AI
+    environment: Pixel 8
+    performed_at: "2026-07-27T10:00:00+08:00"
+    artifacts: [{path: ui/01.png, kind: screenshot}]
+specialists:                     # 专项结果：声明 specialist JSON 路径
+  - path: .state/evidence/.../specialists/android-review-diff.json
+obligations:                     # 业务映射：哪个义务由哪些证据覆盖（agent 给，机器不算）
+  BDD-001/T1: [unit, ui-journey]
+  BDD-005/T1: [ui-journey]
+gates:                           # 可选：覆盖 gate 的 required/status/reason
+  android-ui-a11y: {required: false, reason: 无设计稿}
+```
+
+## 字段职责分工（关键边界）
+
+**agent 必须提供（业务事实，机器判不准）：**
+
+- `conclusion`：交付结论。
+- `evidence[].receipt`：AUTOMATED 证据的执行收据路径（脚本读它算 sha）。
+- `evidence[]`（MANUAL）：summary/executor/environment/performed_at/steps/artifacts。
+- `specialists[].path`：专项结果 JSON 路径。
+- `obligations`：义务→证据 id 的业务映射（哪个测试覆盖哪个义务是业务判断）。
+
+**脚本自动计算（agent 不填，填了也以脚本为准）：**
+
+- `snapshot_sha256`、各 `obligation_sha256`：从当前 delivery_gate context 取。
+- `receipt_sha256`、`report_paths`、`command`、`exit_code`、`executed_tests`：从执行收据读。
+- `obligation_test_cases`：从收据里的 junit 报告按 `classname#name` 自动提取。
+- `specialist_result_sha256`：算 specialist JSON 文件 sha。
+- `gates`：默认按 evidence 的 gate 自动推导；agent 可在 `gates` 段覆盖 `required`/`status`/`reason`。
+
+junit 报告用内容签名（剥离可变 timestamp），重跑收据不再失效。
+
+## 错误回显
+
+assemble 组装完会立即 validate，失败时直接列出具体字段错误，例如：
+
+```
+❌ 组装结果未通过门禁:
+- 义务 BDD-001/T1 的测试映射登记了未执行的测试: ...
+- gate android-ui-a11y 没有专属于本 gate 的有效通过证据
+```
+
+按错误修正产物清单或补产物后重跑即可。
+
+## 向后兼容
+
+assemble 是可选加速。若不适用（如需 schema 里 assemble 未覆盖的特殊字段），按 `delivery-result.schema.json` 手写 `delivery-result.json`，再执行 `delivery_gate.py validate`。两种方式产出的报告都走同一个 validate。

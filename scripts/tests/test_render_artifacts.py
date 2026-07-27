@@ -21,6 +21,7 @@ if __package__ in {None, ""}:
     __package__ = "scripts.tests"
 
 from ..render_artifacts import (  # noqa: E402
+    execution_progress_items,
     render_resume_guide,
     render_revision_md,
     render_test_mapping_md,
@@ -86,14 +87,62 @@ class RenderArtifactsTests(unittest.TestCase):
             make_snapshot(), mapping, {"confirmed_at": "2026-07-24"}, None, "登录页"
         )
         self.assertIn("登录页", guide)
+        self.assertIn("当前执行进度", guide)
         self.assertIn("测试待回填", guide)
         self.assertIn("STALE", guide)
         self.assertIn("下一步", guide)
+
+    def test_execution_progress_without_snapshot_is_requirement_confirmation(self) -> None:
+        """无快照时只提示确认需求，不创建任何新状态。"""
+        items = execution_progress_items(None, None, None, None)
+
+        self.assertIn("◉ 确认需求", items[0])
+        self.assertTrue(any("实施计划.md" in item for item in items))
+
+    def test_execution_progress_requires_plan_after_confirmed_requirement(self) -> None:
+        """需求已确认但计划未确认时，当前步骤是实施计划确认。"""
+        items = execution_progress_items(make_snapshot(), None, None, None)
+
+        self.assertIn("✓ 确认需求", items[0])
+        self.assertIn("⏳ 确认实施计划", items[1])
+        self.assertIn("confirm-plan", items[1])
+
+    def test_execution_progress_marks_stale_mapping_as_current_step(self) -> None:
+        """测试映射 STALE 时，当前步骤是回填测试映射。"""
+        mapping = {"mappings": [
+            {"obligation_id": "BDD-002/T1", "mapping_status": "STALE", "test_ids": []},
+        ]}
+
+        items = execution_progress_items(
+            make_snapshot(), mapping, {"confirmed_at": "2026-07-24"}, None
+        )
+
+        self.assertIn("✓ 确认实施计划", items[1])
+        self.assertIn("⏳ 测试映射", items[2])
+        self.assertIn("BDD-002/T1", items[2])
+
+    def test_execution_progress_translates_delivery_conclusion(self) -> None:
+        """最终报告结论使用中文语义展示，不裸露机器枚举。"""
+        mapping = {"mappings": [
+            {"obligation_id": "BDD-001/T1", "mapping_status": "CURRENT", "test_ids": ["t1"]},
+        ]}
+
+        items = execution_progress_items(
+            make_snapshot(),
+            mapping,
+            {"confirmed_at": "2026-07-24"},
+            {"conclusion": "FULL_PASS"},
+        )
+
+        self.assertIn("全部验证通过", items[-1])
+        self.assertNotIn("FULL_PASS", "\n".join(items))
 
     def test_resume_guide_without_snapshot(self) -> None:
         """无快照时续接指南提示先建基线，不抛异常。"""
         guide = render_resume_guide(None, None, None, None, "")
         self.assertIn("尚未建立需求快照", guide)
+        self.assertIn("当前执行进度", guide)
+        self.assertIn("◉ 确认需求", guide)
 
     def test_resume_guide_lists_impact_blast_radius(self) -> None:
         """传入修订清单时，续接指南列出本次增量波及义务及影响半径。"""

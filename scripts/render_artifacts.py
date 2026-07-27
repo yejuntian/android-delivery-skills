@@ -22,6 +22,7 @@ from .requirement_snapshot import load_requirement_snapshot
 from .user_facing_labels import (
     CHANGE_TYPE_LABELS,
     DECISION_LABELS,
+    DELIVERY_CONCLUSION_LABELS,
     GATE_LABELS,
     GATE_STATUS_LABELS,
     OBLIGATION_STATUS_LABELS,
@@ -131,6 +132,131 @@ def render_test_mapping_md(
     return "\n".join(lines)
 
 
+def _stale_mappings(mapping: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """返回测试映射中过期项；只读派生，不修改映射状态。"""
+    return [
+        item for item in (mapping or {}).get("mappings", [])
+        if isinstance(item, dict) and item.get("mapping_status") == "STALE"
+    ]
+
+
+def _has_current_mapping(mapping: dict[str, Any] | None) -> bool:
+    """判断是否已有测试映射登记，用于进度展示。"""
+    mappings = (mapping or {}).get("mappings")
+    return isinstance(mappings, list) and bool(mappings)
+
+
+def execution_progress_items(
+    snapshot: dict[str, Any] | None,
+    mapping: dict[str, Any] | None,
+    plan_receipt: dict[str, Any] | None,
+    delivery_result: dict[str, Any] | None,
+) -> list[str]:
+    """从既有事实源派生中文进度；不写状态、不改变门禁。"""
+    plan_confirmed = bool(plan_receipt and plan_receipt.get("confirmed_at"))
+    stale = _stale_mappings(mapping)
+    conclusion = (delivery_result or {}).get("conclusion")
+    conclusion_label = user_label(conclusion, DELIVERY_CONCLUSION_LABELS) if conclusion else ""
+
+    if snapshot is None or not snapshot.get("obligations"):
+        return [
+            "◉ 确认需求：读取需求，写回 requirement_file，等待确认",
+            "○ 确认实施计划：写 实施计划.md 与 impact-radius.json",
+            "○ 测试映射：登记义务对应 test_ids",
+            "○ 实现验证：最小编码，跑受影响测试",
+            "○ 最终交付：按需执行 route / assemble / validate",
+        ]
+
+    revision = revision_label(snapshot.get("revision", "?"))
+    if snapshot.get("status") != "CONFIRMED" or snapshot.get("pending_changes"):
+        pending_count = len(snapshot.get("pending_changes") or [])
+        detail = f"{pending_count} 项变化待确认" if pending_count else "需求修订尚未确认"
+        return [
+            f"⏳ 确认需求：{detail}，先确认修订",
+            "○ 确认实施计划：需求确认后更新计划与半径",
+            "○ 测试映射：计划确认后登记 test_ids",
+            "○ 实现验证：需求/计划确认前不编码",
+            "○ 最终交付：前置未完成，暂不执行",
+        ]
+
+    if not plan_confirmed:
+        return [
+            f"✓ 确认需求：已确认 {revision}",
+            "⏳ 确认实施计划：写计划和半径，等待 confirm-plan",
+            "○ 测试映射：登记义务对应 test_ids",
+            "○ 实现验证：计划确认前不编码",
+            "○ 最终交付：前置未完成，暂不执行",
+        ]
+
+    if not _has_current_mapping(mapping):
+        return [
+            f"✓ 确认需求：已确认 {revision}",
+            "✓ 确认实施计划：计划和影响半径已确认",
+            "◉ 测试映射：未登记 test-mapping，先生成并回填 test_ids",
+            "○ 实现验证：映射登记后再编码/测试",
+            "○ 最终交付：用户要求后执行",
+        ]
+
+    if stale:
+        names = "，".join(str(item.get("obligation_id", "?")) for item in stale)
+        return [
+            f"✓ 确认需求：已确认 {revision}",
+            "✓ 确认实施计划：计划和影响半径已确认",
+            f"⏳ 测试映射：{len(stale)} 项 STALE，回填 test_ids（{names}）",
+            "○ 实现验证：映射 CURRENT 后继续编码/测试",
+            "○ 最终交付：用户要求后执行",
+        ]
+
+    if conclusion == "FULL_PASS":
+        return [
+            f"✓ 确认需求：已确认 {revision}",
+            "✓ 确认实施计划：计划和影响半径已确认",
+            "✓ 测试映射：test_ids 已对齐当前需求",
+            "✓ 实现验证：最终代码证据已生成",
+            f"✓ 最终交付：{conclusion_label}",
+        ]
+    if conclusion == "LOCAL_PASS_DEVICE_PENDING":
+        return [
+            f"✓ 确认需求：已确认 {revision}",
+            "✓ 确认实施计划：计划和影响半径已确认",
+            "✓ 测试映射：test_ids 已对齐当前需求",
+            "✓ 实现验证：本地证据已完成",
+            f"⏳ 最终交付：{conclusion_label}",
+        ]
+    if conclusion in {"INCOMPLETE", "BLOCKED"}:
+        marker = "✗" if conclusion == "BLOCKED" else "●"
+        return [
+            f"✓ 确认需求：已确认 {revision}",
+            "✓ 确认实施计划：计划和影响半径已确认",
+            "✓ 测试映射：test_ids 已对齐当前需求",
+            "◉ 实现验证：处理最终报告缺口",
+            f"{marker} 最终交付：{conclusion_label}",
+        ]
+
+    return [
+        f"✓ 确认需求：已确认 {revision}",
+        "✓ 确认实施计划：计划和影响半径已确认",
+        "✓ 测试映射：test_ids 已对齐当前需求",
+        "◉ 实现验证：最小编码，跑受影响测试",
+        "○ 最终交付：按需执行 route / assemble / validate",
+    ]
+
+
+def render_execution_progress(
+    snapshot: dict[str, Any] | None,
+    mapping: dict[str, Any] | None,
+    plan_receipt: dict[str, Any] | None,
+    delivery_result: dict[str, Any] | None,
+) -> str:
+    """渲染续接指南中的当前执行进度段。"""
+    return "\n".join(["## 当前执行进度", "", *execution_progress_items(
+        snapshot,
+        mapping,
+        plan_receipt,
+        delivery_result,
+    ), ""])
+
+
 def render_resume_guide(
     snapshot: dict[str, Any] | None,
     mapping: dict[str, Any] | None,
@@ -153,6 +279,8 @@ def render_resume_guide(
             "> 尚未建立需求快照。先执行 `delivery.py init` 和 `check-env`。",
             "",
         ])
+        lines.extend(render_execution_progress(None, mapping, plan_receipt, delivery_result).splitlines())
+        lines.append("")
         return "\n".join(lines)
     revision = snapshot.get("revision", "?")
     status = user_label(snapshot.get("status"), SNAPSHOT_STATUS_LABELS)
@@ -164,10 +292,16 @@ def render_resume_guide(
     lines.append(f"- 实施计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}")
     conclusion = (delivery_result or {}).get("conclusion")
     if conclusion:
-        from .user_facing_labels import DELIVERY_CONCLUSION_LABELS
         lines.append(
             f"- 最终结论：{user_label(conclusion, DELIVERY_CONCLUSION_LABELS)}"
         )
+    lines.append("")
+    lines.extend(render_execution_progress(
+        snapshot,
+        mapping,
+        plan_receipt,
+        delivery_result,
+    ).splitlines())
     lines.append("")
 
     obligations = snapshot.get("obligations") or []

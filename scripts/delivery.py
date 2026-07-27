@@ -760,7 +760,7 @@ def _print_flow_position(paths) -> None:
     单一职责：根据已存在的事实文件推断五步流程当前位置，只读不写。脚本仍是
     检查点模型，本函数补一个常驻指示器，逼近 codex 状态驱动的体验。
     """
-    from .render_artifacts import _read_json
+    from .render_artifacts import _read_json, execution_progress_items
 
     requirement_dir = getattr(paths, "requirement_dir", None)
     snapshot_path = requirement_snapshot_path_for_config(
@@ -770,39 +770,21 @@ def _print_flow_position(paths) -> None:
         snapshot = load_requirement_snapshot(snapshot_path)
     except RequirementSnapshotError:
         snapshot = None
-    if snapshot is None or not snapshot.get("obligations"):
-        print("\n🧭 当前流程位置：第①步 确认需求")
-        print("   ○ 完成需求理解、写回 requirement_file、check-env → confirm-requirement-update")
-        return
-    if snapshot.get("status") != "CONFIRMED" or snapshot.get("pending_changes"):
-        print("\n🧭 当前流程位置：第①步 确认需求（仍有待定/冲突项）")
-        print("   ○ 解决待定项后重新 confirm-requirement-update")
-        return
     receipt = _read_json(
         Path(requirement_dir) / "test-cases" / "implementation-plan-receipt.json"
         if requirement_dir else None
     ) if requirement_dir else None
-    plan_confirmed = bool(receipt and receipt.get("confirmed_at"))
-    if not plan_confirmed:
-        print("\n🧭 当前流程位置：第②步 拆分测试与确认计划")
-        print("   ✓ 需求已确认")
-        print("   ○ 写实施计划.md → 展示摘要 → confirm-plan")
-        return
     mapping = _read_json(
         getattr(paths, "test_mapping_path", None)
         or (Path(requirement_dir) / "test-cases" / "test-mapping.json")
     ) if requirement_dir else None
-    stale = [
-        m for m in (mapping or {}).get("mappings", [])
-        if m.get("mapping_status") == "STALE"
-    ]
-    if stale:
-        names = "，".join(m.get("obligation_id", "?") for m in stale)
-        print(f"\n🧭 当前流程位置：第③步 实现验证（{len(stale)} 个测试待回填：{names}）")
-        print("   ○ init-test-mapping 回填 CURRENT → 按 Then 编码 Red→Green")
-        return
-    print("\n🧭 当前流程位置：第③/④步 实现验证 / 增量循环")
-    print("   ○ 按原子 Then 编码；完善只跑受影响测试；最终交付由用户明确要求触发")
+    delivery_result = _read_json(
+        Path(requirement_dir) / "test-results" / "delivery-result.json"
+        if requirement_dir else None
+    ) if requirement_dir else None
+    print("\n🧭 当前流程位置 / 当前执行进度")
+    for item in execution_progress_items(snapshot, mapping, receipt, delivery_result):
+        print(f"   {item}")
 
 
 def _render_resume_guide(paths, revision_manifest=None) -> None:

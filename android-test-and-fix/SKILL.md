@@ -259,6 +259,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 - 优先复用项目已有 pitest 配置；没有时只对本次 diff 涉及的类以最小变异算子集运行，不自动升级 AGP/Gradle、不新增重型依赖。Kotlin 目标需要 pitest Kotlin 插件。
 - Kotlin 项目的编译器生成代码（`kotlin.jvm.internal.Intrinsics` 的 null-check、`checkParameterIsNotNull` 等）不是业务逻辑，业务测试无法也无需杀死这些变异。必须配置 `excludedClasses = ["kotlin.jvm.internal.Intrinsics"]` 排除，否则正常 Kotlin 交付永远无法满足 `survived=0`，使 FULL_PASS 形同虚设。排除的是编译器插桩，不排除任何业务代码。
 - 诚实边界：变异测试基于 JVM 字节码，覆盖 Unit Test 层业务逻辑（“AI 不更新断言”风险最高、命中最高的层），不覆盖 Robolectric 和 instrumented 测试。机器能证明“断言杀掉了变异”，仍读不懂测试语义正确性——后者由 route 阶段 `android-review-diff` 复核“映射声称改了测试 vs 测试文件真实 diff”。
+- 纯资源/文案/配置豁免（机器核，不靠声明）：当本次 diff **只触及** 资源或配置类文件（`res/values/*.xml`、`strings*.xml`、`*_strings.xml`、`colors.xml`、`dimens.xml`、`themes.xml`、`*.properties`、`gradle.properties`、纯 `<meta-data>` 的 `AndroidManifest.xml`、`.gitignore`、`README`/文档），不存在可变异的业务字节码时，变异测试无意义。此时 `mutation_testing` 输出 `languages=["NONE"]`、`generated_mutants=0`、`survived=0`，并在专项结果 reason 中写明"diff 仅触及资源/配置，无业务字节码可变异"，不强制跑 pitest。**只要 diff 含任意 `.kt`/`.java` 业务源码，豁免即失效，必须正常跑变异。** 豁免由 diff 实际文件后缀决定，AI 不得凭"L1/文案改动"等主观判断跳过。
 
 ## 架构测试层（ArchUnit，补 M16 六条不变量）
 

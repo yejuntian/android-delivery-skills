@@ -61,6 +61,7 @@ from ..delivery import (  # noqa: E402
     read_requirement,
     resolve_config_paths,
 )
+from ..fact_inbox import add_fact, load_fact_inbox, resolve_fact  # noqa: E402
 from ..config_paths import (  # noqa: E402
     baseline_path_for_config,
     capabilities_path_for_config,
@@ -350,6 +351,78 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertFalse(
             (self.requirement_dir / ".state" / "requirement-init-receipt.json").exists()
         )
+
+    def test_pending_chat_fact_blocks_requirement_confirmation(self) -> None:
+        """行为性聊天补充必须先解决，不能凭聊天继续需求确认。"""
+        content = bdd_requirement(result="显示错误")
+        self.requirement.write_text(content, encoding="utf-8")
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, content, requirement_id="baseline-1",
+        )
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        add_fact(self.requirement_dir / ".state" / "fact-inbox.json", "还要支持空数组")
+
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            self.assertRaisesRegex(DeliveryError, "聊天事实"),
+        ):
+            cmd_confirm_requirement_update(SimpleNamespace(
+                config=str(self.root / "local.yaml"), revision_file=None,
+            ))
+
+    def test_confirmed_chat_fact_is_bound_only_after_new_requirement_revision(self) -> None:
+        """确认事实后仍需写回需求并产生新 revision，随后才解除事实门禁。"""
+        original = bdd_requirement(result="显示错误")
+        changed = bdd_requirement(result="显示空数组时显示空状态")
+        self.requirement.write_text(original, encoding="utf-8")
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, original, requirement_id="baseline-1",
+        )
+        fact_path = self.requirement_dir / ".state" / "fact-inbox.json"
+        fact = add_fact(fact_path, "还要支持空数组")
+        resolve_fact(fact_path, fact["id"], "CONFIRMED", clear_missing=True)
+        self.requirement.write_text(changed, encoding="utf-8")
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        args = SimpleNamespace(config=str(self.root / "local.yaml"), revision_file=None)
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            self.assertRaises(DeliveryError),
+        ):
+            cmd_confirm_requirement_update(args)
+
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            cmd_init(SimpleNamespace(config=args.config))
+            self.assertEqual(0, cmd_confirm_requirement_update(args))
+
+        current = load_fact_inbox(fact_path)["facts"][0]
+        self.assertEqual(1, current["materialized_revision"])
+        self.assertEqual(requirement_digest(changed), current["materialized_requirement_sha256"])
 
     def test_changed_requirement_confirmation_requires_matching_init(self) -> None:
         """需求变化后跳过 init 时不能直接确认，读取同一 SHA 后才放行。"""

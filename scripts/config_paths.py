@@ -73,6 +73,11 @@ class ConfigPaths:
         """返回当前需求唯一的 TDD Red/Green 周期记录路径。"""
         return self.state_dir / "tdd-cycle.json"
 
+    @property
+    def fact_inbox_path(self) -> Path:
+        """返回聊天事实收件箱路径；讨论和待确认事实跟当前需求隔离。"""
+        return self.state_dir / "fact-inbox.json"
+
 
 def _resolve(value: Any, base: Path) -> Path | None:
     """只基于明确父目录解析路径，不搜索同名文件或猜测其他根目录。"""
@@ -166,6 +171,11 @@ def route_impact_path_for_config(config_path: str | Path) -> Path:
 def tdd_cycle_path_for_config(config_path: str | Path) -> Path:
     """返回当前需求的 TDD 周期记录路径。"""
     return _state_dir_for(config_path) / "tdd-cycle.json"
+
+
+def fact_inbox_path_for_config(config_path: str | Path) -> Path:
+    """返回当前需求聊天事实收件箱路径。"""
+    return _state_dir_for(config_path) / "fact-inbox.json"
 
 
 def evidence_directory_for_config(config_path: str | Path) -> Path:

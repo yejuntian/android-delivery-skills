@@ -34,6 +34,7 @@ from ..delivery_gate import (  # noqa: E402
     validate_delivery_result,
 )
 from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, junit_content_signature, sha256_file  # noqa: E402
+from ..fact_inbox import add_fact, resolve_fact  # noqa: E402
 from ..git_changes import GitChange, current_delivery_snapshot, write_baseline  # noqa: E402
 from ..impact_radius import impact_radius_digest, impact_radius_path  # noqa: E402
 from ..requirement_snapshot import (  # noqa: E402
@@ -1220,6 +1221,8 @@ class DeliveryGateTests(unittest.TestCase):
                     },
                 ),
             )
+            fact_inbox = requirement_dir / ".state" / "fact-inbox.json"
+            fact = add_fact(fact_inbox, "还要支持空数组")
             with (
                 mock.patch("scripts.delivery_gate.baseline_path_for_config", return_value=baseline),
                 mock.patch(
@@ -1236,6 +1239,9 @@ class DeliveryGateTests(unittest.TestCase):
                 ),
                 mock.patch("scripts.delivery_gate.route_impact_path_for_config", return_value=route_path),
             ):
+                with self.assertRaisesRegex(DeliveryGateError, "聊天事实"):
+                    current_context(root / "local.yaml", config)
+                resolve_fact(fact_inbox, fact["id"], "DISCUSSION")
                 context = current_context(root / "local.yaml", config)
                 (repo / "App.kt").write_text("class AppChangedAgain\n", encoding="utf-8")
                 with self.assertRaisesRegex(DeliveryGateError, "路由影响快照.*已失效"):
@@ -1250,6 +1256,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(confirmed["requirement_id"], context["requirement_id"])
         self.assertEqual(1, context["requirement_revision"])
         self.assertIn("BDD-001", context["expected_obligations"])
+        self.assertEqual(str(fact_inbox.resolve()), context["fact_inbox_path"])
 
     def test_current_context_blocks_unconfirmed_requirement_update(self) -> None:
         """验证需求文件变化或待定修订存在时，最终门禁不能生成可通过上下文。"""

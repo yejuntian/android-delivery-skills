@@ -119,6 +119,27 @@ description: |
 - 只在聊天中确认的变化先同步到 `requirement_file`。用户确认后，后续编码、测试、route 和最终报告重新读取当前需求和机器产物，确认前旧聊天理解不得作为执行依据。
 - `confirm-requirement-update` 只更新最近确认正文、修订号、有效义务和修订历史，不读取或修改 Git。重复 `check-env` 只复用当前起点；新的串行需求必须完成当前需求并获得用户明确确认后，在干净工作区执行 `check-env --new-requirement`。
 
+### 聊天事实收件箱
+
+- 聊天不是正式需求事实源。对“还要支持空数组”这类可能改变行为的补充，不猜测用户是否已经正式下单，先登记到 `<requirement_dir>/.state/fact-inbox.json`：
+
+  ```bash
+  python3 ai-skills/android-delivery-skills/scripts/fact_inbox.py add \
+    --config <配置> --text "还要支持空数组" \
+    --missing scope --missing expected_result
+  ```
+
+- `PENDING` 表示已捕获但不能开发；`DISCUSSION` 表示明确只是讨论；`CONFIRMED` 表示用户确认了方向，但仍需补齐范围和验收结果；`REJECTED` 不进入正式需求。机器只追问会改变实现或验收的缺失边界，不追问“你是不是认真的”。
+- 用户确认方向并补齐边界后，将事实写回 `requirement_file`，重新执行 `init`，再执行：
+
+  ```bash
+  python3 ai-skills/android-delivery-skills/scripts/fact_inbox.py resolve \
+    --config <配置> --id FACT-001 --status CONFIRMED --clear-missing
+  python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
+  ```
+
+- 只有 `confirm-requirement-update` 成功后，事实才绑定当前需求 `revision` 和 `requirement_file` 摘要。只改收件箱、只在聊天确认、只改需求但跳过 `init`，或重复确认没有形成新的需求修订，都不能继续 `confirm-plan`、`init-test-mapping`、`route` 或最终 gate。最终 gate 还会重新读取收件箱，防止旧流程缓存绕过该约束。
+
 ## 影响面识别与路由
 
 需求理解阶段必须先判断本次需求影响面，并在“当前需求理解”中输出：

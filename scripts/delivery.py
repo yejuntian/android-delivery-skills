@@ -98,6 +98,14 @@ from .user_facing_labels import (  # noqa: E402
     revision_label,
 )
 from .atomic_write import write_json_atomic  # noqa: E402
+from .fact_inbox import (  # noqa: E402
+    FactInboxError,
+    blocking_facts,
+    confirmed_not_ready_facts,
+    load_fact_inbox,
+    materialize_confirmed_facts,
+    pending_facts,
+)
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -105,6 +113,58 @@ DEFAULT_CONFIG_PATH = SKILL_ROOT / "profiles/local.yaml"
 REQUIREMENTS_PATH = SKILL_ROOT / "requirements.txt"
 class DeliveryError(RuntimeError):
     """表示已有明确原因、不能继续猜测的流程错误。"""
+
+
+def _fact_inbox_path(paths) -> Path:
+    """返回当前需求事实收件箱路径；兼容旧测试夹具的简化 paths。"""
+    configured = getattr(paths, "fact_inbox_path", None)
+    return Path(configured).expanduser().resolve() if configured else (
+        Path(paths.requirement_dir).expanduser().resolve() / ".state" / "fact-inbox.json"
+    )
+
+
+def _fact_blocking_message(facts: list[dict]) -> str:
+    """把待处理聊天事实渲染为可操作的中文门禁错误。"""
+    lines = ["存在尚未写回并确认的聊天事实，不能继续流程："]
+    for fact in facts:
+        missing = f"；缺少：{', '.join(fact['missing'])}" if fact.get("missing") else ""
+        lines.append(f"- {fact['id']} [{fact['status']}] {fact['text']}{missing}")
+    lines.append("请先用 fact_inbox.py resolve 处理为 DISCUSSION、CONFIRMED 或 REJECTED。")
+    return "\n".join(lines)
+
+
+def _load_facts(paths) -> dict:
+    try:
+        return load_fact_inbox(_fact_inbox_path(paths))
+    except FactInboxError as exc:
+        raise DeliveryError(str(exc)) from exc
+
+
+def _require_no_blocking_facts(paths) -> None:
+    """计划、编码、route 和 gate 前不允许遗留任何未物化事实。"""
+    facts = _load_facts(paths)
+    blockers = blocking_facts(facts)
+    if blockers:
+        raise DeliveryError(_fact_blocking_message(blockers))
+
+
+def _require_facts_ready_for_confirmation(paths) -> None:
+    """需求确认允许已确认候选等待本轮物化，但不允许未确认或缺边界事实。"""
+    facts = _load_facts(paths)
+    blockers = pending_facts(facts) + confirmed_not_ready_facts(facts)
+    if blockers:
+        raise DeliveryError(_fact_blocking_message(blockers))
+
+
+def _print_fact_inbox_status(paths) -> None:
+    """在 init 输出事实候选状态，不替 AI 猜测聊天语义。"""
+    facts = _load_facts(paths)
+    if not facts.get("facts"):
+        return
+    print(f"📥 聊天事实收件箱: {_fact_inbox_path(paths)}")
+    for fact in facts["facts"]:
+        missing = f"；缺少：{', '.join(fact['missing'])}" if fact.get("missing") else ""
+        print(f"  - {fact['id']} [{fact['status']}] {fact['text']}{missing}")
 
 
 def _require_atomic_bdd_before_baseline(content: str) -> None:
@@ -758,6 +818,7 @@ def cmd_init(args):
     content = read_requirement(requirement_path)
     print("\n=== 需求正文内容 ===")
     print(content)
+    _print_fact_inbox_status(paths)
     _require_atomic_bdd_before_baseline(content)
     _write_requirement_init_receipt(paths, requirement_path, content)
 
@@ -1116,6 +1177,7 @@ def cmd_confirm_requirement_update(args):
     requirement_path = paths.requirement_path
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法确认需求修订")
+    _require_facts_ready_for_confirmation(paths)
     content = read_requirement(requirement_path)
     _require_atomic_bdd_before_baseline(content)
     snapshot_path = requirement_snapshot_path_for_config(args.config)
@@ -1134,6 +1196,7 @@ def cmd_confirm_requirement_update(args):
     else:
         manifest = build_confirmed_revision_manifest(snapshot, content)
         write_revision_manifest(revision_file, manifest)
+    previous_revision = snapshot["revision"]
     snapshot, confirmed = apply_requirement_revision(
         snapshot_path,
         requirement_path,
@@ -1147,6 +1210,25 @@ def cmd_confirm_requirement_update(args):
                 print(f"  - {format_requirement_change(change)}")
         print("解决全部待确认项和冲突项并更新修订清单后，重新执行本命令。")
         return 2
+
+    if snapshot["revision"] == previous_revision:
+        facts = _load_facts(paths)
+        if any(
+            fact["status"] == "CONFIRMED" and fact.get("materialized_revision") is None
+            for fact in facts.get("facts", [])
+        ):
+            raise DeliveryError(
+                "已确认聊天事实尚未形成新的需求修订；请先把事实写回 requirement_file，"
+                "再重新执行 init 和 confirm-requirement-update"
+            )
+    try:
+        materialize_confirmed_facts(
+            _fact_inbox_path(paths),
+            snapshot["revision"],
+            snapshot["sha256"],
+        )
+    except FactInboxError as exc:
+        raise DeliveryError(str(exc)) from exc
 
     print(
         f"✅ 需求修订已确认: {snapshot['requirement_id']} "
@@ -1200,6 +1282,7 @@ def cmd_confirm_plan(args):
     if snapshot is None:
         raise DeliveryError("尚未建立需求修订，请先执行 check-env 和 confirm-requirement-update")
     _require_current_confirmed_requirement(snapshot, requirement_path, content)
+    _require_no_blocking_facts(paths)
 
     receipt, receipt_path = confirm_implementation_plan(snapshot, content, paths.requirement_dir)
     plan_path = implementation_plan_path(paths.requirement_dir)
@@ -1283,6 +1366,7 @@ def cmd_route(args):
         paths.requirement_path,
         requirement_content,
     )
+    _require_no_blocking_facts(paths)
     for source in _declared_api_sources(config):
         if source not in impacts["api"]:
             impacts["api"].append(source)
@@ -1472,6 +1556,7 @@ def cmd_init_test_mapping(args):
         raise DeliveryError("未配置 requirement_file，无法校验测试映射")
     content = read_requirement(paths.requirement_path)
     _require_current_confirmed_requirement(snapshot, paths.requirement_path, content)
+    _require_no_blocking_facts(paths)
     validate_plan_confirmation(snapshot, content, paths.requirement_dir)
     mapping_path = paths.test_mapping_path
     if args.validate:
@@ -1523,6 +1608,7 @@ def main(argv=None):
         ImpactRadiusError,
         RequirementInputError,
         RequirementSnapshotError,
+        FactInboxError,
     ) as exc:
         print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1

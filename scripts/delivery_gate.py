@@ -33,6 +33,11 @@ from .config_paths import (  # noqa: E402
 from .bdd_scenarios import is_bdd_id  # noqa: E402
 from .atomic_write import write_text_atomic  # noqa: E402
 from .delivery import DeliveryError, load_config, read_requirement  # noqa: E402
+from .fact_inbox import (  # noqa: E402
+    FactInboxError,
+    blocking_facts,
+    load_fact_inbox,
+)
 from .execution_evidence import (  # noqa: E402
     KNOWN_EVIDENCE_GATES,
     sha256_file,
@@ -149,6 +154,16 @@ class DeliveryGateError(RuntimeError):
     """表示最终报告、配置或当前交付上下文无法可靠校验。"""
 
 
+def _fact_blocking_message(facts: list[dict[str, Any]]) -> str:
+    """把未物化聊天事实转换成最终门禁可执行的错误信息。"""
+    lines = ["存在尚未写回并确认的聊天事实，不能进入最终交付门禁："]
+    for fact in facts:
+        missing = f"；缺少：{', '.join(fact['missing'])}" if fact.get("missing") else ""
+        lines.append(f"- {fact['id']} [{fact['status']}] {fact['text']}{missing}")
+    lines.append("请先写回 requirement_file，并重新执行 init 和 confirm-requirement-update。")
+    return "\n".join(lines)
+
+
 def requirement_file_digest(path: Path) -> str:
     """计算提取正文的规范化摘要，避免 DOCX 元数据或换行变化造成误失效。"""
     try:
@@ -205,6 +220,14 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         raise DeliveryGateError("需求修订仍有待定或冲突项，不能进入最终交付门禁")
     if requirement_snapshot["sha256"] != requirement_sha256:
         raise DeliveryGateError("requirement_file 尚未确认为当前需求修订")
+    fact_inbox_path = paths.fact_inbox_path
+    try:
+        fact_inbox = load_fact_inbox(fact_inbox_path)
+    except FactInboxError as exc:
+        raise DeliveryGateError(str(exc)) from exc
+    fact_blockers = blocking_facts(fact_inbox)
+    if fact_blockers:
+        raise DeliveryGateError(_fact_blocking_message(fact_blockers))
     route_path = route_impact_path_for_config(config_path)
     try:
         route_impact = load_route_impact(route_path)
@@ -286,6 +309,8 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "changed_files": sorted(set(changed_files)),
         "test_mapping_path": str(paths.test_mapping_path),
         "tdd_cycle_path": str(paths.tdd_cycle_path),
+        "fact_inbox_path": str(fact_inbox_path),
+        "fact_inbox": fact_inbox,
     }
     api_config = config.get("api")
     api_status = api_config.get("status") if isinstance(api_config, dict) else None

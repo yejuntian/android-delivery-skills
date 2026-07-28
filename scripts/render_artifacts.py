@@ -249,12 +249,16 @@ def render_execution_progress(
     delivery_result: dict[str, Any] | None,
 ) -> str:
     """渲染续接指南中的当前执行进度段。"""
-    return "\n".join(["## 当前执行进度", "", *execution_progress_items(
-        snapshot,
-        mapping,
-        plan_receipt,
-        delivery_result,
-    ), ""])
+    items = [
+        f"- {item}"
+        for item in execution_progress_items(
+            snapshot,
+            mapping,
+            plan_receipt,
+            delivery_result,
+        )
+    ]
+    return "\n".join(["## 当前执行进度", "", *items, ""])
 
 
 def render_resume_guide(

@@ -22,6 +22,7 @@ if __package__ in {None, ""}:
 
 from ..render_artifacts import (  # noqa: E402
     execution_progress_items,
+    render_execution_progress,
     render_resume_guide,
     render_revision_md,
     render_test_mapping_md,
@@ -98,6 +99,15 @@ class RenderArtifactsTests(unittest.TestCase):
 
         self.assertIn("◉ 确认需求", items[0])
         self.assertTrue(any("实施计划.md" in item for item in items))
+
+    def test_execution_progress_renders_as_unindexed_bullet_list(self) -> None:
+        """当前执行进度标题不加索引，阶段逐行渲染为列表。"""
+        section = render_execution_progress(None, None, None, None)
+        lines = section.splitlines()
+
+        self.assertEqual("## 当前执行进度", lines[0])
+        self.assertTrue(all(line.startswith("- ") for line in lines[2:-1]))
+        self.assertIn("- ◉ 确认需求", section)
 
     def test_execution_progress_requires_plan_after_confirmed_requirement(self) -> None:
         """需求已确认但计划未确认时，当前步骤是实施计划确认。"""

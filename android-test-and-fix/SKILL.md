@@ -267,15 +267,6 @@ PIT/pitest 用于高风险业务逻辑的断言强度检查，不是每个需求
 - 诚实边界：变异测试基于 JVM 字节码，覆盖 Unit Test 层业务逻辑（“AI 不更新断言”风险最高、命中最高的层），不覆盖 Robolectric 和 instrumented 测试。机器能证明“断言杀掉了变异”，仍读不懂测试语义正确性——后者由 route 阶段 `android-review-diff` 复核“映射声称改了测试 vs 测试文件真实 diff”。
 - 已要求 PIT 但最终范围只有资源或配置、没有业务字节码时，允许 `languages=["NONE"]`、零变异并说明原因。
 
-## 架构测试层（ArchUnit，补 M16 六条不变量）
-
-架构约束可由 AI 生成可执行测试固化，替代易碎的手写扫描脚本：
-
-- 每个义务在 `test-mapping.json` 的 `architecture_tests` 字段登记它的架构约束（如“埋点只在统一出口”“X 包不依赖 Y”“禁绕过 Repository 直接调网络”）。
-- AI 生成 ArchUnit 测试进项目 test 源集，和普通 JUnit 一起跑，进现有 `android-test-and-fix` 门禁，零额外门禁基建；通过 `obligation_test_cases` 机制登记即可。
-- 复用原则：项目已有 ArchUnit 就用；没有时用纯 Kotlin 反射写（零依赖）；需要强表达力且用户同意才引入 `archunit-junit5`。不自动升级 AGP/Gradle、不新增重型依赖。
-- 边界：ArchUnit 是 JVM 编译期结构层，与六条不变量（AI 语义审查 + 控制面审计）互补不重叠；时序类约束（A 早于 B）仍归变异测试。
-
 ## Android 版本兼容测试
 
 当需求涉及系统 API、权限、存储、通知、后台任务、前台服务、WebView、FileProvider、DeepLink、WindowInsets、相册、蓝牙、定位、媒体、软键盘、状态栏或导航栏时，测试用例矩阵必须包含 Android 版本兼容项。

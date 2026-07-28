@@ -278,34 +278,5 @@ class TestMappingTests(unittest.TestCase):
         errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
         self.assertTrue(any("缺少当前确认义务的登记: BDD-004" in error for error in errors))
 
-    def test_architecture_tests_validated(self) -> None:
-        """architecture_tests 必须是非重复字符串数组；结构合法时不影响 CURRENT 校验。"""
-        mapping = {
-            "version": MAPPING_VERSION,
-            "mappings": [
-                {
-                    "obligation_id": "BDD-001",
-                    "obligation_sha256": "a" * 64,
-                    "test_ids": ["FeatureTest#t1"],
-                    "mapping_status": "CURRENT",
-                    "manual_reason": None,
-                    "architecture_tests": ["埋点只在统一出口", "X 不依赖 Y"],
-                },
-                {
-                    "obligation_id": "BDD-004",
-                    "obligation_sha256": "b" * 64,
-                    "test_ids": ["FeatureTest#t2"],
-                    "mapping_status": "CURRENT",
-                    "manual_reason": None,
-                },
-            ],
-        }
-        self.assertEqual([], validate_test_mapping(mapping, make_snapshot(self.obligations)))
-
-        mapping["mappings"][0]["architecture_tests"] = ["dup", "dup"]
-        errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
-        self.assertTrue(any("architecture_tests 不得重复" in error for error in errors))
-
-
 if __name__ == "__main__":
     unittest.main()

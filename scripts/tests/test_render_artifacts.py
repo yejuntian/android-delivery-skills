@@ -3,7 +3,7 @@
 
 用途：验证 JSON→md 影子渲染正确，以及续接指南聚合各事实源。
 
-覆盖范围：需求修订说明、测试映射说明（含架构约束栏）、续接指南状态汇总、
+覆盖范围：需求修订说明、测试映射说明、续接指南状态汇总、
 交付结论强制未验证项/残留风险段。测试不运行 Android 构建或设备任务。
 """
 
@@ -54,8 +54,8 @@ class RenderArtifactsTests(unittest.TestCase):
         self.assertIn("`BDD-001`", md)
         self.assertIn("[必需]", md)
 
-    def test_test_mapping_md_shows_architecture_column(self) -> None:
-        """测试映射说明含架构约束栏，STALE 标记为待回填。"""
+    def test_test_mapping_md_shows_stale_status(self) -> None:
+        """测试映射说明显示 STALE 待回填状态。"""
         mapping = {
             "mappings": [
                 {
@@ -63,20 +63,17 @@ class RenderArtifactsTests(unittest.TestCase):
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["TEST-001"],
                     "mapping_status": "CURRENT",
-                    "architecture_tests": ["埋点只在统一出口"],
                 },
                 {
                     "obligation_id": "BDD-004",
                     "obligation_sha256": "b" * 64,
                     "test_ids": [],
                     "mapping_status": "STALE",
-                    "architecture_tests": [],
                 },
             ],
         }
         md = render_test_mapping_md(mapping, make_snapshot())
-        self.assertIn("架构约束", md)
-        self.assertIn("埋点只在统一出口", md)
+        self.assertIn("测试用例", md)
         self.assertIn("待回填", md)
 
     def test_traceability_is_generated_from_mapping_and_result(self) -> None:

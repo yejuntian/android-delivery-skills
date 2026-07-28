@@ -102,7 +102,7 @@ def render_test_mapping_md(
     mapping: dict[str, Any] | None,
     snapshot: dict[str, Any],
 ) -> str:
-    """把 test-mapping.json 渲染成测试映射说明 md（含架构约束栏）。"""
+    """把 test-mapping.json 渲染成测试映射说明 md。"""
     obligations = {item["id"]: item for item in snapshot.get("obligations", [])}
     mappings = (mapping or {}).get("mappings") if mapping else None
     lines = [
@@ -110,23 +110,21 @@ def render_test_mapping_md(
         "",
         "> 本文件由 `test-mapping.json` 自动渲染；门禁仍以 JSON 为准。",
         "",
-        "| 义务 | 必需 | 状态 | 测试用例 | 架构约束 |",
-        "|---|---|---|---|---|",
+        "| 义务 | 必需 | 状态 | 测试用例 |",
+        "|---|---|---|---|",
     ]
     if not mappings:
-        lines.append("| — | — | 未登记 | — | — |")
+        lines.append("| — | — | 未登记 | — |")
     for entry in mappings or []:
         identifier = entry.get("obligation_id")
         obligation = obligations.get(identifier, {})
         required = "必需" if obligation.get("required") else "可选"
         status = "待回填" if entry.get("mapping_status") == "STALE" else "已对齐"
         test_ids = ", ".join(entry.get("test_ids") or []) or "—"
-        arch = "; ".join(entry.get("architecture_tests") or []) or "—"
-        lines.append(f"| `{identifier}` | {required} | {status} | {test_ids} | {arch} |")
+        lines.append(f"| `{identifier}` | {required} | {status} | {test_ids} |")
     lines.extend([
         "",
         "- `待回填` 表示需求增量使义务语义变化，旧登记自动标 STALE，必须重新登记测试并回填 CURRENT。",
-        "- 架构约束由 AI 生成 ArchUnit/反射测试固化到项目 test 源集，进 `android-test-and-fix` 门禁。",
         "",
     ])
     return "\n".join(lines)

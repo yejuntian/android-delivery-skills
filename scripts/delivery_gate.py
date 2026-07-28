@@ -61,6 +61,7 @@ from .test_mapping import (  # noqa: E402
     load_test_mapping,
     validate_test_mapping,
 )
+from .tdd_cycle import validate_tdd_cycle  # noqa: E402
 from .route_impact import RouteImpactError, load_route_impact  # noqa: E402
 from .specialist_result import (  # noqa: E402
     JOURNEY_AGENT_SKILL,
@@ -283,6 +284,8 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "impact_radius_sha256": plan_context["impact_radius_sha256"],
         "impact_radius": radius_payload,
         "changed_files": sorted(set(changed_files)),
+        "test_mapping_path": str(paths.test_mapping_path),
+        "tdd_cycle_path": str(paths.tdd_cycle_path),
     }
     api_config = config.get("api")
     api_status = api_config.get("status") if isinstance(api_config, dict) else None
@@ -293,6 +296,9 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
     mutation_config = testing.get("mutation_testing") if isinstance(testing, dict) else None
     context["mutation_testing_required"] = bool(
         isinstance(mutation_config, dict) and mutation_config.get("required") is True
+    )
+    context["tdd_required"] = bool(
+        not isinstance(testing, dict) or testing.get("tdd_required", True) is not False
     )
     for field in (
         "requirement_id",
@@ -476,6 +482,20 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         if obligation.get("status") == "COVERED_AUTOMATED"
         for ref in declared_evidence_refs(obligation)
     }
+    automated_obligation_ids = {
+        identifier
+        for identifier, obligation in obligations.items()
+        if obligation.get("status") == "COVERED_AUTOMATED"
+    }
+    tdd_cycle_valid = True
+    if passing and context.get("tdd_required") and automated_obligation_ids:
+        tdd_cycle_errors = validate_tdd_cycle(
+            context.get("tdd_cycle_path", ""),
+            context,
+            automated_obligation_ids,
+        )
+        errors.extend(tdd_cycle_errors)
+        tdd_cycle_valid = not tdd_cycle_errors
     pass_gate_refs = {
         ref
         for gate in gates.values()
@@ -620,6 +640,12 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 gate_id in AUTOMATED_GATE_PROOFS
                 and ref in valid_automated
                 and item.get("gate_id") == gate_id
+                and (
+                    gate_id != "android-test-and-fix"
+                    or not context.get("tdd_required")
+                    or not automated_obligation_ids
+                    or tdd_cycle_valid
+                )
             )
         if kind == "MANUAL":
             return (

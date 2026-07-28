@@ -68,6 +68,11 @@ class ConfigPaths:
         """机器状态根目录（基线/快照/route/证据/能力），跟 requirement_dir 走。"""
         return (self.requirement_dir / ".state").resolve()
 
+    @property
+    def tdd_cycle_path(self) -> Path:
+        """返回当前需求唯一的 TDD Red/Green 周期记录路径。"""
+        return self.state_dir / "tdd-cycle.json"
+
 
 def _resolve(value: Any, base: Path) -> Path | None:
     """只基于明确父目录解析路径，不搜索同名文件或猜测其他根目录。"""
@@ -156,6 +161,11 @@ def requirement_snapshot_path_for_config(config_path: str | Path) -> Path:
 def route_impact_path_for_config(config_path: str | Path) -> Path:
     """返回路由影响快照路径，使条件门禁绑定最近一次最终 diff 分析。"""
     return _state_dir_for(config_path) / "route-impact.json"
+
+
+def tdd_cycle_path_for_config(config_path: str | Path) -> Path:
+    """返回当前需求的 TDD 周期记录路径。"""
+    return _state_dir_for(config_path) / "tdd-cycle.json"
 
 
 def evidence_directory_for_config(config_path: str | Path) -> Path:

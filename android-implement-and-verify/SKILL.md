@@ -63,9 +63,13 @@ description: |
 1. **先建立测试清单**：执行 `init-test-mapping`，在 `test-results/测试结果.md` 记录每个 BDD 场景的预期、测试层、真实测试 ID 和执行方式。
 2. **先写失败测试**：逐个 BDD 补业务断言并观察 Red；测试在实现前已通过时，先检查断言是否真正覆盖新行为。
 3. **再写最少实现**：只修改影响半径内代码使测试 Green，再做必要重构并重跑受影响测试。
-4. **按风险补证据**：根据 BDD、风险和实际 diff 选择 Unit、集成、构建、安装、Journey、截图、日志或实际人工证据，不机械执行同一串命令。
-5. **回填最终结果**：每个 BDD 场景标 `PASS/FAIL/UNVERIFIED`，绑定测试、截图或日志；所有场景都有诚实结果后才能进入 `route + gate`。
-6. **发现需求漏洞即回写**：先改需求事实源并重新确认需求和计划，再更新测试、实现和证据。
+4. **自动保存 TDD 周期**：Red 和 Green 都通过 `execution_evidence.py` 收据后，分别执行
+   `python3 ai-skills/android-delivery-skills/scripts/tdd_cycle.py record-red` 和
+   `python3 ai-skills/android-delivery-skills/scripts/tdd_cycle.py record-green`，
+   自动生成当前需求 `.state/tdd-cycle.json`；最终 gate 会复核收据、测试源码、代码快照和 BDD/testcase 关系。
+5. **按风险补证据**：根据 BDD、风险和实际 diff 选择 Unit、集成、构建、安装、Journey、截图、日志或实际人工证据，不机械执行同一串命令。
+6. **回填最终结果**：每个 BDD 场景标 `PASS/FAIL/UNVERIFIED`，绑定测试、截图或日志；所有场景都有诚实结果后才能进入 `route + gate`。
+7. **发现需求漏洞即回写**：先改需求事实源并重新确认需求和计划，再更新测试、实现和证据。
 
 ## 并行需求通道（多窗口同时推进）
 
@@ -246,7 +250,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 ```
 
 退出码 `0` 才允许编码。该命令只生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，不修改业务文件或 Git。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划五类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
-1. **BDD + TDD**：先把全部已确认 BDD 映射到真实测试，再逐场景执行 `Red -> Green -> Refactor`。Red 必须由业务断言失败证明，不要求归档每一次 Red 日志；Green 后再重构并重跑受影响测试。一个 BDD 可以由 Unit、集成、UI 或人工证据共同覆盖，但任何工具不得越过自己的断言边界。
+1. **BDD + TDD**：先把全部已确认 BDD 映射到真实测试，再逐场景执行 `Red -> Green -> Refactor`。Red 必须由业务断言失败证明，并由自动生成的 `.state/tdd-cycle.json` 保存 Red receipt、Green receipt、代码快照、测试源码快照和 BDD/testcase 关系；Green 后再重构并重跑受影响测试。一个 BDD 可以由 Unit、集成、UI 或人工证据共同覆盖，但任何工具不得越过自己的断言边界。
 2. **主动检索与共享边界保护**：动笔前，主动寻找同类组件、Base 类和测试范式，并复核拟修改共享边界的每个已上线业务调用方已归入“明确修改、必须保护、暂时无法确认”。新发现项按中途需求修订同步确认；未明确授权且旧行为有可靠依据时默认保护，依据不足或与新需求冲突时暂停。按上一条先运行或补齐保护测试，闭环前不得修改共享边界；能够局部实现时优先新增语义明确的入口、overload 或策略，保持旧入口默认语义不变。
 3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。
 4. **首次验证**：执行实施计划、CI、README、项目脚本、用户确认或前序文件中已经确认的验证命令；确认后后续阶段只读取对应文件复用，不重新探测。真实命令仍缺失时，由负责该验证的具体模块补齐来源；总入口不猜任务名、不做项目任务发现。

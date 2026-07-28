@@ -854,6 +854,16 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
         self.assertTrue(any("缺少自动执行证据" in error for error in errors))
 
+    def test_tdd_required_rejects_missing_cycle_even_when_green_receipt_exists(self) -> None:
+        """验证开启 TDD 后，最终 Green 收据不能替代独立 Red/Green 周期记录。"""
+        self.context["tdd_required"] = True
+        self.context["tdd_cycle_path"] = str(self.temp_root / "missing-tdd-cycle.json")
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("缺少 TDD 周期记录" in error for error in errors))
+        self.assertTrue(any("android-test-and-fix 没有专属于本 gate" in error for error in errors))
+
     def test_manual_coverage_requires_complete_receipt(self) -> None:
         """验证一句人工通过不能覆盖 Then，完整步骤和环境记录才可使用。"""
         manual = {

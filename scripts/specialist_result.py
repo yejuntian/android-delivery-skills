@@ -25,6 +25,7 @@ if __package__ in {None, ""}:
     __package__ = "scripts"
 
 from .config_paths import specialist_directory_for_config  # noqa: E402
+from .bdd_scenarios import is_bdd_id  # noqa: E402
 from .execution_evidence import redact_command, sha256_file  # noqa: E402
 from .static_analysis import (  # noqa: E402
     CONTROL_AUDIT_PRODUCER as STATIC_CONTROL_AUDIT_PRODUCER,
@@ -103,6 +104,19 @@ MUTATION_TESTING_PRODUCER = "pitest"
 MUTATION_SEVERITIES = {"SURVIVED_HIGH", "SURVIVED_NORMAL", "SURVIVED_LOW", "KILLED", "NO_COVERAGE", "TIMED_OUT"}
 
 
+def mutation_testing_required(context: dict[str, Any] | None) -> bool:
+    """Require PIT only for L3 impacts or an explicit profile override."""
+    if not isinstance(context, dict):
+        return False
+    if context.get("mutation_testing_required") is True:
+        return True
+    radius = context.get("impact_radius")
+    return isinstance(radius, dict) and any(
+        isinstance(item, dict) and item.get("risk_level") == "L3"
+        for item in radius.get("impacts", [])
+    )
+
+
 def _validate_mutation_testing(
     value: Any,
     conclusion: str,
@@ -179,11 +193,11 @@ def _validate_mutation_testing(
 
     killed_by_obligation = value.get("killed_by_obligation")
     if not isinstance(killed_by_obligation, dict):
-        errors.append("mutation_testing.killed_by_obligation 必须是 BDD/Then → 变异 id 数组的映射")
+        errors.append("mutation_testing.killed_by_obligation 必须是 BDD 场景到变异 id 数组的映射")
         killed_by_obligation = {}
     else:
         for obligation_id, mutants in killed_by_obligation.items():
-            if not isinstance(obligation_id, str) or not re.fullmatch(r"BDD-[0-9]+/T[0-9]+", obligation_id):
+            if not is_bdd_id(obligation_id):
                 errors.append(f"mutation_testing.killed_by_obligation 存在无效 key: {obligation_id}")
                 continue
             if not _has_unique_values(mutants) or not all(
@@ -236,7 +250,15 @@ def _validate_mutation_testing(
 
     # 通过结论必须同时满足：变异确实执行过，且没有应当杀掉却存活的变异。
     if conclusion == "PASS":
-        if not isinstance(generated, int) or isinstance(generated, bool) or generated <= 0:
+        no_code_scope = languages == ["NONE"]
+        if (
+            not no_code_scope
+            and (
+                not isinstance(generated, int)
+                or isinstance(generated, bool)
+                or generated <= 0
+            )
+        ):
             errors.append("变异测试结论为 PASS 时必须生成至少一个变异")
         elif isinstance(survived, int) and not isinstance(survived, bool) and survived > 0:
             errors.append(
@@ -819,13 +841,12 @@ def validate_specialist_result(
 
     obligation_hashes = payload.get("obligation_sha256s")
     if not isinstance(obligation_hashes, dict) or not all(
-        isinstance(identifier, str)
-        and re.fullmatch(r"BDD-[0-9]+/T[0-9]+", identifier)
+        is_bdd_id(identifier)
         and isinstance(digest, str)
         and re.fullmatch(r"[a-f0-9]{64}", digest)
         for identifier, digest in obligation_hashes.items()
     ):
-        errors.append("专项结果 obligation_sha256s 必须是有效 BDD/Then 摘要映射")
+        errors.append("专项结果 obligation_sha256s 必须是有效 BDD 场景摘要映射")
 
     artifacts = payload.get("artifacts", [])
     if not isinstance(artifacts, list):
@@ -909,9 +930,11 @@ def validate_specialist_result(
 
     mutation_testing = payload.get("mutation_testing")
     if mutation_testing is None:
-        # 测试与修复专项报告变异测试摘要；其他 Skill 不携带该字段。
-        if payload.get("skill") == TEST_AND_FIX_SKILL:
-            errors.append("android-test-and-fix 必须输出 mutation_testing 变异测试摘要")
+        if (
+            payload.get("skill") == TEST_AND_FIX_SKILL
+            and mutation_testing_required(context)
+        ):
+            errors.append("L3 或显式高风险要求下 android-test-and-fix 必须输出 mutation_testing")
     elif payload.get("skill") == TEST_AND_FIX_SKILL:
         errors.extend(
             _validate_mutation_testing(mutation_testing, str(conclusion), context or payload)

@@ -10,7 +10,7 @@ Journey 是基于自然语言和 AI 判断的黑盒 UI 流程测试，定位是�
 
 > 像真实用户一样在设备上点击、输入和跳转，并检查页面上是否出现预期结果。
 
-用户不需要决定是否使用 Journey。`android-test-and-fix` 会把每个 BDD 的复合 Then 拆成原子验证义务，逐项分配证据并聚合 Journey 的 `FULL/PARTIAL/NONE`；在需求确认后初判、编码完成后结合实际 diff 终判，只为 Journey 能稳定覆盖的部分自动生成用例并执行。
+用户不需要决定是否使用 Journey。`android-test-and-fix` 会按场景级 `BDD-###` 分配证据并聚合 Journey 的 `FULL/PARTIAL/NONE`；独立行为先在需求事实源中拆成独立场景，同一场景可由 Journey 和其他测试层共同证明。需求确认后初判、编码完成后结合实际 diff 终判，只为 Journey 能稳定覆盖的部分自动生成用例并执行。
 
 | 需求情况 | Journey 是否执行 | 应使用的主要验证方式 |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ Journey 不能证明：
 
 | 级别 | 判定 | 处理 |
 | --- | --- | --- |
-| `FULL` | BDD 中全部用户可见操作和可见断言都能稳定表达 | 执行完整 Journey；非 UI/不可见 Then 仍由其他测试层证明 |
+| `FULL` | BDD 中全部用户可见操作和可见断言都能稳定表达 | 执行完整 Journey；场景内非 UI 结果仍由其他测试层共同证明 |
 | `PARTIAL` | 只有部分用户可见操作或可见结果能稳定表达 | 只执行可覆盖部分，其余验证义务路由到其他测试层 |
 | `NONE` | 无 UI 行为、纯视觉，或前置/操作/结果无法可靠表达 | 不启动壳，选择其他证据 |
 
@@ -114,7 +114,7 @@ Journey 不能证明：
 ## 谁负责判断和执行
 
 - 用户负责确认业务需求、前置条件和预期结果。
-- `android-test-and-fix` 根据需求、BDD 和实际 diff 分配每个原子 Then 的证据，聚合整条 BDD 的 Journey `FULL/PARTIAL/NONE` 和完整需求证据。
+- `android-test-and-fix` 根据需求、BDD 和实际 diff 分配每个 BDD 场景的证据，聚合整条 BDD 的 Journey `FULL/PARTIAL/NONE` 和完整需求证据。
 - 用户不需要选择 Journey，也不需要编写 XML、action/step、文件名或 Gradle task。
 - 当前 AI 会话默认严格读取 Journey XML，使用 Android CLI/adb 逐个执行 action，并保存布局、截图、命令和统一专项结果。
 - `run_journey.py` 只负责明确选择后的可选壳校验、暂存、构建、安装、执行、失败分类和报告；未初始化壳不阻断默认路线。
@@ -131,7 +131,7 @@ Journey 不能证明：
 - 前置条件是否可以准备。
 - 是否可能受验证码、支付或第三方系统阻塞。
 
-此时只按原子 Then 分配聚合整条 BDD 的候选 `FULL/PARTIAL/NONE`，可以为候选可覆盖部分生成测试用例草稿，但不得启动设备、Agent Journey 或壳项目。
+此时只按 BDD 场景聚合候选 `FULL/PARTIAL/NONE`，可以为候选可覆盖部分生成测试用例草稿，但不得启动设备、Agent Journey 或壳项目。
 
 ### 第二次：编码完成后终判
 
@@ -149,7 +149,7 @@ Journey 不能证明：
 只要终判仍有验证义务分配给 Journey，才为这些义务生成最终 Journey XML。默认由当前 AI 会话使用 Android CLI/adb 执行；只有默认路线不可用且壳已经初始化时，才使用：
 
 ```text
---ui-impact behavior --applicability FULL/PARTIAL --covered-then BDD-001/T1
+--ui-impact behavior --applicability FULL/PARTIAL --covered-then BDD-001
 ```
 
 调用可选壳。终判为 `NONE` 时选择其他测试，不启动任何 Journey 引擎。`PARTIAL` 的非 Journey 验证义务必须独立执行和记录。
@@ -424,11 +424,11 @@ Given 必须变成可复现的前置条件，例如：
 
 ### Then
 
-- 先把复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，再决定哪些分配给 Journey。
-- 每个预期结果写成独立 verify/check。
+- 能够独立触发或独立通过/失败的结果，先回写需求事实源并拆成独立 `BDD-###` 场景。
+- 同一触发下不可分割的多个结果可写成 `Then/And`，在 Journey 中各自使用 verify/check，但覆盖状态仍汇总到同一 BDD。
 - 断言页面上可见的文本、控件、选中态或导航结果。
 - 不使用 Journey 断言数据库、API 字段或像素值。
-- 在用例和汇总报告中记录 Journey 实际覆盖的 `BDD/Then`；没有分配给 Journey 的 Then 保持独立证据和状态。
+- 在用例和汇总报告中记录 Journey 实际覆盖的 BDD 场景；没有分配给 Journey 的结果由其他测试层提供证据。
 
 示例：
 
@@ -436,7 +436,7 @@ Given 必须变成可复现的前置条件，例如：
 Given：应用位于搜索页，网络和测试数据可用
 When：在搜索框输入“Android”并点击搜索
 Then：显示搜索结果列表
-Then：列表中至少有一项标题包含“Android”
+And：列表中至少有一项标题包含“Android”
 ```
 
 默认 Agent 路线使用 Android CLI Journey 约定的最小 `journey/actions/action` 结构。只有选择预览壳时，XML schema 才必须以当前 Android Studio `New > Journey Test` 生成的官方模板为准；两种格式不兼容时不得强行复用或猜测预览 DSL。
@@ -463,7 +463,7 @@ adb install 安装并通过 pm path 校验
 - Android CLI 当前版本没有 `android journey` 或 `android agent` 子命令；“Agent”表示正在执行本 Skill 的 AI 会话使用 adb 命令驱动已安装 APK，禁止脚本伪造不存在的调用。
 - 目标包名以 APK 为准，不依赖源码正则。
 - 每个 action 只做一个操作或一个可见断言，严格按顺序独立判断；任一步失败、崩溃、退出或冻结时停止当前 Journey。
-- 每一步保存脱敏命令、截图文件及 SHA-256；最终使用 `specialist-result.schema.json`，记录实际 Journey 数、action 数和覆盖的 BDD/Then。
+- 每一步保存脱敏命令、截图文件及 SHA-256；最终使用 `specialist-result.schema.json`，记录实际 Journey 数、action 数和覆盖的 BDD 场景。
 - adb、设备和认证失败不能触发目标代码修复；先换项目已有 UI 测试，仍无等价能力时标未验证。
 
 ### 默认路线稳定命令链（真实环境实测验证）
@@ -559,11 +559,11 @@ python3 android-test-and-fix/scripts/run_journey.py \
   --config profiles/local.yaml \
   --ui-impact behavior \
   --applicability PARTIAL \
-  --covered-then BDD-001/T1 \
-  --uncovered-then BDD-001/T2
+  --covered-then BDD-001 \
+  --uncovered-then BDD-002
 ```
 
-`--ui-impact`、`--applicability` 和 Then 参数均由 Skill 生成，不要求用户选择。行为型 Journey 必须是 `FULL/PARTIAL` 且至少记录一个覆盖 Then；未分配给 Journey 的原子 Then 用重复的 `--uncovered-then` 保留边界。
+`--ui-impact`、`--applicability` 和覆盖参数均由 Skill 生成，不要求用户选择。`--covered-then`/`--uncovered-then` 是兼容既有脚本的参数名，其值始终是场景级 `BDD-###`，不是 `/T#` 子编号。行为型 Journey 必须是 `FULL/PARTIAL` 且至少记录一个覆盖场景；未分配给 Journey 的 BDD 场景用重复的 `--uncovered-then` 保留边界。
 
 每次重试前执行器都会 force-stop 目标包，并重新应用配置中明确的清数据、权限、DeepLink 或 Activity 前置条件。只有显式配置 `clear_app_data: true` 时才会清除本地数据。adb、Gradle 和 Journey 均有超时；报告中的 DeepLink 查询参数、Token、密码和密钥会脱敏。
 
@@ -602,7 +602,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 报告包含：
 
 - 状态和退出码。
-- Journey 适用性 `FULL/PARTIAL`、实际覆盖的 `BDD/Then` 和未由 Journey 覆盖的验证义务；`NONE` 不启动壳。
+- Journey 适用性 `FULL/PARTIAL`、实际覆盖的 `BDD 场景` 和未由 Journey 覆盖的验证义务；`NONE` 不启动壳。
 - 当前需求文件摘要、Git 基线、最终代码摘要和执行起止时间；代码变化后旧 Journey 证据不得复用。
 - 设备、applicationId、APK 和 Gradle task。
 - Journey 文件和 action/step 数量。
@@ -619,7 +619,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 - 先确认终判是否仍有原子验证义务分配给 Journey。
 - `NONE`：选择其他测试，不生成 Journey。
-- `FULL/PARTIAL`：由 `android-test-and-fix` 根据对应 `BDD/Then` 自动生成，不能要求用户写 XML；非 Journey 验证义务不受影响。
+- `FULL/PARTIAL`：由 `android-test-and-fix` 根据对应 `BDD 场景` 自动生成，不能要求用户写 XML；非 Journey 验证义务不受影响。
 
 ### 无法识别 Journey task
 
@@ -662,7 +662,7 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 把原子验证义务分配给 Journey 前必须全部回答“是”：
 
-- [ ] 当前 `BDD/Then` 包含用户 UI 操作和可见结果。
+- [ ] 当前 `BDD 场景` 包含用户 UI 操作和可见结果。
 - [ ] 编码后的实际 diff 确实改变 UI 行为或状态流转。
 - [ ] 前置条件可以稳定准备。
 - [ ] 预期结果可以从页面可见内容判断。

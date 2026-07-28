@@ -40,6 +40,7 @@ from .config_paths import (  # noqa: E402
     evidence_scope_directory,
     resolve_config_paths,
 )
+from .bdd_scenarios import is_bdd_id  # noqa: E402
 from .delivery import DeliveryError, load_config  # noqa: E402
 from .git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
 from .static_analysis import StaticAnalysisError, summarize_sarif  # noqa: E402
@@ -603,7 +604,7 @@ def validate_execution_receipt(
         errors.append(f"自动证据 {evidence.get('id')}.obligation_test_cases 必须是映射")
     else:
         for obligation_id, testcase_ids in obligation_test_cases.items():
-            if not isinstance(obligation_id, str) or not re.fullmatch(r"BDD-[0-9]+/T[0-9]+", obligation_id):
+            if not is_bdd_id(obligation_id):
                 errors.append(f"自动证据 {evidence.get('id')} 包含无效 obligation_test_cases key")
                 continue
             if not isinstance(testcase_ids, list) or not testcase_ids or not all(

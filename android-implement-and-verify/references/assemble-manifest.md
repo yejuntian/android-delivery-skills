@@ -38,10 +38,10 @@ evidence:                       # 自动证据：声明 id/gate/receipt 路径
 specialists:                     # 专项结果：声明 specialist JSON 路径
   - path: .state/evidence/.../specialists/android-review-diff.json
 obligations:                     # 逐义务声明覆盖状态；未验证项不得伪装成自动覆盖
-  BDD-001/T1:
+  BDD-001:
     status: COVERED_AUTOMATED
     evidence: [unit]
-  BDD-005/T1:
+  BDD-005:
     status: UNVERIFIED
     evidence: []
     reason: 尚未执行设备验证
@@ -75,12 +75,12 @@ assemble 组装完会立即 validate，失败时直接列出具体字段错误�
 
 ```
 ❌ 组装结果未通过门禁:
-- 义务 BDD-001/T1 的测试映射登记了未执行的测试: ...
+- 场景 BDD-001 的测试映射登记了未执行的测试: ...
 - gate android-ui-a11y 没有专属于本 gate 的有效通过证据
 ```
 
 按错误修正产物清单或补产物后重跑即可。
 
-## 向后兼容
+## 简写格式
 
-旧的 `BDD-001/T1: [unit]` 列表格式仍可使用；只有引用的证据全是自动/Agent 证据时才推导为 `COVERED_AUTOMATED`，不能确定时保守记为 `UNVERIFIED`。assemble 是可选加速。若不适用，按 `delivery-result.schema.json` 手写 `delivery-result.json`，再执行 `delivery_gate.py validate`。两种方式产出的报告都走同一个 validate。
+`BDD-001: [unit]` 列表格式可用于当前场景；只有引用的证据全是自动/Agent 证据时才推导为 `COVERED_AUTOMATED`，不能确定时保守记为 `UNVERIFIED`。assemble 是可选加速，手写结果也必须通过同一个 validate。

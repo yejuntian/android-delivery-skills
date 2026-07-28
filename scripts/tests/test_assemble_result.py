@@ -73,7 +73,7 @@ class AssembleResultTests(unittest.TestCase):
         self.obligation = "d" * 64
         self.traceability = self.root / "traceability.md"
         self.traceability.write_text(
-            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001 | 显示错误提示 | TEST-001 | 已覆盖\n",
             encoding="utf-8",
         )
         self.context = {
@@ -84,14 +84,14 @@ class AssembleResultTests(unittest.TestCase):
             "requirement_file_sha256": self.requirement,
             "requirement_inputs_sha256": self.requirement_inputs,
             "expected_obligations": {
-                "BDD-001/T1": {"required": True, "sha256": self.obligation, "text": "显示错误提示"},
+                "BDD-001": {"required": True, "sha256": self.obligation, "text": "显示错误提示"},
             },
             "expected_conditional_gates": [],
             "result_path": str(self.root / "delivery-result.json"),
             "traceability_path": str(self.traceability),
             "test_mapping": {
-                "BDD-001/T1": {
-                    "obligation_id": "BDD-001/T1",
+                "BDD-001": {
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": self.obligation,
                     "test_ids": ["FeatureTest#thenT1"],
                     "mapping_status": "CURRENT",
@@ -243,7 +243,7 @@ specialists:
   - path: E-QUALITY.specialist.json
   - path: E-STABILITY.specialist.json
 obligations:
-  BDD-001/T1: [E-TEST]
+  BDD-001: [E-TEST]
 """
         p = self.root / "manifest.yaml"
         p.write_text(manifest, encoding="utf-8")
@@ -272,9 +272,9 @@ obligations:
         self.assertNotIn("executed_tests", build_ev)
 
         # obligation_test_cases 自动从 junit 提取
-        self.assertIn("BDD-001/T1", test_ev["obligation_test_cases"])
+        self.assertIn("BDD-001", test_ev["obligation_test_cases"])
         self.assertEqual(
-            sorted(test_ev["obligation_test_cases"]["BDD-001/T1"]),
+            sorted(test_ev["obligation_test_cases"]["BDD-001"]),
             ["FeatureTest#regression", "FeatureTest#thenT1"],
         )
 
@@ -293,7 +293,7 @@ obligations:
         """验证 obligation 引用不存在的证据 id 时报错。"""
         manifest = self._write_manifest()
         text = manifest.read_text(encoding="utf-8")
-        manifest.write_text(text.replace("BDD-001/T1: [E-TEST]", "BDD-001/T1: [E-NONE]"), encoding="utf-8")
+        manifest.write_text(text.replace("BDD-001: [E-TEST]", "BDD-001: [E-NONE]"), encoding="utf-8")
         with self.assertRaises(AssembleError) as ctx:
             assemble_delivery_result(manifest, self.context, self.root / "r.json")
         self.assertIn("E-NONE", str(ctx.exception))
@@ -342,8 +342,8 @@ obligations:
                 "conclusion: FULL_PASS",
                 "conclusion: INCOMPLETE",
             ).replace(
-                "  BDD-001/T1: [E-TEST]",
-                "  BDD-001/T1:\n    evidence: []\n    reason: 尚未执行设备验证",
+                "  BDD-001: [E-TEST]",
+                "  BDD-001:\n    evidence: []\n    reason: 尚未执行设备验证",
             ),
             encoding="utf-8",
         )

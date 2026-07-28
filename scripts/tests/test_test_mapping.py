@@ -44,8 +44,8 @@ class TestMappingTests(unittest.TestCase):
         self.addCleanup(self.temp_dir.cleanup)
         self.temp_root = Path(self.temp_dir.name)
         self.obligations = [
-            {"id": "BDD-001/T1", "sha256": "a" * 64, "text": "显示错误", "required": True},
-            {"id": "BDD-002/T1", "sha256": "b" * 64, "text": "跳转主页", "required": True},
+            {"id": "BDD-001", "sha256": "a" * 64, "text": "显示错误", "required": True},
+            {"id": "BDD-004", "sha256": "b" * 64, "text": "跳转主页", "required": True},
         ]
 
     def test_initial_mapping_marks_all_stale(self) -> None:
@@ -54,20 +54,41 @@ class TestMappingTests(unittest.TestCase):
         self.assertEqual(mapping["version"], MAPPING_VERSION)
         self.assertTrue(all(item["mapping_status"] == "STALE" for item in mapping["mappings"]))
 
+    def test_rebuild_keeps_changed_test_ids_but_forces_stale(self) -> None:
+        """需求变更后保留旧测试名供更新，但绝不把它继续视为当前覆盖。"""
+        existing = {
+            "version": MAPPING_VERSION,
+            "mappings": [{
+                "obligation_id": "BDD-001",
+                "obligation_sha256": "0" * 64,
+                "test_ids": ["FeatureTest#oldBehavior"],
+                "mapping_status": "STALE",
+                "manual_reason": "需求已变化",
+            }],
+        }
+
+        mapping = build_initial_mapping(make_snapshot(self.obligations), existing)
+        changed = mapping["mappings"][0]
+
+        self.assertEqual(["FeatureTest#oldBehavior"], changed["test_ids"])
+        self.assertEqual("STALE", changed["mapping_status"])
+        self.assertEqual("a" * 64, changed["obligation_sha256"])
+        self.assertIn("核对原测试", changed["manual_reason"])
+
     def test_current_mapping_validates_when_covered(self) -> None:
         """CURRENT 且 test_ids 与义务摘要对齐时校验通过。"""
         mapping = {
             "version": MAPPING_VERSION,
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["FeatureTest#t1"],
                     "mapping_status": "CURRENT",
                     "manual_reason": None,
                 },
                 {
-                    "obligation_id": "BDD-002/T1",
+                    "obligation_id": "BDD-004",
                     "obligation_sha256": "b" * 64,
                     "test_ids": ["FeatureTest#t2"],
                     "mapping_status": "CURRENT",
@@ -122,14 +143,14 @@ class TestMappingTests(unittest.TestCase):
             "version": MAPPING_VERSION,
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["FeatureTest#t1"],
                     "mapping_status": "CURRENT",
                     "manual_reason": None,
                 },
                 {
-                    "obligation_id": "BDD-002/T1",
+                    "obligation_id": "BDD-004",
                     "obligation_sha256": "b" * 64,
                     "test_ids": ["FeatureTest#t2"],
                     "mapping_status": "CURRENT",
@@ -138,18 +159,18 @@ class TestMappingTests(unittest.TestCase):
             ],
         }
         mapping_path.write_text(json.dumps(mapping), encoding="utf-8")
-        # 需求增量：BDD-001/T1 语义变化，BDD-002/T1 不变。
+        # 需求增量：BDD-001 语义变化，BDD-004 不变。
         revised = make_snapshot([
-            {"id": "BDD-001/T1", "sha256": "c" * 64, "text": "显示验证码", "required": True},
+            {"id": "BDD-001", "sha256": "c" * 64, "text": "显示验证码", "required": True},
             self.obligations[1],
         ])
         mark_stale_after_revision(mapping_path, revised)
         updated = json.loads(mapping_path.read_text(encoding="utf-8"))
         statuses = {item["obligation_id"]: item["mapping_status"] for item in updated["mappings"]}
-        self.assertEqual(statuses["BDD-001/T1"], "STALE")
-        self.assertEqual(statuses["BDD-002/T1"], "CURRENT")
+        self.assertEqual(statuses["BDD-001"], "STALE")
+        self.assertEqual(statuses["BDD-004"], "CURRENT")
         sha = {item["obligation_id"]: item["obligation_sha256"] for item in updated["mappings"]}
-        self.assertEqual(sha["BDD-001/T1"], "c" * 64)
+        self.assertEqual(sha["BDD-001"], "c" * 64)
 
     def test_current_mapping_with_stale_sha_rejected(self) -> None:
         """声明 CURRENT 但摘要与当前修订不符时校验失败。"""
@@ -157,14 +178,14 @@ class TestMappingTests(unittest.TestCase):
             "version": MAPPING_VERSION,
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "0" * 64,
                     "test_ids": ["FeatureTest#t1"],
                     "mapping_status": "CURRENT",
                     "manual_reason": None,
                 },
                 {
-                    "obligation_id": "BDD-002/T1",
+                    "obligation_id": "BDD-004",
                     "obligation_sha256": "b" * 64,
                     "test_ids": ["FeatureTest#t2"],
                     "mapping_status": "CURRENT",
@@ -181,14 +202,14 @@ class TestMappingTests(unittest.TestCase):
             "version": MAPPING_VERSION,
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["FeatureTest#t1"],
                     "mapping_status": "CURRENT",
                     "manual_reason": None,
                 },
                 {
-                    "obligation_id": "BDD-009/T1",
+                    "obligation_id": "BDD-009",
                     "obligation_sha256": "9" * 64,
                     "test_ids": ["FeatureTest#t9"],
                     "mapping_status": "CURRENT",
@@ -205,7 +226,7 @@ class TestMappingTests(unittest.TestCase):
             "version": MAPPING_VERSION,
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["FeatureTest#t1"],
                     "mapping_status": "CURRENT",
@@ -214,7 +235,7 @@ class TestMappingTests(unittest.TestCase):
             ],
         }
         errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
-        self.assertTrue(any("缺少当前确认义务的登记: BDD-002/T1" in error for error in errors))
+        self.assertTrue(any("缺少当前确认义务的登记: BDD-004" in error for error in errors))
 
     def test_architecture_tests_validated(self) -> None:
         """architecture_tests 必须是非重复字符串数组；结构合法时不影响 CURRENT 校验。"""
@@ -222,7 +243,7 @@ class TestMappingTests(unittest.TestCase):
             "version": MAPPING_VERSION,
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["FeatureTest#t1"],
                     "mapping_status": "CURRENT",
@@ -230,7 +251,7 @@ class TestMappingTests(unittest.TestCase):
                     "architecture_tests": ["埋点只在统一出口", "X 不依赖 Y"],
                 },
                 {
-                    "obligation_id": "BDD-002/T1",
+                    "obligation_id": "BDD-004",
                     "obligation_sha256": "b" * 64,
                     "test_ids": ["FeatureTest#t2"],
                     "mapping_status": "CURRENT",

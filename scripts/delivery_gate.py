@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """脚本名称：delivery_gate.py
 
-用途：校验最终报告是否覆盖最新版 BDD/Then、完整输入、单 gate 收据和专项结果，
+用途：校验最终报告是否覆盖最新版 BDD 场景、完整输入、单 gate 收据和专项结果，
 并从可信机器结果生成面向用户的中文摘要。
 
 职责边界：读取配置、确认需求修订、Git 基线、当前工作树和最终报告，只写同目录
@@ -30,6 +30,8 @@ from .config_paths import (  # noqa: E402
     resolve_config_paths,
     route_impact_path_for_config,
 )
+from .bdd_scenarios import is_bdd_id  # noqa: E402
+from .atomic_write import write_text_atomic  # noqa: E402
 from .delivery import DeliveryError, load_config, read_requirement  # noqa: E402
 from .execution_evidence import (  # noqa: E402
     KNOWN_EVIDENCE_GATES,
@@ -62,7 +64,9 @@ from .test_mapping import (  # noqa: E402
 from .route_impact import RouteImpactError, load_route_impact  # noqa: E402
 from .specialist_result import (  # noqa: E402
     JOURNEY_AGENT_SKILL,
+    TEST_AND_FIX_SKILL,
     conditional_gates_from_confirmed_impacts,
+    mutation_testing_required,
     validate_specialist_evidence,
 )
 from .user_facing_labels import (  # noqa: E402
@@ -240,7 +244,7 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         for item in requirement_snapshot["obligations"]
     }
     if not expected_obligations:
-        raise DeliveryGateError("当前确认修订没有原子 BDD/Then")
+        raise DeliveryGateError("当前确认修订没有 BDD 场景")
     result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
     summary_path = result_path.with_name("delivery-summary.md")
     excluded = delivery_snapshot_exclusions(paths.project_path, paths.requirement_dir)
@@ -280,6 +284,11 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "impact_radius": radius_payload,
         "changed_files": sorted(set(changed_files)),
     }
+    testing = config.get("testing")
+    mutation_config = testing.get("mutation_testing") if isinstance(testing, dict) else None
+    context["mutation_testing_required"] = bool(
+        isinstance(mutation_config, dict) and mutation_config.get("required") is True
+    )
     for field in (
         "requirement_id",
         "requirement_revision",
@@ -447,56 +456,6 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 + ", ".join(outside)
             )
 
-    business_ids = {
-        identifier
-        for identifier, item in expected_obligations.items()
-        if _business_obligation_prefix(item.get("text"))
-    }
-    if expected_ids:
-        traceability_value = context.get("traceability_path")
-        if not isinstance(traceability_value, str) or not traceability_value.strip():
-            errors.append("当前确认义务缺少当前需求追溯表路径")
-        else:
-            traceability_path = Path(traceability_value).expanduser().resolve()
-            if not traceability_path.is_file():
-                errors.append(f"当前需求追溯表不存在: {traceability_path}")
-            else:
-                try:
-                    traceability_text = traceability_path.read_text(encoding="utf-8")
-                except (OSError, UnicodeError) as exc:
-                    errors.append(f"当前需求追溯表无法读取: {traceability_path}: {exc}")
-                else:
-                    revision = context.get("requirement_revision")
-                    revision_pattern = re.compile(
-                        rf"(?m)(?:^#{{1,6}}\s+.*\bR{revision}\b|当前修订[：:]\s*R{revision}\b)"
-                    )
-                    if not revision_pattern.search(traceability_text):
-                        errors.append(f"当前需求追溯表未绑定当前需求修订 R{revision}")
-                    traceability_lines = traceability_text.splitlines()
-                    for identifier in sorted(expected_ids):
-                        matching_lines = [
-                            line for line in traceability_lines if identifier in line
-                        ]
-                        if not matching_lines and identifier in business_ids:
-                            errors.append(
-                                f"当前需求追溯表没有登记已上线业务义务: {identifier}"
-                            )
-                        elif not matching_lines:
-                            errors.append(
-                                f"当前需求追溯表没有登记当前确认义务: {identifier}"
-                            )
-                        elif obligations.get(identifier, {}).get("status") in {
-                            "COVERED_AUTOMATED",
-                            "COVERED_MANUAL",
-                        } and any(
-                            marker in line
-                            for line in matching_lines
-                            for marker in ("待实现", "待执行", "待验证", "STALE", "TODO")
-                        ):
-                            errors.append(
-                                f"当前需求追溯表中的已覆盖义务仍含过期状态: {identifier}"
-                            )
-
     specialist_results: dict[str, dict[str, Any]] = {}
     valid_automated: set[str] = set()
     valid_manual: set[str] = set()
@@ -580,6 +539,13 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 errors.append(f"evidence {identifier} 绑定了非当前义务: {obligation_id}")
             elif digest != expected["sha256"]:
                 errors.append(f"evidence {identifier} 对 {obligation_id} 的需求证据已失效")
+
+    if mutation_testing_required(context) and not any(
+        result.get("skill") == TEST_AND_FIX_SKILL
+        and isinstance(result.get("mutation_testing"), dict)
+        for result in specialist_results.values()
+    ):
+        errors.append("当前影响半径含 L3 或已显式要求高风险测试，缺少有效 PIT 变异测试专项证据")
 
     def validate_refs(owner: str, item: dict[str, Any]) -> list[str]:
         """验证一个义务或门禁引用的证据都真实存在。"""
@@ -674,7 +640,7 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             )
 
     for identifier, item in obligations.items():
-        if not re.fullmatch(r"BDD-[0-9]+/T[0-9]+", identifier):
+        if not is_bdd_id(identifier):
             errors.append(f"obligation id 格式无效: {identifier}")
         if not isinstance(item.get("required"), bool):
             errors.append(f"obligation {identifier}.required 必须是 boolean")
@@ -788,9 +754,9 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             errors.append(f"gate {identifier} 没有专属于本 gate 的有效通过证据")
 
     if passing and not obligations:
-        errors.append("通过结论至少需要一个原子 BDD/Then obligation")
+        errors.append("通过结论至少需要一个 BDD 场景 obligation")
     if passing and obligations and not any(item.get("required") is True for item in obligations.values()):
-        errors.append("通过结论至少需要一个 required=true 的原子 BDD/Then obligation")
+        errors.append("通过结论至少需要一个 required=true 的 BDD 场景 obligation")
     if passing and not gates:
         errors.append("通过结论至少需要一个交付 gate")
     if conclusion == "FULL_PASS" and pending_capabilities:
@@ -1076,6 +1042,35 @@ def write_delivery_summary(
         raise DeliveryGateError(f"中文交付摘要无法写入: {target}: {exc}") from exc
 
 
+def write_generated_traceability(
+    path: str | Path,
+    payload: dict[str, Any],
+    context: dict[str, Any],
+) -> None:
+    """Refresh the human traceability view after final result validation."""
+    from .render_artifacts import render_traceability_md
+
+    snapshot = {
+        "requirement_id": context.get("requirement_id"),
+        "revision": context.get("requirement_revision"),
+        "obligations": [
+            {"id": identifier, **item}
+            for identifier, item in context.get("expected_obligations", {}).items()
+        ],
+    }
+    mapping_index = context.get("test_mapping")
+    mapping = {
+        "mappings": list(mapping_index.values())
+    } if isinstance(mapping_index, dict) else None
+    try:
+        write_text_atomic(
+            Path(path).expanduser().resolve(),
+            render_traceability_md(snapshot, mapping, payload),
+        )
+    except OSError as exc:
+        raise DeliveryGateError(f"需求测试追溯表无法写入: {path}: {exc}") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     """输出当前摘要或校验最终报告；返回 0 仅表示最终通过结论真实有效。"""
     parser = ChineseArgumentParser(description="校验 Android 需求交付的最终证据")
@@ -1111,6 +1106,7 @@ def main(argv: list[str] | None = None) -> int:
     summary_path = result_path.with_name("delivery-summary.md")
     try:
         write_delivery_summary(summary_path, payload, context, result_path.name)
+        write_generated_traceability(context["traceability_path"], payload, context)
     except DeliveryGateError as exc:
         print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1
@@ -1146,6 +1142,7 @@ def _cmd_assemble(args: argparse.Namespace, config_path: Path, context: dict[str
     summary_path = result_path.with_name("delivery-summary.md")
     try:
         write_delivery_summary(summary_path, payload, context, result_path.name)
+        write_generated_traceability(context["traceability_path"], payload, context)
     except DeliveryGateError as exc:
         print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)
         return 1

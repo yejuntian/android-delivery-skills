@@ -55,7 +55,7 @@
         "additionalProperties": false,
         "required": ["id", "required", "obligation_sha256", "status", "evidence_ids"],
         "properties": {
-          "id": { "type": "string", "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+          "id": { "type": "string", "pattern": "^BDD-[0-9]+$" },
           "required": { "type": "boolean" },
           "obligation_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "status": {
@@ -117,7 +117,7 @@
           "report_paths": { "type": "array", "items": { "type": "string" } },
           "obligation_test_cases": {
             "type": "object",
-            "propertyNames": { "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+            "propertyNames": { "pattern": "^BDD-[0-9]+$" },
             "additionalProperties": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 },
@@ -159,7 +159,7 @@
           "no_artifact_reason": { "type": "string", "minLength": 1 },
           "obligation_sha256s": {
             "type": "object",
-            "propertyNames": { "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+            "propertyNames": { "pattern": "^BDD-[0-9]+$" },
             "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
           }
         },

@@ -55,7 +55,7 @@
         "affected_modules"
       ],
       "properties": {
-        "id": { "type": "string", "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+        "id": { "type": "string", "pattern": "^BDD-[0-9]+$" },
         "change_type": {
           "enum": ["ADDED", "CHANGED", "REMOVED", "SUPERSEDED"]
         },

@@ -227,7 +227,7 @@
     "executed_tests": { "type": ["integer", "null"], "minimum": 0 },
     "obligation_sha256s": {
       "type": "object",
-      "propertyNames": { "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+      "propertyNames": { "pattern": "^BDD-[0-9]+$" },
       "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
     },
     "mutation_testing": {
@@ -269,7 +269,7 @@
         "survived": { "type": "integer", "minimum": 0 },
         "killed_by_obligation": {
           "type": "object",
-          "propertyNames": { "pattern": "^BDD-[0-9]+/T[0-9]+$" },
+          "propertyNames": { "pattern": "^BDD-[0-9]+$" },
           "additionalProperties": {
             "type": "array",
             "items": { "type": "string", "minLength": 1 },
@@ -418,33 +418,7 @@
         },
         "required": ["skill"]
       },
-      "then": {
-        "required": ["mutation_testing"],
-        "properties": {
-          "mutation_testing": {
-            "properties": {
-              "languages": { "not": { "contains": { "const": "NONE" } } }
-            }
-          }
-        },
-        "allOf": [
-          {
-            "if": {
-              "properties": { "conclusion": { "const": "PASS" } },
-              "required": ["conclusion"]
-            },
-            "then": {
-              "properties": {
-                "mutation_testing": {
-                  "properties": {
-                    "generated_mutants": { "minimum": 1 }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
+      "then": {},
       "else": {
         "not": { "required": ["mutation_testing"] }
       }

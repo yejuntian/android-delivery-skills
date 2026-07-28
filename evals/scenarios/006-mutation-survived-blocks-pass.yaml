@@ -2,10 +2,11 @@ id: 006-mutation-survived-blocks-pass
 title: mutation testing 存活变异阻断 android-test-and-fix PASS
 rubric: artifact-integrity-v1
 checks:
-  - name: 测试专项必须输出 mutation_testing
+  - name: L3 测试专项必须输出 mutation_testing
     path: "scripts/specialist_result.py"
     contains:
-      - "android-test-and-fix 必须输出 mutation_testing 变异测试摘要"
+      - "L3 或显式高风险要求下 android-test-and-fix 必须输出 mutation_testing"
+      - "mutation_testing_required"
       - "变异测试结论为 PASS 时必须生成至少一个变异"
       - "存活变异"
       - "不能标记 PASS"

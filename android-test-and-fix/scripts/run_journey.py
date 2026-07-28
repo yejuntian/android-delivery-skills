@@ -1036,9 +1036,9 @@ def write_result(result: JourneyResult, path: Path) -> None:
         f"- 需求状态：{requirement_status_label}\n"
         f"- 开始时间：`{result.started_at or '未记录'}`\n"
         f"- 完成时间：`{result.finished_at or '未记录'}`\n\n"
-        "## 已由界面流程验证的原子验收项\n\n"
+        "## 已由界面流程验证的 BDD 场景\n\n"
         f"{covered_lines}\n\n"
-        "## 未由界面流程验证的原子验收项\n\n"
+        "## 未由界面流程验证的 BDD 场景\n\n"
         f"{uncovered_lines}\n\n"
         "## 界面流程用例文件\n\n"
         f"{journey_lines}\n\n"
@@ -1113,8 +1113,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="由测试流程终判的界面流程适用范围；行为型测试必须为全部适用或部分适用",
     )
-    parser.add_argument("--covered-then", action="append", default=[], help="界面流程实际覆盖的原子验收项，可重复")
-    parser.add_argument("--uncovered-then", action="append", default=[], help="未由界面流程覆盖的原子验收项，可重复")
+    parser.add_argument("--covered-then", action="append", default=[], help="界面流程实际覆盖的 BDD-### 场景，可重复")
+    parser.add_argument("--uncovered-then", action="append", default=[], help="未由界面流程覆盖的 BDD-### 场景，可重复")
     parser.add_argument("--retries", type=int, default=None)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--preflight-only", action="store_true")

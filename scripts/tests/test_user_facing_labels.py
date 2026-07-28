@@ -88,7 +88,7 @@ class UserFacingLabelsTests(unittest.TestCase):
         """验证状态转中文，但接口路径、类名和稳定验收编号保持原文。"""
         source = (
             "USER_INPUT_REQUIRED / BLOCKED / FULL_PASS / UNVERIFIED / "
-            "APP_ASSERTION_FAILED / L2；POST /jgp/videoPageV2；VideoViewModel；BDD-001/T1"
+            "APP_ASSERTION_FAILED / L2；POST /jgp/videoPageV2；VideoViewModel；BDD-001"
         )
 
         result = localize_machine_terms(source)
@@ -101,7 +101,7 @@ class UserFacingLabelsTests(unittest.TestCase):
         self.assertIn("需要你补充信息或完成操作", result)
         self.assertIn("POST /jgp/videoPageV2", result)
         self.assertIn("VideoViewModel", result)
-        self.assertIn("BDD-001/T1", result)
+        self.assertIn("BDD-001", result)
 
     def test_command_help_uses_chinese_headings(self) -> None:
         """验证 Python 默认帮助标题不会再次以英文显示给用户。"""
@@ -136,9 +136,9 @@ class UserFacingLabelsTests(unittest.TestCase):
             print_bdd_instruction()
 
         text = output.getvalue()
-        self.assertIn("原子验收项", text)
-        self.assertIn("主流程/异常边界", text)
-        for machine_term in ("Given", "When", "Then", "BLOCKED", "Red", "Green"):
+        self.assertIn("BDD-001", text)
+        self.assertIn("Given/When/Then", text)
+        for machine_term in ("BLOCKED", "Red", "Green"):
             self.assertNotIn(machine_term, text)
 
     def test_final_summary_localizes_statuses_embedded_in_reasons(self) -> None:
@@ -147,7 +147,7 @@ class UserFacingLabelsTests(unittest.TestCase):
             "conclusion": "INCOMPLETE",
             "requirement_revision": 3,
             "obligations": [{
-                "id": "BDD-001/T1",
+                "id": "BDD-001",
                 "status": "UNVERIFIED",
                 "reason": "USER_INPUT_REQUIRED：等待设备",
             }],
@@ -163,7 +163,7 @@ class UserFacingLabelsTests(unittest.TestCase):
         }
         context = {
             "expected_obligations": {
-                "BDD-001/T1": {"text": "按钮可以被辅助技术识别"},
+                "BDD-001": {"text": "按钮可以被辅助技术识别"},
             },
         }
 
@@ -181,18 +181,18 @@ class UserFacingLabelsTests(unittest.TestCase):
             "conclusion": "FULL_PASS",
             "requirement_revision": 2,
             "obligations": [
-                {"id": "BDD-001/T1", "status": "COVERED_AUTOMATED"},
-                {"id": "BDD-002/T1", "status": "COVERED_MANUAL"},
+                {"id": "BDD-001", "status": "COVERED_AUTOMATED"},
+                {"id": "BDD-004", "status": "COVERED_MANUAL"},
             ],
             "gates": [],
             "pending_capabilities": [],
         }
         context = {
             "expected_obligations": {
-                "BDD-001/T1": {
+                "BDD-001": {
                     "text": "【修改已上线业务】普通购物车：免运费门槛由 100 元调整为 80 元",
                 },
-                "BDD-002/T1": {
+                "BDD-004": {
                     "text": "【保护已上线业务】赠品订单：零金额仍然允许提交",
                 },
             },

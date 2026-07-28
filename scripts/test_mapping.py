@@ -19,10 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from .atomic_write import write_json_atomic
+from .bdd_scenarios import is_bdd_id
 
 
 MAPPING_VERSION = 1
-OBLIGATION_ID_PATTERN = "BDD-[0-9]+/T[0-9]+"
 MAPPING_STATUSES = {"CURRENT", "STALE"}
 TEMPLATE_TEST_IDS = {"ExampleUnitTest#addition_isCorrect"}
 
@@ -46,11 +46,10 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
     label = f"mappings[{index}]"
     if not isinstance(item, dict):
         raise TestMappingError(f"{label} 必须是 object")
-    import re
-
     identifier = item.get("obligation_id")
-    if not isinstance(identifier, str) or not re.fullmatch(OBLIGATION_ID_PATTERN, identifier):
-        raise TestMappingError(f"{label}.obligation_id 必须符合 BDD-###/T#")
+    if not is_bdd_id(identifier):
+        raise TestMappingError(f"{label}.obligation_id 必须符合 BDD-###")
+    import re
     obligation_sha256 = item.get("obligation_sha256")
     # 跳过标记 STALE 的登记：旧摘要可能来自上一修订，不为当前 sha256，属正常待回填状态。
     is_stale = item.get("mapping_status") == "STALE"
@@ -151,8 +150,8 @@ def build_initial_mapping(
 ) -> dict[str, Any]:
     """生成测试映射骨架；保留已有 CURRENT 登记中 sha256 未变化的项，避免破坏性重写。
 
-    P2 修复：R2 后重跑 init-test-mapping 时，未变化义务（UNCHANGED）的 CURRENT
-    登记不应被清空。只对新增义务或 sha256 变化的义务生成 STALE 骨架。
+    未变化场景保留 CURRENT；已变化场景保留旧 test_ids 作为更新线索但强制 STALE；
+    新增场景生成空 STALE 骨架。删除场景不会进入新映射。
     """
     current_sha = {
         item["id"]: item["sha256"] for item in snapshot.get("obligations", [])
@@ -165,13 +164,23 @@ def build_initial_mapping(
             oid = entry.get("obligation_id")
             if not isinstance(oid, str) or oid not in current_sha:
                 continue
-            # 仅保留 sha256 未变且已 CURRENT 的登记（UNCHANGED 项）。
+            test_ids = entry.get("test_ids")
+            has_valid_tests = isinstance(test_ids, list) and bool(test_ids) and all(
+                isinstance(test_id, str) and test_id.strip() for test_id in test_ids
+            )
             if (
                 entry.get("mapping_status") == "CURRENT"
                 and entry.get("obligation_sha256") == current_sha[oid]
-                and entry.get("test_ids")
+                and has_valid_tests
             ):
-                preserved[oid] = entry
+                preserved[oid] = dict(entry)
+            elif has_valid_tests:
+                preserved[oid] = {
+                    **entry,
+                    "obligation_sha256": current_sha[oid],
+                    "mapping_status": "STALE",
+                    "manual_reason": "需求增量使该场景语义变化，请核对原测试并回填 CURRENT",
+                }
     return {
         "version": MAPPING_VERSION,
         "mappings": [

@@ -71,15 +71,15 @@ def confirmed_snapshot(requirement: str) -> dict:
         "pending_changes": [],
         "sha256": requirement_digest(requirement),
         "obligations": [{
-            "id": "BDD-001/T1",
+            "id": "BDD-001",
             "text": text,
             "required": True,
-            "sha256": obligation_digest("BDD-001/T1", text, True),
+            "sha256": obligation_digest("BDD-001", text, True),
         }],
         "history": [{
             "revision": 1,
             "changes": [{
-                "id": "BDD-001/T1",
+                "id": "BDD-001",
                 "change_type": "ADDED",
                 "decision": "CONFIRMED",
                 "text": text,
@@ -107,7 +107,7 @@ def write_valid_impact_radius(root: Path, snapshot: dict, requirement: str) -> N
             ],
             "allowed_dirs": [],
             "impacts": [{
-                "id": "BDD-001/T1",
+                "id": "BDD-001",
                 "change_type": "ADDED",
                 "reason": "登录失败提示只影响 ViewModel 和对应单测。",
                 "risk_level": "L1",

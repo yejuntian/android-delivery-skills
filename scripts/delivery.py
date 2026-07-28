@@ -63,13 +63,16 @@ from .impact_radius import (  # noqa: E402
     changed_files_outside_radius,
     load_impact_radius,
 )
+from .bdd_scenarios import BddScenarioError, validate_requirement_readiness  # noqa: E402
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     apply_requirement_revision,
+    build_confirmed_revision_manifest,
     load_requirement_snapshot,
     load_revision_manifest,
     render_requirement_diff,
     requirement_digest,
+    write_revision_manifest,
     write_requirement_snapshot,
 )
 from .requirement_inputs import (  # noqa: E402
@@ -102,12 +105,11 @@ class DeliveryError(RuntimeError):
 
 
 def _require_atomic_bdd_before_baseline(content: str) -> None:
-    """新建需求起点前要求事实源已经包含至少一个原子 BDD/Then。"""
-    if not re.search(r"\bBDD-[0-9]+/T[0-9]+\b", content):
-        raise DeliveryError(
-            "需求事实源尚未包含原子 BDD/Then，不能建立需求起点；"
-            "请先补齐主流程、异常/边界和 BDD-###/T# 验收项并获得纯确认"
-        )
+    """新建需求起点前要求事实源包含完整且无待确认项的 BDD 场景。"""
+    try:
+        validate_requirement_readiness(content)
+    except BddScenarioError as exc:
+        raise DeliveryError(str(exc)) from exc
 
 
 def _require_current_confirmed_requirement(
@@ -124,7 +126,7 @@ def _require_current_confirmed_requirement(
         or snapshot.get("pending_changes")
         or not snapshot.get("obligations")
     ):
-        raise DeliveryError("当前需求尚未确认原子义务，不能继续后续流程")
+        raise DeliveryError("当前需求尚未确认 BDD 场景，不能继续后续流程")
     if snapshot.get("sha256") != requirement_digest(content):
         raise DeliveryError("当前 requirement_file 尚未确认为最新修订，不能继续后续流程")
 
@@ -230,13 +232,13 @@ def parse_args(argv=None):
     # 需求确认：只推进需求修订，不改变编码起点 Git 基线。
     parser_confirm = subparsers.add_parser(
         "confirm-requirement-update",
-        help="确认需求修订清单并更新当前有效原子验收项",
+        help="确认需求修订清单并更新当前有效 BDD 场景",
     )
     parser_confirm.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
     parser_confirm.add_argument(
         "--revision-file",
         default=None,
-        help="需求修订清单；默认 <requirement_dir>/test-cases/requirement-revision.json",
+        help="仅删除、替代或冲突时提供显式需求修订清单",
     )
 
     # 计划确认：只在用户明确确认已经展示的实施计划后执行。
@@ -257,7 +259,7 @@ def parse_args(argv=None):
     # 测试映射：把需求义务结构化绑定到测试用例，需求增量后标记 STALE 由 AI 回填。
     parser_mapping = subparsers.add_parser(
         "init-test-mapping",
-        help="为当前已确认义务生成测试映射骨架",
+        help="为当前已确认 BDD 场景生成测试映射骨架",
     )
     parser_mapping.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
     parser_mapping.add_argument(
@@ -343,11 +345,11 @@ def read_requirement(path):
 def print_bdd_instruction():
     """打印中文需求验收指令（精简版），机器编号保留但不要求用户理解英文术语。"""
     print("👉 AI 指令：先形成初步需求理解，不要立即编码。")
-    print("把复合预期结果拆成 BDD-001/T1 形式的原子验收项；每个功能写用户故事+AC+主流程/异常边界。")
+    print("把独立触发和结果拆成 BDD-001 形式的场景；每个场景包含 Given/When/Then。")
     print("检测到变化时面向用户只展示：新增、修改、删除、未变化。决策只展示：已确认、待确认、已撤回、冲突。")
     print("首次确认前每次补充/修改/删除/纠正，先展示本轮变化摘要，再合并写回 requirement_file，重新 init 读取。")
     print("用户纯确认（不带新变化）才执行 check-env 和 confirm-requirement-update。确认后不得编码，先写实施计划和影响半径等待确认。")
-    print("建立 test-cases/traceability.md 追溯表，按 requirement-revision.schema.json 物化修订清单。")
+    print("普通新增和修改由脚本生成修订清单；删除、替代或冲突才需要显式修订文件。")
     print("输出完毕必须停止，等待用户确认！")
 
 
@@ -359,15 +361,15 @@ def print_confirmed_fact_sources(
     action: str,
     plan_path: Path | None = None,
 ):
-    """只展示事实源路径，不把正文、JSON 或追溯表内容塞进聊天。"""
+    """展示人工事实源、机器事实和生成视图的路径，不内联大段内容。"""
     print("📄 你主要看:")
     print(f"  - 需求文件: {requirement_path}")
     if plan_path is not None:
         print(f"  - 已确认实施计划: {plan_path}")
     print("🤖 AI 执行前必须读取（只展示路径，不展示正文）:")
     print(f"  - 需求修订清单: {revision_file}")
-    print(f"  - 追溯表: {traceability_file}")
-    sources = "需求修订清单、追溯表和实施计划" if plan_path else "需求修订清单和追溯表"
+    print(f"  - 机器生成追溯视图（只读辅助）: {traceability_file}")
+    sources = "需求修订清单、当前测试映射和实施计划" if plan_path else "需求修订清单和当前测试映射"
     print(
         f"👉 AI 指令：{action}前必须重新读取已确认的 requirement_file、{sources}；"
         "确认前旧聊天理解、旧总结或旧方案不得作为执行依据。"
@@ -377,14 +379,14 @@ def print_confirmed_fact_sources(
 def print_environment_rules():
     """打印通用编码约束，明确局部迭代与最终交付的执行边界。"""
     print("\n---")
-    print("👉 AI 指令：实施计划确认完成。你已获准开始编码。")
-    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求修订清单、追溯表、实施计划和影响半径；确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
+    print("👉 AI 指令：实施计划确认完成。先建立测试映射并用业务断言得到 Red，再修改生产代码使其 Green。")
+    print("【事实源】：编码、测试、route 和最终报告前，必须重新读取已确认的 requirement_file、需求快照/修订清单、实施计划、影响半径和测试映射；追溯表只是机器生成视图。确认前旧聊天理解、旧总结或旧方案不得作为执行依据。")
     print("【强制规约】:")
     print("  1. 动笔前：必须先使用搜索工具主动在项目中检索现有的 Base 类、工具类或类似页面，确保代码风格贴合项目已有架构。")
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
     print("  3. 局部迭代：编码后的完善、修改、删除或修复只运行受影响测试和必要编译，不自动 route 或全量审查。")
     print("  4. 需求变化：只有业务行为、边界或验收结果变化时才修订需求；确认后仍回到局部迭代。")
-    print("  5. 测试左移：按 REQ/BDD 分配 TEST-###；缺陷或可观察行为变化优先保留能复现失败的测试，再最小修改至通过。")
+    print("  5. 测试左移：按 BDD 场景映射真实测试 ID；先用业务断言复现 Red，再做最小修改使其 Green。")
     print("  6. 最终交付：仅在用户当前或最初明确要求最终检查、完整交付或准备提交时执行 route、assemble、lint 和完整门禁。")
     print("  7. 真实任务：根据实际模块、variant 和项目已有任务选择命令，不得写死 assembleDebug 或 lintDebug。")
     print("  8. 追溯与证据：局部结果只证明本轮范围；最终代码必须重新执行全部必需命令，需求映射率为 100%。")
@@ -461,7 +463,7 @@ def _reuse_existing_requirement_start(
     if requirement_confirmed:
         print(
             "👉 AI 指令：继续当前需求前，先重新读取已确认的 requirement_file、"
-            "需求修订清单、追溯表和实施计划，并验证计划确认收据；不得沿用确认前"
+            "需求修订清单、当前测试映射和实施计划，并验证计划确认收据；不得沿用确认前"
             "旧聊天理解，不得重建需求起点或重复完整交付流程。"
         )
     else:
@@ -666,7 +668,7 @@ def print_route_instructions(skills_to_run):
 
 def cmd_init(args):
     """
-    执行 `init`：读取需求；存在已确认快照时补充差异和追溯表，但不触碰 Git 基线。
+    执行 `init`：读取需求；存在已确认快照时补充差异和当前 BDD 场景，但不触碰 Git 基线。
     防呆设计：严禁 AI 直接编码，强制先确认 BDD 和中途需求增删改。
     """
     config = load_config(args.config)
@@ -724,15 +726,17 @@ def cmd_init(args):
         snapshot = load_requirement_snapshot(snapshot_path)
     except RequirementSnapshotError as exc:
         raise DeliveryError(str(exc)) from exc
+    requirement_current = snapshot is None
     if snapshot and Path(str(snapshot["requirement_path"])).resolve() == requirement_path.resolve():
-        _print_resume_brief(paths, snapshot)
+        requirement_current = snapshot["sha256"] == requirement_digest(content)
+        _print_resume_brief(paths, snapshot, requirement_current)
         print(
             f"\n📚 当前确认修订: {snapshot['requirement_id']} "
             f"{revision_label(snapshot['revision'])} "
             f"({SNAPSHOT_STATUS_LABELS.get(snapshot['status'], '状态未知')})"
         )
         if snapshot["obligations"]:
-            print("=== 当前有效原子验收项 ===")
+            print("=== 当前有效 BDD 场景 ===")
             for obligation in snapshot["obligations"]:
                 required = "必需" if obligation["required"] else "可选"
                 print(f"  - {obligation['id']} [{required}] {obligation['text']}")
@@ -740,20 +744,13 @@ def cmd_init(args):
             print("=== 尚未确认的需求变化 ===")
             for change in snapshot["pending_changes"]:
                 print(f"  - {format_requirement_change(change)}")
-        if snapshot["sha256"] == requirement_digest(content):
+        if requirement_current:
             print("\n=== 需求变化 ===")
             print("✅ 当前需求正文与最近确认修订一致。")
         else:
             print("\n=== 需求变化候选 ===")
             print(render_requirement_diff(str(snapshot["content"]), content))
-            traceability = paths.requirement_dir / "test-cases" / "traceability.md"
-            try:
-                if traceability.is_file() and traceability.stat().st_size <= 1024 * 1024:
-                    print("\n=== 当前需求追溯表 ===")
-                    print(traceability.read_text(encoding="utf-8", errors="replace"))
-            except OSError as exc:
-                raise DeliveryError(f"当前需求追溯表无法读取: {traceability}: {exc}") from exc
-            print("\n👉 AI 指令：把差异与追溯表按业务语义汇总为增改删、替代和逐项确认决策。")
+            print("\n👉 AI 指令：把正文差异与当前确认 BDD 按业务语义汇总为增改删、替代和逐项确认决策。")
             print("同一需求保留未变化 ID；修改和新增项重新确认，删除项必须选择实现处置。")
             print("只在聊天中出现的变化必须同步到 requirement_file；不得把待定内容写成已确认。")
             print("如果用户明确这是新的串行需求，不沿用旧 ID；确认上一需求结束后，在干净工作区执行 check-env --new-requirement 建立新起点。")
@@ -761,13 +758,13 @@ def cmd_init(args):
         revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
         print(f"📄 默认修订清单: {revision_file}")
 
-    _render_resume_guide(paths)
-    _print_flow_position(paths)
+    _render_resume_guide(paths, requirement_current=requirement_current)
+    _print_flow_position(paths, requirement_current=requirement_current)
     print("\n---")
     print_bdd_instruction()
 
 
-def _print_resume_brief(paths, snapshot) -> None:
+def _print_resume_brief(paths, snapshot, requirement_current: bool = True) -> None:
     """旧需求续接时，把续接指南摘要直接打印到终端，强制 AI 第一眼进入状态。
 
     单一职责：只读 snapshot/续接指南/mapping 派生摘要，不改任何状态。目的是让
@@ -782,7 +779,8 @@ def _print_resume_brief(paths, snapshot) -> None:
         Path(requirement_dir) / "test-cases" / "implementation-plan-receipt.json"
         if requirement_dir else None
     ) if requirement_dir else None
-    plan_confirmed = bool(receipt and receipt.get("confirmed_at"))
+    receipt = _validated_plan_receipt(paths, snapshot, receipt, requirement_current)
+    plan_confirmed = requirement_current and bool(receipt and receipt.get("confirmed_at"))
     delivery_result = _read_json(
         Path(requirement_dir) / "test-results" / "delivery-result.json"
         if requirement_dir else None
@@ -800,15 +798,19 @@ def _print_resume_brief(paths, snapshot) -> None:
     last_activity = snapshot.get("confirmed_at") or snapshot.get("created_at") or ""
     print("\n📌 续接旧需求：" + title)
     summary = f"   修订：{revision_label(revision)}（{status}）｜计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}"
+    if not requirement_current:
+        summary += "｜当前正文：存在未确认变化"
     if last_activity:
         summary += f"｜上次活动：{last_activity[:10]}"
     if conclusion:
         summary += f"｜最终结论：{conclusion}"
     print(summary)
-    if stale:
+    if stale and requirement_current:
         names = "，".join(m.get("obligation_id", "?") for m in stale)
         print(f"   ⏳ {len(stale)} 个测试待回填：{names}")
-    if plan_confirmed and not stale:
+    if not requirement_current:
+        print("   下一步：先确认需求变化，再更新并确认计划与测试映射")
+    elif plan_confirmed and not stale:
         print("   下一步：可直接进入编码，或用户要求时最终交付")
     elif plan_confirmed and stale:
         print("   下一步：先回填 STALE 测试（init-test-mapping），再继续")
@@ -817,7 +819,36 @@ def _print_resume_brief(paths, snapshot) -> None:
     print("   完整状态见：续接指南.md")
 
 
-def _print_flow_position(paths) -> None:
+def _requirement_matches_snapshot(paths, snapshot) -> bool:
+    """Return whether the configured requirement file still matches the confirmed snapshot."""
+    if snapshot is None:
+        return True
+    requirement_path = getattr(paths, "requirement_path", None)
+    if requirement_path is None:
+        return True
+    try:
+        return snapshot.get("sha256") == requirement_digest(read_requirement(requirement_path))
+    except DeliveryError:
+        return False
+
+
+def _validated_plan_receipt(paths, snapshot, receipt, requirement_current: bool):
+    """Return the receipt only when current requirement, plan, and radius still match it."""
+    if not requirement_current or snapshot is None or not isinstance(receipt, dict):
+        return None
+    requirement_path = getattr(paths, "requirement_path", None)
+    requirement_dir = getattr(paths, "requirement_dir", None)
+    if requirement_path is None or requirement_dir is None:
+        return None
+    try:
+        content = read_requirement(requirement_path)
+        validate_plan_confirmation(snapshot, content, requirement_dir)
+    except (DeliveryError, ImplementationPlanError):
+        return None
+    return receipt
+
+
+def _print_flow_position(paths, requirement_current: bool | None = None) -> None:
     """打印当前流程位置（半状态驱动），让 AI 永远知道下一步该执行哪个命令。
 
     单一职责：根据已存在的事实文件推断五步流程当前位置，只读不写。脚本仍是
@@ -833,10 +864,13 @@ def _print_flow_position(paths) -> None:
         snapshot = load_requirement_snapshot(snapshot_path)
     except RequirementSnapshotError:
         snapshot = None
+    if requirement_current is None:
+        requirement_current = _requirement_matches_snapshot(paths, snapshot)
     receipt = _read_json(
         Path(requirement_dir) / "test-cases" / "implementation-plan-receipt.json"
         if requirement_dir else None
     ) if requirement_dir else None
+    receipt = _validated_plan_receipt(paths, snapshot, receipt, requirement_current)
     mapping = _read_json(
         getattr(paths, "test_mapping_path", None)
         or (Path(requirement_dir) / "test-cases" / "test-mapping.json")
@@ -846,11 +880,17 @@ def _print_flow_position(paths) -> None:
         if requirement_dir else None
     ) if requirement_dir else None
     print("\n🧭 当前流程位置 / 当前执行进度")
-    for item in execution_progress_items(snapshot, mapping, receipt, delivery_result):
+    for item in execution_progress_items(
+        snapshot, mapping, receipt, delivery_result, requirement_current
+    ):
         print(f"   {item}")
 
 
-def _render_resume_guide(paths, revision_manifest=None) -> None:
+def _render_resume_guide(
+    paths,
+    revision_manifest=None,
+    requirement_current: bool | None = None,
+) -> None:
     """刷新续接指南.md 及配套人读影子；传入 manifest 时附本次增量波及清单。
 
     init 末尾不传 manifest（只反映当前状态）；confirm-requirement-update 成功后
@@ -861,6 +901,7 @@ def _render_resume_guide(paths, revision_manifest=None) -> None:
         render_resume_guide,
         render_revision_md,
         render_test_mapping_md,
+        render_traceability_md,
         write_resume_guide,
     )
     from .atomic_write import write_text_atomic
@@ -876,12 +917,15 @@ def _render_resume_guide(paths, revision_manifest=None) -> None:
     if requirement_dir is None:
         return
     requirement_dir = Path(requirement_dir)
+    if requirement_current is None:
+        requirement_current = _requirement_matches_snapshot(paths, snapshot)
     # 路径优先用 ConfigPaths 属性；测试或旧调用方用 SimpleNamespace 时按 requirement_dir 派生。
     mapping = _read_json(
         getattr(paths, "test_mapping_path", None)
         or (requirement_dir / "test-cases" / "test-mapping.json")
     )
     receipt = _read_json(requirement_dir / "test-cases" / "implementation-plan-receipt.json")
+    receipt = _validated_plan_receipt(paths, snapshot, receipt, requirement_current)
     delivery_result = _read_json(requirement_dir / "test-results" / "delivery-result.json")
     resume_path = getattr(paths, "resume_guide_path", None) or (
         requirement_dir / "续接指南.md"
@@ -889,7 +933,13 @@ def _render_resume_guide(paths, revision_manifest=None) -> None:
     title = Path(requirement_dir).name
     try:
         guide = render_resume_guide(
-            snapshot, mapping, receipt, delivery_result, title, revision_manifest
+            snapshot,
+            mapping,
+            receipt,
+            delivery_result,
+            title,
+            revision_manifest,
+            requirement_current,
         )
         write_resume_guide(Path(resume_path), guide)
         if snapshot is not None:
@@ -902,10 +952,11 @@ def _render_resume_guide(paths, revision_manifest=None) -> None:
                 requirement_dir / "test-cases" / "测试映射说明.md",
                 render_test_mapping_md(mapping, snapshot),
             )
-        # P9: traceability.md 不存在时提示 AI 建立（gate 会校验其存在）。
-        traceability = requirement_dir / "test-cases" / "traceability.md"
-        if not traceability.is_file() and snapshot is not None and snapshot.get("obligations"):
-            print(f"⚠️ test-cases/traceability.md 尚未建立，请按追溯表格式建立（gate 会校验每个义务 ID 登记）。")
+        if snapshot is not None:
+            write_text_atomic(
+                requirement_dir / "test-cases" / "traceability.md",
+                render_traceability_md(snapshot, mapping, delivery_result),
+            )
         print(f"📄 续接指南已刷新: {resume_path}")
     except OSError as exc:
         print(f"⚠️ 续接指南无法写入: {exc}")
@@ -1008,8 +1059,8 @@ def cmd_check_env(args):
     print(f"✅ 需求起点快照: {requirement_snapshot['sha256'][:12]}")
     print(f"✅ 当前需求集合: {requirement_snapshot['requirement_id']} r0")
     revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
-    print("👉 AI 指令：先把用户已确认的全部原子验收项写入需求修订清单，再确认修订。")
-    print(f"修订清单: {revision_file}")
+    print("👉 AI 指令：用户确认需求事实源后，直接确认修订；脚本会生成普通增改清单。")
+    print(f"机器生成修订清单: {revision_file}")
     print("未成功执行 confirm-requirement-update 前不得开始编码。")
 
 
@@ -1021,14 +1072,23 @@ def cmd_confirm_requirement_update(args):
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法确认需求修订")
     content = read_requirement(requirement_path)
+    _require_atomic_bdd_before_baseline(content)
+    snapshot_path = requirement_snapshot_path_for_config(args.config)
     revision_file = (
         Path(args.revision_file).expanduser().resolve()
         if args.revision_file
         else (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve()
     )
-    manifest = load_revision_manifest(revision_file)
+    if args.revision_file:
+        manifest = load_revision_manifest(revision_file)
+    else:
+        snapshot = load_requirement_snapshot(snapshot_path)
+        if snapshot is None:
+            raise DeliveryError("尚未建立需求快照，请先执行 check-env")
+        manifest = build_confirmed_revision_manifest(snapshot, content)
+        write_revision_manifest(revision_file, manifest)
     snapshot, confirmed = apply_requirement_revision(
-        requirement_snapshot_path_for_config(args.config),
+        snapshot_path,
         requirement_path,
         content,
         manifest,
@@ -1069,9 +1129,9 @@ def cmd_confirm_requirement_update(args):
     if mapping_path is not None:
         print(
             f"\n👉 确认计划后先执行 delivery.py init-test-mapping 生成测试映射骨架 "
-            f"({mapping_path})，为每个义务登记真实 test_ids 并回填 CURRENT。"
+            f"({mapping_path})，为每个 BDD 场景登记真实 test_ids 并回填 CURRENT。"
         )
-        print("需求后续增量时，义务 sha256 变化的旧登记会自动标记 STALE，必须重新登记测试才能通过最终门禁。")
+        print("需求后续增量时，BDD 场景语义变化会使旧登记自动标记 STALE，必须重新登记测试才能通过最终门禁。")
     print_confirmed_fact_sources(
         requirement_path,
         revision_file,
@@ -1082,7 +1142,7 @@ def cmd_confirm_requirement_update(args):
 
 
 def cmd_confirm_plan(args):
-    """确认用户已经审阅的实施计划；成功后才输出编码授权与执行约束。"""
+    """确认用户已经审阅的实施计划；成功后输出测试先行约束。"""
     config = load_config(args.config)
     paths = resolve_paths(config, args.config)
     requirement_path = paths.requirement_path
@@ -1346,7 +1406,7 @@ def _sync_test_mapping_after_revision(paths, snapshot) -> None:
 
 
 def cmd_init_test_mapping(args):
-    """为当前已确认义务生成测试映射骨架，或校验已有映射。"""
+    """为当前已确认 BDD 场景生成测试映射骨架，或校验已有映射。"""
     from .test_mapping import (
         TestMappingError,
         build_initial_mapping,
@@ -1365,6 +1425,7 @@ def cmd_init_test_mapping(args):
         raise DeliveryError("未配置 requirement_file，无法校验测试映射")
     content = read_requirement(paths.requirement_path)
     _require_current_confirmed_requirement(snapshot, paths.requirement_path, content)
+    validate_plan_confirmation(snapshot, content, paths.requirement_dir)
     mapping_path = paths.test_mapping_path
     if args.validate:
         payload = load_test_mapping(mapping_path)
@@ -1386,8 +1447,8 @@ def cmd_init_test_mapping(args):
     payload = build_initial_mapping(snapshot, existing_mapping)
     _atomic_write(mapping_path, payload)
     print(f"✅ 测试映射骨架已生成: {mapping_path}")
-    print("👉 AI 指令：为每个义务登记真实测试用例 id，把 mapping_status 回填为 CURRENT。")
-    print("义务 sha256 已与当前需求修订绑定；需求再次增量时旧登记会自动标记 STALE。")
+    print("👉 AI 指令：为每个 BDD 场景登记真实测试用例 id，把 mapping_status 回填为 CURRENT；先补业务断言并观察 Red，再修改生产代码。")
+    print("场景 sha256 已与当前需求修订绑定；需求再次增量时旧登记会自动标记 STALE。")
     _render_resume_guide(paths)
     return 0
 

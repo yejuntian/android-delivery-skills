@@ -34,15 +34,15 @@ def snapshot() -> dict:
         "requirement_id": "requirement-1",
         "revision": 2,
         "obligations": [{
-            "id": "BDD-001/T1",
+            "id": "BDD-001",
             "text": text,
             "required": True,
-            "sha256": obligation_digest("BDD-001/T1", text, True),
+            "sha256": obligation_digest("BDD-001", text, True),
         }],
         "history": [{
             "revision": 2,
             "changes": [{
-                "id": "BDD-001/T1",
+                "id": "BDD-001",
                 "change_type": "CHANGED",
                 "decision": "CONFIRMED",
                 "text": text,
@@ -64,7 +64,7 @@ def payload(snapshot_payload: dict, requirement: str) -> dict:
         "allowed_files": ["app/src/main/java/LoginViewModel.kt"],
         "allowed_dirs": ["app/src/test/java/"],
         "impacts": [{
-            "id": "BDD-001/T1",
+            "id": "BDD-001",
             "change_type": "CHANGED",
             "reason": "只调整登录失败提示和对应测试。",
             "risk_level": "L1",
@@ -154,23 +154,23 @@ class ImpactRadiusTests(unittest.TestCase):
             "revision": 2,
             "obligations": [
                 {
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "text": first_text,
                     "required": True,
-                    "sha256": obligation_digest("BDD-001/T1", first_text, True),
+                    "sha256": obligation_digest("BDD-001", first_text, True),
                 },
                 {
-                    "id": "BDD-002/T1",
+                    "id": "BDD-004",
                     "text": second_text,
                     "required": True,
-                    "sha256": obligation_digest("BDD-002/T1", second_text, True),
+                    "sha256": obligation_digest("BDD-004", second_text, True),
                 },
             ],
             "history": [
                 {
                     "revision": 1,
                     "changes": [{
-                        "id": "BDD-001/T1",
+                        "id": "BDD-001",
                         "change_type": "ADDED",
                         "decision": "CONFIRMED",
                     }],
@@ -179,12 +179,12 @@ class ImpactRadiusTests(unittest.TestCase):
                     "revision": 2,
                     "changes": [
                         {
-                            "id": "BDD-001/T1",
+                            "id": "BDD-001",
                             "change_type": "UNCHANGED",
                             "decision": "CONFIRMED",
                         },
                         {
-                            "id": "BDD-002/T1",
+                            "id": "BDD-004",
                             "change_type": "ADDED",
                             "decision": "CONFIRMED",
                         },
@@ -193,12 +193,12 @@ class ImpactRadiusTests(unittest.TestCase):
             ],
         }
         radius = payload(snap, requirement)
-        radius["impacts"][0]["id"] = "BDD-002/T1"
+        radius["impacts"][0]["id"] = "BDD-004"
         radius["impacts"][0]["change_type"] = "ADDED"
 
         errors = validate_impact_radius(radius, snap, requirement)
 
-        self.assertTrue(any("BDD-001/T1" in error for error in errors))
+        self.assertTrue(any("BDD-001" in error for error in errors))
 
     def test_wildcard_glob_is_rejected(self) -> None:
         """验证 allowed_dirs 拒绝通配符，堵死无锚点通配放行全仓库的后门。"""

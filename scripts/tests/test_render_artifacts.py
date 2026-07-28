@@ -26,6 +26,7 @@ from ..render_artifacts import (  # noqa: E402
     render_resume_guide,
     render_revision_md,
     render_test_mapping_md,
+    render_traceability_md,
 )
 
 
@@ -36,8 +37,8 @@ def make_snapshot(revision: int = 2) -> dict:
         "revision": revision,
         "status": "CONFIRMED",
         "obligations": [
-            {"id": "BDD-001/T1", "text": "显示错误提示", "required": True, "sha256": "a" * 64},
-            {"id": "BDD-002/T1", "text": "跳转主页", "required": True, "sha256": "b" * 64},
+            {"id": "BDD-001", "text": "显示错误提示", "required": True, "sha256": "a" * 64},
+            {"id": "BDD-004", "text": "跳转主页", "required": True, "sha256": "b" * 64},
         ],
         "pending_changes": [],
     }
@@ -50,7 +51,7 @@ class RenderArtifactsTests(unittest.TestCase):
         """需求修订说明列出每条义务及其必需性。"""
         md = render_revision_md(make_snapshot())
         self.assertIn("增量修订（第 1 次）", md)
-        self.assertIn("`BDD-001/T1`", md)
+        self.assertIn("`BDD-001`", md)
         self.assertIn("[必需]", md)
 
     def test_test_mapping_md_shows_architecture_column(self) -> None:
@@ -58,14 +59,14 @@ class RenderArtifactsTests(unittest.TestCase):
         mapping = {
             "mappings": [
                 {
-                    "obligation_id": "BDD-001/T1",
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": "a" * 64,
                     "test_ids": ["TEST-001"],
                     "mapping_status": "CURRENT",
                     "architecture_tests": ["埋点只在统一出口"],
                 },
                 {
-                    "obligation_id": "BDD-002/T1",
+                    "obligation_id": "BDD-004",
                     "obligation_sha256": "b" * 64,
                     "test_ids": [],
                     "mapping_status": "STALE",
@@ -78,11 +79,30 @@ class RenderArtifactsTests(unittest.TestCase):
         self.assertIn("埋点只在统一出口", md)
         self.assertIn("待回填", md)
 
+    def test_traceability_is_generated_from_mapping_and_result(self) -> None:
+        mapping = {"mappings": [{
+            "obligation_id": "BDD-001",
+            "mapping_status": "CURRENT",
+            "test_ids": ["LoginTest#wrongPassword"],
+        }]}
+        result = {"obligations": [{
+            "id": "BDD-001",
+            "status": "COVERED_AUTOMATED",
+            "evidence_ids": ["E-TEST"],
+        }]}
+
+        md = render_traceability_md(make_snapshot(), mapping, result)
+
+        self.assertIn("不作为独立门禁输入", md)
+        self.assertIn("LoginTest#wrongPassword", md)
+        self.assertIn("E-TEST", md)
+        self.assertIn("BDD-004", md)
+
     def test_resume_guide_flags_stale_and_next_steps(self) -> None:
         """续接指南标记 STALE 映射，并列出下一步。"""
         mapping = {"mappings": [
-            {"obligation_id": "BDD-001/T1", "mapping_status": "CURRENT", "test_ids": ["t1"]},
-            {"obligation_id": "BDD-002/T1", "mapping_status": "STALE", "test_ids": []},
+            {"obligation_id": "BDD-001", "mapping_status": "CURRENT", "test_ids": ["t1"]},
+            {"obligation_id": "BDD-004", "mapping_status": "STALE", "test_ids": []},
         ]}
         guide = render_resume_guide(
             make_snapshot(), mapping, {"confirmed_at": "2026-07-24"}, None, "登录页"
@@ -117,10 +137,36 @@ class RenderArtifactsTests(unittest.TestCase):
         self.assertIn("⏳ 确认实施计划", items[1])
         self.assertIn("confirm-plan", items[1])
 
+    def test_requirement_change_invalidates_displayed_plan_and_mapping(self) -> None:
+        """当前正文变化时，续接视图不能继续提示旧计划和旧映射可用。"""
+        mapping = {"mappings": [{
+            "obligation_id": "BDD-001",
+            "mapping_status": "CURRENT",
+            "test_ids": ["LoginPolicyTest#wrongPassword"],
+        }]}
+
+        items = execution_progress_items(
+            make_snapshot(), mapping, {"confirmed_at": "2026-07-24"}, None, False
+        )
+        guide = render_resume_guide(
+            make_snapshot(),
+            mapping,
+            {"confirmed_at": "2026-07-24"},
+            None,
+            "登录页",
+            requirement_current=False,
+        )
+
+        self.assertIn("需求正文存在未确认变化", items[0])
+        self.assertIn("旧计划确认已失效", items[1])
+        self.assertIn("当前正文：存在未确认变化", guide)
+        self.assertIn("实施计划：尚未确认或已失效", guide)
+        self.assertNotIn("可直接", guide)
+
     def test_execution_progress_marks_stale_mapping_as_current_step(self) -> None:
         """测试映射 STALE 时，当前步骤是回填测试映射。"""
         mapping = {"mappings": [
-            {"obligation_id": "BDD-002/T1", "mapping_status": "STALE", "test_ids": []},
+            {"obligation_id": "BDD-004", "mapping_status": "STALE", "test_ids": []},
         ]}
 
         items = execution_progress_items(
@@ -129,12 +175,12 @@ class RenderArtifactsTests(unittest.TestCase):
 
         self.assertIn("✓ 确认实施计划", items[1])
         self.assertIn("⏳ 测试映射", items[2])
-        self.assertIn("BDD-002/T1", items[2])
+        self.assertIn("BDD-004", items[2])
 
     def test_execution_progress_translates_delivery_conclusion(self) -> None:
         """最终报告结论使用中文语义展示，不裸露机器枚举。"""
         mapping = {"mappings": [
-            {"obligation_id": "BDD-001/T1", "mapping_status": "CURRENT", "test_ids": ["t1"]},
+            {"obligation_id": "BDD-001", "mapping_status": "CURRENT", "test_ids": ["t1"]},
         ]}
 
         items = execution_progress_items(
@@ -158,22 +204,22 @@ class RenderArtifactsTests(unittest.TestCase):
         """传入修订清单时，续接指南列出本次增量波及义务及影响半径。"""
         snapshot = make_snapshot(revision=3)
         mapping = {"mappings": [
-            {"obligation_id": "BDD-001/T1", "mapping_status": "STALE", "test_ids": []},
-            {"obligation_id": "BDD-002/T1", "mapping_status": "CURRENT", "test_ids": ["t2"]},
+            {"obligation_id": "BDD-001", "mapping_status": "STALE", "test_ids": []},
+            {"obligation_id": "BDD-004", "mapping_status": "CURRENT", "test_ids": ["t2"]},
         ]}
         manifest = {"changes": [
-            {"id": "BDD-001/T1", "change_type": "CHANGED", "decision": "CONFIRMED"},
-            {"id": "BDD-002/T1", "change_type": "UNCHANGED", "decision": "CONFIRMED"},
-            {"id": "BDD-003/T1", "change_type": "ADDED", "decision": "CONFIRMED"},
-            {"id": "BDD-009/T1", "change_type": "REMOVED", "decision": "CONFIRMED"},
+            {"id": "BDD-001", "change_type": "CHANGED", "decision": "CONFIRMED"},
+            {"id": "BDD-004", "change_type": "UNCHANGED", "decision": "CONFIRMED"},
+            {"id": "BDD-005", "change_type": "ADDED", "decision": "CONFIRMED"},
+            {"id": "BDD-009", "change_type": "REMOVED", "decision": "CONFIRMED"},
         ]}
         guide = render_resume_guide(snapshot, mapping, None, None, "", manifest)
         self.assertIn("本次增量波及清单（增量修订（第 2 次））", guide)
-        self.assertIn("`BDD-001/T1` [CHANGED]", guide)
+        self.assertIn("`BDD-001` [CHANGED]", guide)
         self.assertIn("测试映射已标 STALE", guide)
-        self.assertIn("`BDD-003/T1` [ADDED]", guide)
+        self.assertIn("`BDD-005` [ADDED]", guide)
         self.assertIn("待登记测试用例", guide)
-        self.assertIn("`BDD-009/T1` [REMOVED]", guide)
+        self.assertIn("`BDD-009` [REMOVED]", guide)
         # UNCHANGED 不进波及清单。
         self.assertNotIn("[UNCHANGED]", guide)
 

@@ -46,6 +46,8 @@ SPEC.loader.exec_module(run_journey)
 # Skill 根目录，通过动态模块对象访问修订工具，避免 IDE 把跨目录静态导入误报为缺失。
 REQUIREMENT_SNAPSHOT: Any = importlib.import_module("scripts.requirement_snapshot")
 apply_requirement_revision = REQUIREMENT_SNAPSHOT.apply_requirement_revision
+requirement_digest = REQUIREMENT_SNAPSHOT.requirement_digest
+requirement_summary_digest = REQUIREMENT_SNAPSHOT.requirement_summary_digest
 write_requirement_snapshot = REQUIREMENT_SNAPSHOT.write_requirement_snapshot
 IMPLEMENTATION_PLAN: Any = importlib.import_module("scripts.implementation_plan")
 confirm_implementation_plan = IMPLEMENTATION_PLAN.confirm_implementation_plan
@@ -79,6 +81,9 @@ class RunJourneyTest(unittest.TestCase):
 
 ## 测试方案
 - 验证错误状态。
+
+## 影响半径摘要
+- 仅修改错误提示及对应测试。
 
 ## 明确不修改范围
 - 不修改接口契约。
@@ -207,8 +212,8 @@ class RunJourneyTest(unittest.TestCase):
             action_count=2,
             executed_tests=2,
             applicability="PARTIAL",
-            covered_then_ids=["BDD-001/T1"],
-            uncovered_then_ids=["BDD-001/T2"],
+            covered_then_ids=["BDD-001"],
+            uncovered_then_ids=["BDD-002"],
             baseline_id="baseline-1",
             snapshot_sha256="a" * 64,
             requirement_status="CONFIRMED",
@@ -216,11 +221,11 @@ class RunJourneyTest(unittest.TestCase):
         run_journey.write_result(result, output)
         payload = json.loads(output.read_text(encoding="utf-8"))
         self.assertEqual("PASS", payload["status"])
-        self.assertEqual(["BDD-001/T1"], payload["covered_then_ids"])
+        self.assertEqual(["BDD-001"], payload["covered_then_ids"])
         report = output.with_suffix(".md").read_text(encoding="utf-8")
         self.assertIn("界面流程自动化测试报告", report)
         self.assertIn("device-1", report)
-        self.assertIn("BDD-001/T2", report)
+        self.assertIn("BDD-002", report)
         self.assertNotIn("`PASS`", report)
         self.assertNotIn("`PARTIAL`", report)
         self.assertNotIn("`CONFIRMED`", report)
@@ -270,7 +275,7 @@ class RunJourneyTest(unittest.TestCase):
                 "--journeys-dir", str(journeys),
                 "--ui-impact", "behavior",
                 "--applicability", "FULL",
-                "--covered-then", "BDD-001/T1",
+                "--covered-then", "BDD-001",
             ])
 
         self.assertEqual(1, exit_code)
@@ -284,6 +289,10 @@ class RunJourneyTest(unittest.TestCase):
         """验证默认 Journey 用例位于当前需求目录而非共享壳源码。"""
         config_path = Path(tempfile.mkdtemp()) / "local.yaml"
         config = {"workspace_root": str(config_path.parent), "requirement_dir": "requirement"}
+        config_path.write_text(
+            f'workspace_root: "{config_path.parent}"\nrequirement_dir: "requirement"\n',
+            encoding="utf-8",
+        )
         resolved = run_journey.resolve_journeys_dir(config_path, config, {}, None)
         expected = (
             config_path.parent / "requirement" / "test-cases" / "journeys" / "standalone"
@@ -303,6 +312,11 @@ class RunJourneyTest(unittest.TestCase):
             "requirement_dir": "requirement",
             "requirement_file": "requirement.md",
         }
+        config_path.write_text(
+            f'workspace_root: "{root}"\nrequirement_dir: "requirement"\n'
+            'requirement_file: "requirement.md"\n',
+            encoding="utf-8",
+        )
 
         first_scope = run_journey.requirement_scope_id(config_path, config)
         first_report = run_journey.resolve_result_path(config_path, config)
@@ -331,6 +345,11 @@ class RunJourneyTest(unittest.TestCase):
             "requirement_dir": "requirement",
             "requirement_file": "requirement.md",
         }
+        config_path.write_text(
+            f'workspace_root: "{root}"\nrequirement_dir: "requirement"\n'
+            'requirement_file: "requirement.md"\n',
+            encoding="utf-8",
+        )
         plan = implementation_plan_path(requirement.parent)
         plan.write_text(self.valid_plan("错误提示"), encoding="utf-8")
         first_scope = run_journey.requirement_scope_id(config_path, config)
@@ -364,7 +383,7 @@ class RunJourneyTest(unittest.TestCase):
                 "base_revision": 0,
                 "scope": "SAME_REQUIREMENT",
                 "changes": [{
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "change_type": "ADDED",
                     "decision": "CONFIRMED",
                     "text": "显示错误",
@@ -396,12 +415,12 @@ class RunJourneyTest(unittest.TestCase):
                     "scope": "SAME_REQUIREMENT",
                     "changes": [
                         {
-                            "id": "BDD-001/T1",
+                            "id": "BDD-001",
                             "change_type": "UNCHANGED",
                             "decision": "CONFIRMED",
                         },
                         {
-                            "id": "BDD-001/T2",
+                            "id": "BDD-002",
                             "change_type": "ADDED",
                             "decision": "PENDING",
                             "text": "允许重试",
@@ -437,7 +456,7 @@ class RunJourneyTest(unittest.TestCase):
                 "--harness-dir", str(harness),
                 "--ui-impact", "behavior",
                 "--applicability", "FULL",
-                "--covered-then", "BDD-001/T1",
+                "--covered-then", "BDD-001",
             ])
 
         self.assertEqual(1, exit_code)
@@ -470,7 +489,7 @@ class RunJourneyTest(unittest.TestCase):
                 "base_revision": 0,
                 "scope": "SAME_REQUIREMENT",
                 "changes": [{
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "change_type": "ADDED",
                     "decision": "CONFIRMED",
                     "text": "显示错误",
@@ -480,6 +499,29 @@ class RunJourneyTest(unittest.TestCase):
         )
         plan = implementation_plan_path(requirement.parent)
         plan.write_text(self.valid_plan("错误提示"), encoding="utf-8")
+        radius = requirement.parent / "test-cases" / "impact-radius.json"
+        radius.parent.mkdir(parents=True, exist_ok=True)
+        radius.write_text(json.dumps({
+            "version": 1,
+            "generated_at": "2026-07-29T00:00:00+00:00",
+            "requirement_id": snapshot["requirement_id"],
+            "requirement_revision": snapshot["revision"],
+            "requirement_file_sha256": requirement_digest("显示错误"),
+            "requirement_summary_sha256": requirement_summary_digest(snapshot),
+            "allowed_files": [],
+            "allowed_dirs": [],
+            "no_code_change_reason": "Journey 上下文测试不修改业务代码。",
+            "impacts": [{
+                "id": "BDD-001",
+                "change_type": "ADDED",
+                "reason": "验证计划变化会使 Journey 上下文失效。",
+                "risk_level": "L1",
+                "expected_files": [],
+                "expected_tests": [],
+                "affected_modules": [],
+                "no_code_change_reason": "仅验证机器上下文。",
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
         receipt, _ = confirm_implementation_plan(snapshot, "显示错误", requirement.parent)
         config = {
             "workspace_root": str(root),
@@ -640,7 +682,7 @@ class RunJourneyTest(unittest.TestCase):
                 "--journeys-dir", str(journeys),
                 "--ui-impact", "behavior",
                 "--applicability", "FULL",
-                "--covered-then", "BDD-001/T1",
+                "--covered-then", "BDD-001",
                 "--skip-build",
             ])
 
@@ -648,7 +690,7 @@ class RunJourneyTest(unittest.TestCase):
         payload = json.loads(result_path.read_text(encoding="utf-8"))
         self.assertEqual(run_journey.PASS, payload["status"])
         self.assertEqual("FULL", payload["applicability"])
-        self.assertEqual(["BDD-001/T1"], payload["covered_then_ids"])
+        self.assertEqual(["BDD-001"], payload["covered_then_ids"])
 
     def test_redacts_deep_links_and_returns_timeout_as_environment_failure(self):
         """验证超时返回环境失败码，且命令与输出都不会泄漏 DeepLink 参数。"""

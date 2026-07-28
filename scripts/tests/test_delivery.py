@@ -83,6 +83,7 @@ from ..git_changes import (  # noqa: E402
     working_tree_status,
 )
 from ..implementation_plan import (  # noqa: E402
+    ImplementationPlanError,
     implementation_plan_path,
     plan_confirmation_receipt_path,
 )
@@ -97,6 +98,19 @@ from ..requirement_snapshot import (  # noqa: E402
     render_requirement_diff,
     write_requirement_snapshot,
 )
+
+
+def bdd_requirement(
+    identifier: str = "BDD-001",
+    title: str = "已确认需求",
+    result: str = "系统展示预期结果",
+) -> str:
+    """Build the smallest canonical requirement accepted by command-level tests."""
+    return (
+        f"# {title}\n\n## BDD 场景\n\n### {identifier} {title}\n"
+        f"Given 用户位于目标页面\nWhen 用户执行目标操作\nThen {result}\n\n"
+        "## 待确认\n\n- 无\n"
+    )
 
 
 class RequirementPathTests(unittest.TestCase):
@@ -257,7 +271,8 @@ class UserInstructionTests(unittest.TestCase):
 
         text = output.getvalue()
         self.assertIn("先形成初步需求理解", text)
-        self.assertIn("用户故事+AC+主流程/异常边界", text)
+        self.assertIn("BDD-001", text)
+        self.assertIn("Given/When/Then", text)
         self.assertIn("确认后不得编码", text)
 
     def test_bdd_instruction_converges_changes_before_first_confirmation(self) -> None:
@@ -320,14 +335,14 @@ class RequirementSnapshotTests(unittest.TestCase):
     def test_requirement_change_is_presented_in_chinese(self) -> None:
         """验证用户看到中文变化、确认状态和删除处置，不需要理解内部英文枚举。"""
         text = format_requirement_change({
-            "id": "BDD-001/T2",
+            "id": "BDD-002",
             "change_type": "REMOVED",
             "decision": "CONFIRMED",
             "disposition": "KEEP_COMPATIBILITY",
         })
 
         self.assertEqual(
-            "BDD-001/T2：删除，已确认：只删除当前入口，保留兼容能力",
+            "BDD-002：删除，已确认：只删除当前入口，保留兼容能力",
             text,
         )
 
@@ -341,7 +356,8 @@ class RequirementSnapshotTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("局部迭代", text)
         self.assertIn("不自动 route 或全量审查", text)
-        self.assertIn("重新读取已确认的 requirement_file、需求修订清单、追溯表、实施计划和影响半径", text)
+        self.assertIn("重新读取已确认的 requirement_file、需求快照/修订清单、实施计划、影响半径和测试映射", text)
+        self.assertIn("追溯表只是机器生成视图", text)
         self.assertIn("旧聊天理解、旧总结或旧方案不得作为执行依据", text)
         self.assertIn("最终交付", text)
         self.assertIn("最终检查、完整交付或准备提交", text)
@@ -404,7 +420,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             "登录失败显示错误",
             self._manifest(0, [
                 self._change(
-                    "BDD-001/T1", "ADDED", text="显示登录错误", required=True,
+                    "BDD-001", "ADDED", text="显示登录错误", required=True,
                 ),
             ]),
         )
@@ -417,9 +433,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             content_v2,
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", text="点击重试后重新请求", required=True,
+                    "BDD-002", "ADDED", text="点击重试后重新请求", required=True,
                 ),
             ]),
         )
@@ -444,7 +460,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             "登录失败显示错误",
             self._manifest(0, [
                 self._change(
-                    "BDD-001/T1", "ADDED", text="显示登录错误", required=True,
+                    "BDD-001", "ADDED", text="显示登录错误", required=True,
                 ),
             ]),
         )
@@ -454,9 +470,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             candidate_content,
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", "PENDING",
+                    "BDD-002", "ADDED", "PENDING",
                     text="点击重试后重新请求", required=True, reason="重试次数待确认",
                 ),
             ]),
@@ -466,7 +482,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertEqual(confirmed["revision"], pending["revision"])
         self.assertEqual(confirmed["sha256"], pending["sha256"])
         self.assertEqual("PENDING_CONFIRMATION", pending["status"])
-        self.assertEqual("BDD-001/T2", pending["pending_changes"][1]["id"])
+        self.assertEqual("BDD-002", pending["pending_changes"][1]["id"])
 
     def test_resolves_pending_and_preserves_rejected_items_outside_total(self) -> None:
         """验证待定项解决后推进修订，而明确拒绝的新义务不会进入有效集合。"""
@@ -482,7 +498,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             "登录失败显示错误",
             self._manifest(0, [
                 self._change(
-                    "BDD-001/T1", "ADDED", text="显示登录错误", required=True,
+                    "BDD-001", "ADDED", text="显示登录错误", required=True,
                 ),
             ]),
         )
@@ -492,9 +508,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             candidate_content,
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", "PENDING",
+                    "BDD-002", "ADDED", "PENDING",
                     text="点击重试后重新请求", required=True, reason="等待确认",
                 ),
             ]),
@@ -504,12 +520,12 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             candidate_content,
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", text="点击重试后重新请求", required=True,
+                    "BDD-002", "ADDED", text="点击重试后重新请求", required=True,
                 ),
                 self._change(
-                    "BDD-001/T3", "ADDED", "REJECTED",
+                    "BDD-003", "ADDED", "REJECTED",
                     text="失败后无限重试", required=True, reason="会造成请求风暴",
                 ),
             ]),
@@ -517,7 +533,7 @@ class RequirementSnapshotTests(unittest.TestCase):
 
         self.assertTrue(applied)
         self.assertEqual(2, resolved["revision"])
-        self.assertEqual(["BDD-001/T1", "BDD-001/T2"], [
+        self.assertEqual(["BDD-001", "BDD-002"], [
             item["id"] for item in resolved["obligations"]
         ])
 
@@ -531,7 +547,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         apply_requirement_revision(
@@ -539,9 +555,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误\n允许重试",
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", "PENDING",
+                    "BDD-002", "ADDED", "PENDING",
                     text="允许重试", required=True, reason="用户尚未决定",
                 ),
             ]),
@@ -551,16 +567,16 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", "REJECTED",
+                    "BDD-002", "ADDED", "REJECTED",
                     text="允许重试", required=True, reason="用户撤回补充",
                 ),
             ]),
         )
 
         self.assertTrue(applied)
-        self.assertEqual(["BDD-001/T1"], [item["id"] for item in restored["obligations"]])
+        self.assertEqual(["BDD-001"], [item["id"] for item in restored["obligations"]])
         self.assertEqual("显示错误", restored["content"])
 
     def test_init_prints_resume_brief_and_flow_position(self) -> None:
@@ -573,7 +589,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "登录失败显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         paths = SimpleNamespace(
@@ -613,7 +629,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         conflict, applied = apply_requirement_revision(
@@ -621,9 +637,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误\n自动重试",
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "ADDED", "CONFLICT",
+                    "BDD-002", "ADDED", "CONFLICT",
                     text="自动重试", required=True, reason="与禁止重复请求冲突",
                 ),
             ]),
@@ -631,7 +647,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertFalse(applied)
         self.assertEqual(1, conflict["revision"])
 
-        serial = self._manifest(1, [self._change("BDD-001/T1", "UNCHANGED")])
+        serial = self._manifest(1, [self._change("BDD-001", "UNCHANGED")])
         serial["scope"] = "NEW_SERIAL_REQUIREMENT"
         with self.assertRaisesRegex(
             RequirementSnapshotError,
@@ -651,7 +667,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         with self.assertRaisesRegex(RequirementSnapshotError, "同轮已确认 ADDED"):
@@ -661,7 +677,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 "显示可重试错误",
                 self._manifest(1, [
                     self._change(
-                        "BDD-001/T1", "SUPERSEDED", replacement_id="BDD-001/T2",
+                        "BDD-001", "SUPERSEDED", replacement_id="BDD-002",
                     ),
                 ]),
             )
@@ -672,15 +688,15 @@ class RequirementSnapshotTests(unittest.TestCase):
             "显示可重试错误",
             self._manifest(1, [
                 self._change(
-                    "BDD-001/T1", "SUPERSEDED", replacement_id="BDD-001/T2",
+                    "BDD-001", "SUPERSEDED", replacement_id="BDD-002",
                 ),
                 self._change(
-                    "BDD-001/T2", "ADDED", text="显示错误并允许重试", required=True,
+                    "BDD-002", "ADDED", text="显示错误并允许重试", required=True,
                 ),
             ]),
         )
         self.assertTrue(applied)
-        self.assertEqual(["BDD-001/T2"], [item["id"] for item in updated["obligations"]])
+        self.assertEqual(["BDD-002"], [item["id"] for item in updated["obligations"]])
 
     def test_chat_only_semantic_change_and_interrupted_write_are_safe(self) -> None:
         """验证未同步需求文件和确认写入中断都不会覆盖最近确认修订。"""
@@ -692,12 +708,12 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         manifest = self._manifest(1, [
             self._change(
-                "BDD-001/T1", "CHANGED", text="显示错误并允许重试", required=True,
+                "BDD-001", "CHANGED", text="显示错误并允许重试", required=True,
             ),
         ])
         with self.assertRaisesRegex(RequirementSnapshotError, "requirement_file 未更新"):
@@ -723,7 +739,7 @@ class RequirementSnapshotTests(unittest.TestCase):
 
     def test_manifest_must_cover_bdd_ids_written_in_requirement_file(self) -> None:
         """验证需求正文已列出的 Then ID 不能被修订清单遗漏。"""
-        content = "BDD-001/T1 显示错误\nBDD-001/T2 允许重试"
+        content = "BDD-001 显示错误\nBDD-002 允许重试"
         write_requirement_snapshot(
             self.snapshot, self.requirement, content, requirement_id="baseline-1",
         )
@@ -734,7 +750,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 self.requirement,
                 content,
                 self._manifest(0, [
-                    self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                    self._change("BDD-001", "ADDED", text="显示错误", required=True),
                 ]),
             )
 
@@ -749,7 +765,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             content,
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="登录失败显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="登录失败显示错误", required=True),
             ]),
         )
 
@@ -758,13 +774,13 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             content,
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
-                self._change("BDD-001/T2", "ADDED", text="允许点击重试", required=True),
+                self._change("BDD-001", "UNCHANGED"),
+                self._change("BDD-002", "ADDED", text="允许点击重试", required=True),
             ]),
         )
 
         self.assertTrue(applied)
-        self.assertEqual(["BDD-001/T1", "BDD-001/T2"], [
+        self.assertEqual(["BDD-001", "BDD-002"], [
             item["id"] for item in updated["obligations"]
         ])
 
@@ -779,7 +795,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             content,
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="登录失败显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="登录失败显示错误", required=True),
             ]),
         )
 
@@ -789,8 +805,8 @@ class RequirementSnapshotTests(unittest.TestCase):
                 self.requirement,
                 content,
                 self._manifest(1, [
-                    self._change("BDD-001/T1", "UNCHANGED"),
-                    self._change("BDD-001/T2", "ADDED", text="失败后自动重试三次", required=True),
+                    self._change("BDD-001", "UNCHANGED"),
+                    self._change("BDD-002", "ADDED", text="失败后自动重试三次", required=True),
                 ]),
             )
 
@@ -807,8 +823,8 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误并允许重试",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
-                self._change("BDD-001/T2", "ADDED", text="允许重试", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
+                self._change("BDD-002", "ADDED", text="允许重试", required=True),
             ]),
         )
         with self.assertRaisesRegex(RequirementSnapshotError, "删除处置"):
@@ -817,8 +833,8 @@ class RequirementSnapshotTests(unittest.TestCase):
                 self.requirement,
                 "只显示错误",
                 self._manifest(1, [
-                    self._change("BDD-001/T1", "UNCHANGED"),
-                    self._change("BDD-001/T2", "REMOVED"),
+                    self._change("BDD-001", "UNCHANGED"),
+                    self._change("BDD-002", "REMOVED"),
                 ]),
             )
 
@@ -827,14 +843,14 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "只显示错误",
             self._manifest(1, [
-                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001", "UNCHANGED"),
                 self._change(
-                    "BDD-001/T2", "REMOVED", disposition="KEEP_COMPATIBILITY",
+                    "BDD-002", "REMOVED", disposition="KEEP_COMPATIBILITY",
                 ),
             ]),
         )
         self.assertTrue(applied)
-        self.assertEqual(["BDD-001/T1"], [item["id"] for item in updated["obligations"]])
+        self.assertEqual(["BDD-001"], [item["id"] for item in updated["obligations"]])
 
     def test_stale_or_incomplete_manifest_cannot_overwrite_revision(self) -> None:
         """验证旧版本清单和漏掉既有义务的清单都会被阻断。"""
@@ -849,7 +865,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         with self.assertRaisesRegex(RequirementSnapshotError, "base_revision 已过期"):
@@ -857,7 +873,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 self.snapshot,
                 self.requirement,
                 "显示错误",
-                self._manifest(0, [self._change("BDD-001/T1", "UNCHANGED")]),
+                self._manifest(0, [self._change("BDD-001", "UNCHANGED")]),
             )
         with self.assertRaisesRegex(RequirementSnapshotError, "没有处理既有义务"):
             apply_requirement_revision(
@@ -865,15 +881,15 @@ class RequirementSnapshotTests(unittest.TestCase):
                 self.requirement,
                 "显示错误\n新增入口",
                 self._manifest(1, [
-                    self._change("BDD-002/T1", "ADDED", text="显示入口", required=True),
+                    self._change("BDD-004", "ADDED", text="显示入口", required=True),
                 ]),
             )
 
     def test_obligation_digest_changes_with_then_semantics(self) -> None:
         """验证同一 Then ID 的文本或必需性变化会使旧证据摘要失效。"""
-        before = obligation_digest("BDD-001/T1", "显示错误", True)
-        after = obligation_digest("BDD-001/T1", "显示错误并允许重试", True)
-        optional = obligation_digest("BDD-001/T1", "显示错误", False)
+        before = obligation_digest("BDD-001", "显示错误", True)
+        after = obligation_digest("BDD-001", "显示错误并允许重试", True)
+        optional = obligation_digest("BDD-001", "显示错误", False)
 
         self.assertNotEqual(before, after)
         self.assertNotEqual(before, optional)
@@ -888,14 +904,14 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
         )
         repeated, applied = apply_requirement_revision(
             self.snapshot,
             self.requirement,
             "显示错误",
-            self._manifest(1, [self._change("BDD-001/T1", "UNCHANGED")]),
+            self._manifest(1, [self._change("BDD-001", "UNCHANGED")]),
         )
 
         self.assertTrue(applied)
@@ -916,11 +932,11 @@ class RequirementSnapshotTests(unittest.TestCase):
             "显示错误\n允许重试",
             self._manifest(0, [
                 self._change(
-                    "BDD-001/T1", "ADDED", text="显示错误并允许重试", required=True,
+                    "BDD-001", "ADDED", text="显示错误并允许重试", required=True,
                 ),
             ]),
         )
-        manifest = self._manifest(1, [self._change("BDD-001/T1", "UNCHANGED")])
+        manifest = self._manifest(1, [self._change("BDD-001", "UNCHANGED")])
         manifest["format_only"] = True
         formatted, applied = apply_requirement_revision(
             self.snapshot, self.requirement, "显示错误\n\n允许重试", manifest,
@@ -936,7 +952,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.requirement.write_text("登录失败显示错误\n允许点击重试\n", encoding="utf-8")
         traceability = self.requirement_dir / "test-cases" / "traceability.md"
         traceability.parent.mkdir()
-        traceability.write_text("BDD-001/T1 | COVERED_AUTOMATED\n", encoding="utf-8")
+        traceability.write_text("BDD-001 | COVERED_AUTOMATED\n", encoding="utf-8")
         self.baseline.write_text('{"id":"keep-me"}\n', encoding="utf-8")
         paths = SimpleNamespace(
             project_path=self.root / "project",
@@ -959,22 +975,27 @@ class RequirementSnapshotTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("需求变化候选", text)
         self.assertIn("+允许点击重试", text)
-        self.assertIn("BDD-001/T1", text)
+        self.assertIn("BDD-001", text)
+        self.assertNotIn("COVERED_AUTOMATED", text)
+        self.assertIn("当前正文：存在未确认变化", text)
+        self.assertNotIn("可直接进入编码", text)
         self.assertIn("新增、修改、删除、未变化", text)
         self.assertIn("check-env --new-requirement", text)
 
     def test_confirm_command_never_changes_git_baseline(self) -> None:
         """验证独立需求确认只更新修订快照，不覆盖当前需求 Git 起点。"""
+        content = bdd_requirement(result="显示登录错误")
+        self.requirement.write_text(content, encoding="utf-8")
         write_requirement_snapshot(
             self.snapshot,
             self.requirement,
-            "登录失败显示错误",
+            content,
             requirement_id="baseline-1",
         )
         revision_file = self.requirement_dir / "test-cases" / "requirement-revision.json"
         revision_file.parent.mkdir(exist_ok=True)
         revision_file.write_text(json.dumps(self._manifest(0, [
-            self._change("BDD-001/T1", "ADDED", text="显示登录错误", required=True),
+            self._change("BDD-001", "ADDED", text="显示登录错误", required=True),
         ])), encoding="utf-8")
         self.baseline.write_text('{"id":"keep-me"}\n', encoding="utf-8")
         paths = SimpleNamespace(
@@ -1008,7 +1029,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("AI 执行前必须读取（只展示路径，不展示正文）", text)
         self.assertIn("需求修订清单:", text)
         self.assertIn("requirement-revision.json", text)
-        self.assertIn("追溯表:", text)
+        self.assertIn("机器生成追溯视图（只读辅助）:", text)
         self.assertIn("traceability.md", text)
         self.assertIn("进入计划阶段", text)
         self.assertIn("实施计划.md", text)
@@ -1033,7 +1054,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             requirement_id="baseline-1",
         )
         manifest = self._manifest(0, [
-            self._change("BDD-001/T1", "ADDED", text="显示登录错误", required=True),
+            self._change("BDD-001", "ADDED", text="显示登录错误", required=True),
         ])
         applied_snapshot, _ = apply_requirement_revision(
             self.snapshot,
@@ -1072,7 +1093,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 "allowed_files": ["LoginViewModel.kt"],
                 "allowed_dirs": [],
                 "impacts": [{
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "change_type": "ADDED",
                     "reason": "只修改登录错误提示。",
                     "risk_level": "L1",
@@ -1105,8 +1126,30 @@ class RequirementSnapshotTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("实施计划已确认", text)
         self.assertIn("影响半径已确认", text)
-        self.assertIn("你已获准开始编码", text)
+        self.assertIn("先建立测试映射并用业务断言得到 Red", text)
         self.assertIn("已确认实施计划", text)
+
+        implementation_plan_path(self.requirement_dir).write_text(
+            implementation_plan_path(self.requirement_dir).read_text(encoding="utf-8")
+            + "\n- 新增实现步骤。\n",
+            encoding="utf-8",
+        )
+        changed_output = io.StringIO()
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(changed_output),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        changed_text = changed_output.getvalue()
+        self.assertIn("计划：尚未确认或已失效", changed_text)
+        self.assertIn("展示实施计划.md 并 confirm-plan", changed_text)
+        self.assertNotIn("可直接进入编码", changed_text)
 
     def test_test_mapping_rejects_unconfirmed_requirement_content(self) -> None:
         """需求正文变化但未确认时，独立 mapping validate 也必须阻断。"""
@@ -1121,7 +1164,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             self.requirement,
             "登录失败显示错误",
             self._manifest(0, [
-                self._change("BDD-001/T1", "ADDED", text="显示登录错误", required=True),
+                self._change("BDD-001", "ADDED", text="显示登录错误", required=True),
             ]),
         )
         self.requirement.write_text("登录失败显示错误\n允许点击重试\n", encoding="utf-8")
@@ -1143,6 +1186,43 @@ class RequirementSnapshotTests(unittest.TestCase):
             cmd_init_test_mapping(SimpleNamespace(
                 config=str(self.root / "local.yaml"),
                 validate=True,
+            ))
+
+    def test_test_mapping_requires_current_plan_confirmation(self) -> None:
+        """测试映射必须位于计划确认之后，防止跳过影响半径和不修改范围。"""
+        content = "登录失败显示错误"
+        write_requirement_snapshot(
+            self.snapshot,
+            self.requirement,
+            content,
+            requirement_id="baseline-1",
+        )
+        apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            content,
+            self._manifest(0, [
+                self._change("BDD-001", "ADDED", text="显示登录错误", required=True),
+            ]),
+        )
+        paths = SimpleNamespace(
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+            test_mapping_path=self.requirement_dir / "test-cases" / "test-mapping.json",
+        )
+
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            self.assertRaisesRegex(ImplementationPlanError, "尚未生成实施计划"),
+        ):
+            cmd_init_test_mapping(SimpleNamespace(
+                config=str(self.root / "local.yaml"),
+                validate=False,
             ))
 
 
@@ -1464,7 +1544,8 @@ class GitDiffCollectionTests(unittest.TestCase):
         """验证脏工作区阻断新需求，清洁后才允许建立需求基线。"""
         args = SimpleNamespace(config=str(Path(self.temp_dir.name) / "local.yaml"))
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("BDD-001/T1 已确认需求\n", encoding="utf-8")
+        content = bdd_requirement()
+        requirement.write_text(content, encoding="utf-8")
         check_baseline = Path(self.temp_dir.name) / "check-env-baseline.json"
         snapshot = Path(self.temp_dir.name) / "requirement-snapshot.json"
         paths = SimpleNamespace(
@@ -1492,7 +1573,7 @@ class GitDiffCollectionTests(unittest.TestCase):
             with patches[0], patches[1], patches[2], patches[3], redirect_stdout(io.StringIO()):
                 cmd_check_env(args)
             self.assertEqual(current_branch(self.repo), load_baseline(self.repo, check_baseline)["branch"])
-            self.assertEqual("BDD-001/T1 已确认需求", load_requirement_snapshot(snapshot)["content"])
+            self.assertEqual(content.strip(), load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
 
@@ -1521,7 +1602,7 @@ class GitDiffCollectionTests(unittest.TestCase):
                     return_value=snapshot,
                 ),
                 redirect_stdout(io.StringIO()),
-                self.assertRaisesRegex(DeliveryError, "原子 BDD/Then"),
+                self.assertRaisesRegex(DeliveryError, "BDD-001 场景名称"),
             ):
                 cmd_check_env(SimpleNamespace(
                     config=str(Path(self.temp_dir.name) / "local.yaml"),
@@ -1540,7 +1621,8 @@ class GitDiffCollectionTests(unittest.TestCase):
         requirement_dir = self.repo / "document" / "2026-07-28-login"
         requirement_dir.mkdir(parents=True)
         requirement = requirement_dir / "需求说明.md"
-        requirement.write_text("BDD-001/T1 已确认需求\n", encoding="utf-8")
+        content = bdd_requirement()
+        requirement.write_text(content, encoding="utf-8")
         (requirement_dir / "issues.md").write_text("审计记录\n", encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "document-baseline.json"
         snapshot = Path(self.temp_dir.name) / "document-snapshot.json"
@@ -1571,7 +1653,7 @@ class GitDiffCollectionTests(unittest.TestCase):
             os.chdir(old_cwd)
 
         self.assertIn("交付文档改动已忽略", output.getvalue())
-        self.assertEqual("BDD-001/T1 已确认需求", load_requirement_snapshot(snapshot)["content"])
+        self.assertEqual(content.strip(), load_requirement_snapshot(snapshot)["content"])
         self.assertEqual(current_head(self.repo), load_baseline(self.repo, baseline)["head"])
 
     def test_check_env_reuses_existing_start_after_intermediate_commit(self) -> None:
@@ -1579,7 +1661,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "prepare clean tree")
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("BDD-001/T1 同一需求\n", encoding="utf-8")
+        requirement.write_text(bdd_requirement(title="同一需求"), encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "check-env-reuse-baseline.json"
         snapshot = Path(self.temp_dir.name) / "check-env-reuse-snapshot.json"
         paths = SimpleNamespace(
@@ -1684,7 +1766,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "prepare first requirement")
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("BDD-001/T1 第一个需求\n", encoding="utf-8")
+        requirement.write_text(bdd_requirement(title="第一个需求"), encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "check-env-new-baseline.json"
         snapshot = Path(self.temp_dir.name) / "check-env-new-snapshot.json"
         paths = SimpleNamespace(
@@ -1713,14 +1795,15 @@ class GitDiffCollectionTests(unittest.TestCase):
                 self.write("app/src/main/java/example/FirstDone.kt", "class FirstDone\n")
                 self.git("add", ".")
                 self.git("commit", "-q", "-m", "finish first requirement")
-                requirement.write_text("BDD-002/T1 第二个需求\n", encoding="utf-8")
+                second_content = bdd_requirement("BDD-004", "第二个需求")
+                requirement.write_text(second_content, encoding="utf-8")
                 args.new_requirement = True
                 cmd_check_env(args)
 
             updated = load_baseline(self.repo, baseline)
             self.assertNotEqual(original_id, updated["id"])
             self.assertEqual(current_head(self.repo), updated["head"])
-            self.assertEqual("BDD-002/T1 第二个需求", load_requirement_snapshot(snapshot)["content"])
+            self.assertEqual(second_content.strip(), load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
 
@@ -1731,7 +1814,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         previous = b'{"id":"previous-baseline"}\n'
         self.baseline.write_bytes(previous)
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("BDD-001/T1 已确认需求\n", encoding="utf-8")
+        requirement.write_text(bdd_requirement(), encoding="utf-8")
         paths = SimpleNamespace(
             project_path=self.repo,
             requirement_path=requirement,
@@ -1817,7 +1900,7 @@ class RouteCommandTests(unittest.TestCase):
                         "pending_changes": [],
                         "sha256": requirement_sha,
                         "requirement_path": str(self.requirement.resolve()),
-                        "obligations": [{"id": "BDD-001/T1", "sha256": "b" * 64}],
+                        "obligations": [{"id": "BDD-001", "sha256": "b" * 64}],
                     },
                 ),
                 mock.patch(

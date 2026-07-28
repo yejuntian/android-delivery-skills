@@ -534,11 +534,23 @@ class SpecialistResultTests(unittest.TestCase):
         self.payload.pop("confirmed_impacts", None)
         return self.payload
 
-    def test_test_and_fix_requires_mutation_summary(self) -> None:
-        """验证测试与修复专项缺少变异测试摘要时校验失败。"""
+    def test_routine_test_and_fix_does_not_require_mutation_summary(self) -> None:
+        """普通 L1/L2 测试专项不被 PIT 配置成本阻断。"""
         payload = self._test_and_fix_payload()
-        errors = validate_specialist_result(payload, self.context)
-        self.assertTrue(any("mutation_testing" in error for error in errors))
+
+        self.assertEqual([], validate_specialist_result(payload, self.context))
+
+    def test_l3_test_and_fix_requires_mutation_summary(self) -> None:
+        """L3 影响半径缺少 PIT 摘要时必须失败。"""
+        payload = self._test_and_fix_payload()
+        context = {
+            **self.context,
+            "impact_radius": {"impacts": [{"risk_level": "L3"}]},
+        }
+
+        errors = validate_specialist_result(payload, context)
+
+        self.assertTrue(any("L3" in error and "mutation_testing" in error for error in errors))
 
     def test_mutation_survived_blocks_pass(self) -> None:
         """验证存活变异存在时测试与修复专项不能标记 PASS。"""
@@ -552,7 +564,7 @@ class SpecialistResultTests(unittest.TestCase):
             "generated_mutants": 10,
             "killed": 9,
             "survived": 1,
-            "killed_by_obligation": {"BDD-001/T1": ["M1", "M2"]},
+            "killed_by_obligation": {"BDD-001": ["M1", "M2"]},
             "survival_blocked": ["M3"],
             "report_path": str(report),
             "report_sha256": sha256_file(report),
@@ -572,11 +584,31 @@ class SpecialistResultTests(unittest.TestCase):
             "generated_mutants": 8,
             "killed": 8,
             "survived": 0,
-            "killed_by_obligation": {"BDD-001/T1": ["M1"]},
+            "killed_by_obligation": {"BDD-001": ["M1"]},
             "survival_blocked": [],
             "report_path": str(report),
             "report_sha256": sha256_file(report),
         }
+        self.assertEqual([], validate_specialist_result(payload, self.context))
+
+    def test_no_code_mutation_scope_can_pass_with_zero_mutants(self) -> None:
+        """纯资源或配置范围可以诚实记录 NONE 和零变异。"""
+        report = self._mutation_report()
+        payload = self._test_and_fix_payload()
+        payload["mutation_testing"] = {
+            "producer": "pitest",
+            "languages": ["NONE"],
+            "target_classes": [],
+            "mutators": [],
+            "generated_mutants": 0,
+            "killed": 0,
+            "survived": 0,
+            "killed_by_obligation": {},
+            "survival_blocked": [],
+            "report_path": str(report),
+            "report_sha256": sha256_file(report),
+        }
+
         self.assertEqual([], validate_specialist_result(payload, self.context))
 
     def test_zero_mutants_unverified_matches_schema_but_cannot_pass(self) -> None:
@@ -613,7 +645,7 @@ class SpecialistResultTests(unittest.TestCase):
             "至少一个变异" in error
             for error in validate_specialist_result(payload, self.context)
         ))
-        self.assertNotEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
+        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
 
     def test_mutation_falsified_counts_blocked(self) -> None:
         """验证造假把 survived 改 0 但报告实际有存活时被交叉核对拦截。"""
@@ -627,7 +659,7 @@ class SpecialistResultTests(unittest.TestCase):
             "generated_mutants": 4,
             "killed": 4,
             "survived": 0,
-            "killed_by_obligation": {"BDD-001/T1": ["M1"]},
+            "killed_by_obligation": {"BDD-001": ["M1"]},
             "survival_blocked": [],
             "report_path": str(report),
             "report_sha256": sha256_file(report),

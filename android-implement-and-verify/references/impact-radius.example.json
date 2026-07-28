@@ -13,7 +13,7 @@
   ],
   "impacts": [
     {
-      "id": "BDD-001/T1",
+      "id": "BDD-001",
       "change_type": "ADDED",
       "reason": "说明该验收项为什么只影响这些文件或目录前缀。",
       "risk_level": "L1",

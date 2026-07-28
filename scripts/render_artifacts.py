@@ -72,12 +72,12 @@ def render_revision_md(snapshot: dict[str, Any]) -> str:
         f"- 当前修订：{revision_label(snapshot.get('revision', '?'))}",
         f"- 状态：{user_label(snapshot.get('status'), SNAPSHOT_STATUS_LABELS)}",
         "",
-        "## 当前有效原子验收项",
+        "## 当前有效 BDD 场景",
         "",
     ]
     obligations = snapshot.get("obligations") or []
     if not obligations:
-        lines.append("- 尚未生成原子验收项；完成首次确认后这里列出每条 Then。")
+        lines.append("- 尚未生成 BDD 场景；完成首次确认后这里列出每个场景。")
     for item in obligations:
         required = "必需" if item.get("required") else "可选"
         text = _strip_business_prefix(_single_line(item.get("text"))) or item.get("id", "")
@@ -132,6 +132,65 @@ def render_test_mapping_md(
     return "\n".join(lines)
 
 
+def _markdown_cell(value: Any) -> str:
+    """Keep generated traceability values inside a single Markdown table cell."""
+    return _single_line(value).replace("|", "\\|") or "—"
+
+
+def render_traceability_md(
+    snapshot: dict[str, Any],
+    mapping: dict[str, Any] | None,
+    delivery_result: dict[str, Any] | None,
+) -> str:
+    """Render the requirement-to-test traceability view from machine facts."""
+    mappings = {
+        item.get("obligation_id"): item
+        for item in (mapping or {}).get("mappings", [])
+        if isinstance(item, dict)
+    }
+    results = {
+        item.get("id"): item
+        for item in (delivery_result or {}).get("obligations", [])
+        if isinstance(item, dict)
+    }
+    lines = [
+        "# 需求测试追溯表",
+        "",
+        "> 本文件由需求快照、测试映射和交付结果自动生成，不作为独立门禁输入。",
+        "",
+        f"- 需求集合：`{snapshot.get('requirement_id', '未知')}`",
+        f"- 当前修订：{revision_label(snapshot.get('revision', '?'))}",
+        "",
+        "| BDD 场景 | 场景内容 | 映射状态 | 测试用例 | 交付状态 | 证据 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for obligation in snapshot.get("obligations", []):
+        identifier = obligation.get("id")
+        mapped = mappings.get(identifier, {})
+        result = results.get(identifier, {})
+        mapping_status = {
+            "CURRENT": "已对齐",
+            "STALE": "待回填",
+        }.get(mapped.get("mapping_status"), "未登记")
+        delivery_status = user_label(
+            result.get("status"), OBLIGATION_STATUS_LABELS
+        ) if result else "尚未生成"
+        lines.append(
+            "| "
+            + " | ".join((
+                f"`{identifier}`",
+                _markdown_cell(_strip_business_prefix(str(obligation.get("text", "")))),
+                mapping_status,
+                _markdown_cell(", ".join(mapped.get("test_ids") or [])),
+                _markdown_cell(delivery_status),
+                _markdown_cell(", ".join(result.get("evidence_ids") or [])),
+            ))
+            + " |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _stale_mappings(mapping: dict[str, Any] | None) -> list[dict[str, Any]]:
     """返回测试映射中过期项；只读派生，不修改映射状态。"""
     return [
@@ -151,6 +210,7 @@ def execution_progress_items(
     mapping: dict[str, Any] | None,
     plan_receipt: dict[str, Any] | None,
     delivery_result: dict[str, Any] | None,
+    requirement_current: bool = True,
 ) -> list[str]:
     """从既有事实源派生中文进度；不写状态、不改变门禁。"""
     plan_confirmed = bool(plan_receipt and plan_receipt.get("confirmed_at"))
@@ -162,9 +222,18 @@ def execution_progress_items(
         return [
             "◉ 确认需求：读取需求，写回 requirement_file，等待确认",
             "○ 确认实施计划：写 实施计划.md 与 impact-radius.json",
-            "○ 测试映射：登记义务对应 test_ids",
+            "○ 测试映射：登记 BDD 场景对应 test_ids",
             "○ 实现验证：最小编码，跑受影响测试",
             "○ 最终交付：按需执行 route / assemble / validate",
+        ]
+
+    if not requirement_current:
+        return [
+            "⏳ 确认需求：需求正文存在未确认变化，先重新确认修订",
+            "○ 确认实施计划：旧计划确认已失效，需求确认后更新计划与半径",
+            "○ 测试映射：旧映射不得用于变化后的需求",
+            "○ 实现验证：需求/计划确认前不编码",
+            "○ 最终交付：旧 route 与证据不得复用",
         ]
 
     revision = revision_label(snapshot.get("revision", "?"))
@@ -183,7 +252,7 @@ def execution_progress_items(
         return [
             f"✓ 确认需求：已确认 {revision}",
             "⏳ 确认实施计划：写计划和半径，等待 confirm-plan",
-            "○ 测试映射：登记义务对应 test_ids",
+            "○ 测试映射：登记 BDD 场景对应 test_ids",
             "○ 实现验证：计划确认前不编码",
             "○ 最终交付：前置未完成，暂不执行",
         ]
@@ -247,6 +316,7 @@ def render_execution_progress(
     mapping: dict[str, Any] | None,
     plan_receipt: dict[str, Any] | None,
     delivery_result: dict[str, Any] | None,
+    requirement_current: bool = True,
 ) -> str:
     """渲染续接指南中的当前执行进度段。"""
     items = [
@@ -256,6 +326,7 @@ def render_execution_progress(
             mapping,
             plan_receipt,
             delivery_result,
+            requirement_current,
         )
     ]
     return "\n".join(["## 当前执行进度", "", *items, ""])
@@ -268,6 +339,7 @@ def render_resume_guide(
     delivery_result: dict[str, Any] | None,
     requirement_title: str = "",
     revision_manifest: dict[str, Any] | None = None,
+    requirement_current: bool = True,
 ) -> str:
     """聚合各事实源渲染续接指南，是 AI 续做旧需求的第一入口。
 
@@ -292,7 +364,11 @@ def render_resume_guide(
         f"- 需求集合：`{snapshot.get('requirement_id', '未知')}`",
         f"- 当前修订：{revision_label(revision)}（{status}）",
     ])
-    plan_confirmed = bool(plan_receipt and plan_receipt.get("confirmed_at"))
+    plan_confirmed = requirement_current and bool(
+        plan_receipt and plan_receipt.get("confirmed_at")
+    )
+    if not requirement_current:
+        lines.append("- 当前正文：存在未确认变化")
     lines.append(f"- 实施计划：{'已确认' if plan_confirmed else '尚未确认或已失效'}")
     conclusion = (delivery_result or {}).get("conclusion")
     if conclusion:
@@ -305,18 +381,22 @@ def render_resume_guide(
         mapping,
         plan_receipt,
         delivery_result,
+        requirement_current,
     ).splitlines())
     lines.append("")
 
     obligations = snapshot.get("obligations") or []
     mappings = {(m.get("obligation_id")): m for m in (mapping or {}).get("mappings", [])}
     if obligations:
-        lines.extend(["## 验收项状态", ""])
+        heading = "BDD 场景状态" if requirement_current else "最近确认 BDD 场景（仅供差异对比）"
+        lines.extend([f"## {heading}", ""])
         for item in obligations:
             identifier = item.get("id")
             entry = mappings.get(identifier, {})
             mapping_status = entry.get("mapping_status")
-            if mapping_status == "STALE":
+            if not requirement_current:
+                mark = "当前正文变化后待重新确认"
+            elif mapping_status == "STALE":
                 mark = "⏳ 测试待回填"
             elif mapping_status == "CURRENT":
                 mark = "✅ 测试已对齐"
@@ -343,14 +423,21 @@ def render_resume_guide(
         for entry in stale:
             lines.append(f"- `{entry.get('obligation_id')}` 需求增量后测试未同步，请重新登记。")
 
+    lines.extend(["", "## 下一步", ""])
+    if not requirement_current:
+        lines.extend([
+            "- 完成 `confirm-requirement-update`，旧计划、映射、route 和证据继续视为失效。",
+            "- 更新 `实施计划.md` 与 `impact-radius.json`，重新展示并执行 `confirm-plan`。",
+            "- 重新登记受影响测试，再按 Red-Green-Refactor 继续。",
+        ])
+    else:
+        lines.extend([
+            "- 未确认变化：完成 `confirm-requirement-update`。",
+            "- 计划未确认：展示 `实施计划.md` 并 `confirm-plan`。",
+            "- STALE 映射：重新登记测试，`mapping_status` 回填 CURRENT。",
+            "- 最终结论为通过且无变化：可直接交付；否则按五步流程继续。",
+        ])
     lines.extend([
-        "",
-        "## 下一步",
-        "",
-        "- 未确认变化：完成 `confirm-requirement-update`。",
-        "- 计划未确认：展示 `实施计划.md` 并 `confirm-plan`。",
-        "- STALE 映射：重新登记测试，`mapping_status` 回填 CURRENT。",
-        "- 最终结论为通过且无变化：可直接交付；否则按五步流程继续。",
         "",
         "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以配置的 requirement_file 为准。",
         "",

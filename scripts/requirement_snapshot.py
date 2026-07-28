@@ -17,10 +17,19 @@ from pathlib import Path
 import re
 from typing import Any
 
+from .atomic_write import write_json_atomic
+from .bdd_scenarios import (
+    BddScenarioError,
+    bdd_ids_in_text,
+    extract_bdd_scenarios,
+    is_bdd_id,
+    non_bdd_content,
+    validate_requirement_readiness,
+)
+
 
 SNAPSHOT_VERSION = 2
 MANIFEST_VERSION = 1
-OBLIGATION_ID_PATTERN = re.compile(r"BDD-[0-9]+/T[0-9]+")
 CHANGE_TYPES = {"ADDED", "CHANGED", "REMOVED", "UNCHANGED", "SUPERSEDED"}
 DECISIONS = {"CONFIRMED", "PENDING", "REJECTED", "CONFLICT"}
 REMOVAL_DISPOSITIONS = {
@@ -42,7 +51,7 @@ def requirement_digest(content: str) -> str:
 
 
 def obligation_digest(identifier: str, text: str, required: bool) -> str:
-    """计算原子义务语义摘要，使同一 ID 的 Then 文本变化可以被机器识别。"""
+    """计算 BDD 场景语义摘要，使同一 ID 的行为变化可以被机器识别。"""
     normalized = {
         "id": identifier,
         "text": text.replace("\r\n", "\n").replace("\r", "\n").strip(),
@@ -92,7 +101,7 @@ def _new_snapshot(
     content: str,
     requirement_id: str | None,
 ) -> dict[str, Any]:
-    """建立尚待物化 BDD/Then 的初始修订，Git 基线 ID 优先作为需求集合 ID。"""
+    """建立尚待确认 BDD 场景的初始修订，Git 基线 ID 优先作为需求集合 ID。"""
     now = datetime.now(timezone.utc).isoformat()
     digest = requirement_digest(content)
     return {
@@ -150,16 +159,16 @@ def _upgrade_v1(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_obligation(item: Any, label: str) -> dict[str, Any]:
-    """校验并规范化一个已确认原子 Then，补充稳定语义摘要。"""
+    """校验并规范化一个已确认 BDD 场景，补充稳定语义摘要。"""
     if not isinstance(item, dict):
         raise RequirementSnapshotError(f"{label} 必须是 object")
     identifier = item.get("id")
     text = item.get("text")
     required = item.get("required")
-    if not isinstance(identifier, str) or not OBLIGATION_ID_PATTERN.fullmatch(identifier):
-        raise RequirementSnapshotError(f"{label}.id 必须符合 BDD-###/T#")
+    if not is_bdd_id(identifier):
+        raise RequirementSnapshotError(f"{label}.id 必须符合 BDD-###")
     if not isinstance(text, str) or not text.strip():
-        raise RequirementSnapshotError(f"{label}.text 必须是非空 Then 描述")
+        raise RequirementSnapshotError(f"{label}.text 必须是非空 BDD 场景描述")
     if not isinstance(required, bool):
         raise RequirementSnapshotError(f"{label}.required 必须是 boolean")
     normalized = {"id": identifier, "text": text.strip(), "required": required}
@@ -240,6 +249,76 @@ def load_revision_manifest(path: Path) -> dict[str, Any]:
     return payload
 
 
+def build_confirmed_revision_manifest(
+    snapshot: dict[str, Any],
+    content: str,
+) -> dict[str, Any]:
+    """Build the routine confirmed manifest; deletions still require explicit disposition."""
+    try:
+        scenarios = validate_requirement_readiness(content)
+    except BddScenarioError as exc:
+        raise RequirementSnapshotError(str(exc)) from exc
+    previous = {item["id"]: item for item in snapshot.get("obligations", [])}
+    current_ids = {item["id"] for item in scenarios}
+    removed = sorted(set(previous) - current_ids)
+    if removed:
+        raise RequirementSnapshotError(
+            "检测到已确认 BDD 场景被删除或改号: "
+            + ", ".join(removed)
+            + "；请使用 --revision-file 明确删除处置或替代关系"
+        )
+
+    changes: list[dict[str, Any]] = []
+    for scenario in scenarios:
+        identifier = scenario["id"]
+        text = scenario["text"]
+        old = previous.get(identifier)
+        if old is None:
+            changes.append({
+                "id": identifier,
+                "change_type": "ADDED",
+                "decision": "CONFIRMED",
+                "text": text,
+                "required": True,
+            })
+        elif obligation_digest(identifier, text, True) != old.get("sha256"):
+            changes.append({
+                "id": identifier,
+                "change_type": "CHANGED",
+                "decision": "CONFIRMED",
+                "text": text,
+                "required": True,
+            })
+        else:
+            changes.append({
+                "id": identifier,
+                "change_type": "UNCHANGED",
+                "decision": "CONFIRMED",
+            })
+
+    return {
+        "version": MANIFEST_VERSION,
+        "requirement_id": snapshot["requirement_id"],
+        "base_revision": snapshot["revision"],
+        "scope": "SAME_REQUIREMENT",
+        "document_changed": (
+            requirement_digest(non_bdd_content(content))
+            != requirement_digest(non_bdd_content(str(snapshot.get("content", ""))))
+        ),
+        "changes": changes,
+    }
+
+
+def write_revision_manifest(path: Path, manifest: dict[str, Any]) -> None:
+    """Persist a generated revision manifest atomically."""
+    try:
+        write_json_atomic(path, manifest)
+    except OSError as exc:
+        raise RequirementSnapshotError(
+            f"无法写入需求修订清单: {Path(path).resolve()}: {exc}"
+        ) from exc
+
+
 def _normalize_change(item: Any, index: int) -> dict[str, Any]:
     """校验单项增改删决策，保留恢复和删除处置所需的最小字段。"""
     label = f"changes[{index}]"
@@ -248,8 +327,8 @@ def _normalize_change(item: Any, index: int) -> dict[str, Any]:
     identifier = item.get("id")
     change_type = item.get("change_type")
     decision = item.get("decision")
-    if not isinstance(identifier, str) or not OBLIGATION_ID_PATTERN.fullmatch(identifier):
-        raise RequirementSnapshotError(f"{label}.id 必须符合 BDD-###/T#")
+    if not is_bdd_id(identifier):
+        raise RequirementSnapshotError(f"{label}.id 必须符合 BDD-###")
     if change_type not in CHANGE_TYPES:
         raise RequirementSnapshotError(f"{label}.change_type 无效")
     if decision not in DECISIONS:
@@ -279,7 +358,7 @@ def _normalize_change(item: Any, index: int) -> dict[str, Any]:
             raise RequirementSnapshotError(f"{label}.disposition 缺少明确删除处置")
     if change_type == "SUPERSEDED" and decision == "CONFIRMED":
         replacement = item.get("replacement_id")
-        if not isinstance(replacement, str) or not OBLIGATION_ID_PATTERN.fullmatch(replacement):
+        if not is_bdd_id(replacement):
             raise RequirementSnapshotError(f"{label}.replacement_id 无效")
     return normalized
 
@@ -301,6 +380,8 @@ def _validate_manifest(
         raise RequirementSnapshotError("需求修订清单 scope 必须为 SAME_REQUIREMENT")
     if "format_only" in manifest and not isinstance(manifest["format_only"], bool):
         raise RequirementSnapshotError("需求修订清单 format_only 必须是 boolean")
+    if "document_changed" in manifest and not isinstance(manifest["document_changed"], bool):
+        raise RequirementSnapshotError("需求修订清单 document_changed 必须是 boolean")
     if manifest.get("requirement_id") != snapshot["requirement_id"]:
         raise RequirementSnapshotError("需求修订清单 requirement_id 与当前需求不一致")
     if manifest.get("base_revision") != snapshot["revision"]:
@@ -319,11 +400,14 @@ def _validate_manifest(
     identifiers = [item["id"] for item in changes]
     if len(identifiers) != len(set(identifiers)):
         raise RequirementSnapshotError("需求修订清单存在重复 change id")
-    mentioned_ids = set(OBLIGATION_ID_PATTERN.findall(content))
+    try:
+        mentioned_ids = bdd_ids_in_text(content)
+    except BddScenarioError as exc:
+        raise RequirementSnapshotError(str(exc)) from exc
     missing_mentioned = sorted(mentioned_ids - set(identifiers))
     if missing_mentioned:
         raise RequirementSnapshotError(
-            "需求正文中已列出的 BDD/Then 未进入修订清单: "
+            "需求正文中已列出的 BDD 场景未进入修订清单: "
             + ", ".join(missing_mentioned)
         )
 
@@ -409,7 +493,7 @@ def _apply_changes(
                 f"SUPERSEDED {old_id} 的 replacement_id 必须是同轮已确认 ADDED 义务"
             )
     if not active:
-        raise RequirementSnapshotError("确认后的需求至少需要一个有效原子 BDD/Then")
+        raise RequirementSnapshotError("确认后的需求至少需要一个有效 BDD 场景")
     return [active[key] for key in sorted(active)]
 
 
@@ -437,7 +521,7 @@ def apply_requirement_revision(
         _atomic_write(snapshot_path, proposal)
         return proposal, False
 
-    semantic_confirmed = any(
+    semantic_confirmed = manifest.get("document_changed") is True or any(
         item["decision"] == "CONFIRMED" and item["change_type"] != "UNCHANGED"
         for item in changes
     )
@@ -472,7 +556,7 @@ def apply_requirement_revision(
         raise RequirementSnapshotError(
             "没有已确认语义变化，但 requirement_file 与上一确认版本不同"
         )
-    if all(
+    if manifest.get("document_changed") is not True and all(
         item["change_type"] == "UNCHANGED" and item["decision"] == "CONFIRMED"
         for item in changes
     ):

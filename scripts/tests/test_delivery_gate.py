@@ -106,7 +106,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.obligation = "d" * 64
         self.traceability = self.temp_root / "traceability.md"
         self.traceability.write_text(
-            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001 | 显示错误提示 | TEST-001 | 已覆盖\n",
             encoding="utf-8",
         )
         self.context = {
@@ -119,7 +119,7 @@ class DeliveryGateTests(unittest.TestCase):
             "requirement_file_sha256": self.requirement,
             "requirement_inputs_sha256": self.requirement_inputs,
             "expected_obligations": {
-                "BDD-001/T1": {
+                "BDD-001": {
                     "required": True,
                     "sha256": self.obligation,
                     "text": "显示错误提示",
@@ -139,7 +139,7 @@ class DeliveryGateTests(unittest.TestCase):
                 ],
                 "allowed_dirs": [],
                 "impacts": [{
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "expected_files": [
                         "app/src/main/java/sample/Feature.kt",
                         "app/src/test/java/sample/FeatureTest.kt",
@@ -147,8 +147,8 @@ class DeliveryGateTests(unittest.TestCase):
                 }],
             },
             "test_mapping": {
-                "BDD-001/T1": {
-                    "obligation_id": "BDD-001/T1",
+                "BDD-001": {
+                    "obligation_id": "BDD-001",
                     "obligation_sha256": self.obligation,
                     "test_ids": ["FeatureTest#thenT1"],
                     "mapping_status": "CURRENT",
@@ -352,7 +352,7 @@ class DeliveryGateTests(unittest.TestCase):
             "pending_capabilities": [],
             "obligations": [
                 {
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "required": True,
                     "obligation_sha256": self.obligation,
                     "status": "COVERED_AUTOMATED",
@@ -409,8 +409,8 @@ class DeliveryGateTests(unittest.TestCase):
                     "receipt_path": str(receipt_paths["E-TEST"]),
                     "receipt_sha256": sha256_file(receipt_paths["E-TEST"]),
                     "report_paths": [str(test_report)],
-                    "obligation_sha256s": {"BDD-001/T1": self.obligation},
-                    "obligation_test_cases": {"BDD-001/T1": ["FeatureTest#thenT1"]},
+                    "obligation_sha256s": {"BDD-001": self.obligation},
+                    "obligation_test_cases": {"BDD-001": ["FeatureTest#thenT1"]},
                 },
                 {
                     "id": "E-BUILD",
@@ -453,6 +453,14 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("超出已确认影响半径" in error for error in errors))
+
+    def test_l3_radius_requires_mutation_specialist_evidence(self) -> None:
+        """L3 需求即使普通测试通过，也不能省略 PIT 专项证据。"""
+        self.context["impact_radius"]["impacts"][0]["risk_level"] = "L3"
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("缺少有效 PIT" in error for error in errors))
 
     def test_rename_old_path_is_checked_against_radius(self) -> None:
         """验证重命名同时检查旧路径，不能把越界文件搬进允许目录绕过门禁。"""
@@ -526,24 +534,24 @@ class DeliveryGateTests(unittest.TestCase):
         }
         md_pending = render_delivery_summary(pending_payload, self.context)
         self.assertIn("## 未验证项", md_pending)
-        self.assertIn("BDD-001/T1", md_pending.split("## 未验证项")[1].split("## 残留风险")[0])
+        self.assertIn("BDD-001", md_pending.split("## 未验证项")[1].split("## 残留风险")[0])
         residual = md_pending.split("## 残留风险")[1]
         self.assertIn("无真机", residual)
         self.assertNotIn("本结论未保留残留风险项", residual)
 
     def test_requires_exact_latest_obligation_set(self) -> None:
         """验证最终报告少写或多写一个 Then 都不能绕过最新版总需求。"""
-        self.context["expected_obligations"]["BDD-001/T2"] = {
+        self.context["expected_obligations"]["BDD-002"] = {
             "required": True,
             "sha256": "e" * 64,
         }
         errors = validate_delivery_result(self.payload, self.context)
 
-        self.assertTrue(any("漏掉当前确认义务: BDD-001/T2" in error for error in errors))
+        self.assertTrue(any("漏掉当前确认义务: BDD-002" in error for error in errors))
 
     def test_changed_then_rejects_evidence_bound_to_old_semantics(self) -> None:
         """验证同一 ID 的 Then 文本变化后，旧义务摘要和测试证据不能继续复用。"""
-        self.context["expected_obligations"]["BDD-001/T1"]["sha256"] = "f" * 64
+        self.context["expected_obligations"]["BDD-001"]["sha256"] = "f" * 64
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("语义摘要与当前确认修订不一致" in error for error in errors))
@@ -552,7 +560,7 @@ class DeliveryGateTests(unittest.TestCase):
 
     def test_stale_test_mapping_blocks_pass(self) -> None:
         """验证需求增量后测试映射仍为 STALE 时阻断通过结论。"""
-        self.context["test_mapping"]["BDD-001/T1"]["mapping_status"] = "STALE"
+        self.context["test_mapping"]["BDD-001"]["mapping_status"] = "STALE"
         errors = validate_delivery_result(self.payload, self.context)
         self.assertTrue(any("测试映射过期" in error for error in errors))
 
@@ -564,7 +572,7 @@ class DeliveryGateTests(unittest.TestCase):
 
     def test_test_mapping_must_match_receipts(self) -> None:
         """验证测试映射登记了未执行的测试时阻断通过。"""
-        self.context["test_mapping"]["BDD-001/T1"]["test_ids"] = [
+        self.context["test_mapping"]["BDD-001"]["test_ids"] = [
             "FeatureTest#thenT1", "FeatureTest#never"
         ]
         errors = validate_delivery_result(self.payload, self.context)
@@ -778,7 +786,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertTrue(any("执行收据摘要不一致" in error for error in errors))
 
     def test_automated_obligation_requires_nonzero_test_count(self) -> None:
-        """验证构建成功或零测试不能冒充原子 Then 的自动化覆盖。"""
+        """验证构建成功或零测试不能冒充 BDD 场景的自动化覆盖。"""
         self.payload["evidence"][0]["executed_tests"] = 0
         errors = validate_delivery_result(self.payload, self.context)
         self.assertTrue(any("没有实际执行测试" in error for error in errors))
@@ -808,7 +816,7 @@ class DeliveryGateTests(unittest.TestCase):
             }],
             "artifacts": [],
             "no_artifact_reason": "该业务结果没有可导出的额外产物。",
-            "obligation_sha256s": {"BDD-001/T1": self.obligation},
+            "obligation_sha256s": {"BDD-001": self.obligation},
         }
         self.payload["evidence"].append(manual)
         self.payload["obligations"][0].update({
@@ -944,7 +952,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertTrue(any("requirement_inputs_sha256" in error for error in errors))
 
     def test_accepts_agent_journey_with_structured_actions_and_artifact(self) -> None:
-        """验证 Android CLI Agent Journey 可凭统一结果覆盖实际断言的原子 Then。"""
+        """验证 Android CLI Agent Journey 可凭统一结果覆盖实际断言的 BDD 场景。"""
         screenshot = self.temp_root / "journey-home.png"
         screenshot.write_bytes(b"fake-png-evidence")
         summary = "已执行首页 Journey，点击重试后首页标题可见。"
@@ -987,7 +995,7 @@ class DeliveryGateTests(unittest.TestCase):
             }],
             "executed_checks": 2,
             "executed_tests": 1,
-            "obligation_sha256s": {"BDD-001/T1": self.obligation},
+            "obligation_sha256s": {"BDD-001": self.obligation},
             "started_at": "2026-07-19T00:00:00+00:00",
             "finished_at": "2026-07-19T00:00:10+00:00",
         }
@@ -1002,7 +1010,7 @@ class DeliveryGateTests(unittest.TestCase):
             "specialist_result_path": str(result_path),
             "specialist_result_sha256": sha256_file(result_path),
             "executed_tests": 1,
-            "obligation_sha256s": {"BDD-001/T1": self.obligation},
+            "obligation_sha256s": {"BDD-001": self.obligation},
         })
         self.payload["obligations"][0]["evidence_ids"] = ["E-JOURNEY"]
 
@@ -1074,7 +1082,7 @@ class DeliveryGateTests(unittest.TestCase):
                     "base_revision": 0,
                     "scope": "SAME_REQUIREMENT",
                     "changes": [{
-                        "id": "BDD-001/T1",
+                        "id": "BDD-001",
                         "change_type": "ADDED",
                         "decision": "CONFIRMED",
                         "text": "App 行为已修改",
@@ -1099,7 +1107,7 @@ class DeliveryGateTests(unittest.TestCase):
                 "allowed_files": ["App.kt"],
                 "allowed_dirs": [],
                 "impacts": [{
-                    "id": "BDD-001/T1",
+                    "id": "BDD-001",
                     "change_type": "ADDED",
                     "reason": "App 行为修改只影响 App.kt。",
                     "risk_level": "L1",
@@ -1174,7 +1182,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertEqual(radius_sha, context["impact_radius_sha256"])
         self.assertEqual(confirmed["requirement_id"], context["requirement_id"])
         self.assertEqual(1, context["requirement_revision"])
-        self.assertIn("BDD-001/T1", context["expected_obligations"])
+        self.assertIn("BDD-001", context["expected_obligations"])
 
     def test_current_context_blocks_unconfirmed_requirement_update(self) -> None:
         """验证需求文件变化或待定修订存在时，最终门禁不能生成可通过上下文。"""
@@ -1222,7 +1230,7 @@ class DeliveryGateTests(unittest.TestCase):
                 json.dumps(self.payload, ensure_ascii=False),
                 encoding="utf-8",
             )
-            self.context["expected_obligations"]["BDD-001/T1"]["text"] = "点击重试后恢复"
+            self.context["expected_obligations"]["BDD-001"]["text"] = "点击重试后恢复"
             with (
                 mock.patch("scripts.delivery_gate.load_config", return_value={}),
                 mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
@@ -1249,7 +1257,7 @@ class DeliveryGateTests(unittest.TestCase):
             "status": "UNVERIFIED",
             "reason": "需要合适设备完成点击验证。",
         })
-        self.context["expected_obligations"]["BDD-001/T1"]["text"] = "点击重试后恢复"
+        self.context["expected_obligations"]["BDD-001"]["text"] = "点击重试后恢复"
         with tempfile.TemporaryDirectory() as raw_root:
             result = Path(raw_root) / "delivery-result.json"
             result.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
@@ -1273,7 +1281,7 @@ class DeliveryGateTests(unittest.TestCase):
 
     def test_unverified_existing_business_protection_blocks_passing(self) -> None:
         """验证已确认的旧业务保护 Then 缺少证据时复用现有义务门禁阻断通过。"""
-        self.context["expected_obligations"]["BDD-001/T1"]["text"] = (
+        self.context["expected_obligations"]["BDD-001"]["text"] = (
             "【保护已上线业务】赠品订单：零金额仍然允许提交"
         )
         self.payload["obligations"][0].update({
@@ -1287,13 +1295,13 @@ class DeliveryGateTests(unittest.TestCase):
 
     def test_optional_existing_business_protection_cannot_bypass_gate(self) -> None:
         """验证另有必需项通过时，旧业务保护项仍不能设为可选并标记不适用。"""
-        self.context["expected_obligations"]["BDD-002/T1"] = {
+        self.context["expected_obligations"]["BDD-004"] = {
             "required": False,
             "sha256": "e" * 64,
             "text": "【保护已上线业务】赠品订单：零金额仍然允许提交",
         }
         self.payload["obligations"].append({
-            "id": "BDD-002/T1",
+            "id": "BDD-004",
             "required": False,
             "obligation_sha256": "e" * 64,
             "status": "NOT_APPLICABLE",
@@ -1304,55 +1312,11 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("必须 required=true" in error for error in errors))
 
-    def test_all_confirmed_obligations_require_traceability_entry(self) -> None:
-        """验证普通已确认验收项也必须落到当前需求追溯表。"""
-        self.traceability.write_text("# 当前需求追溯表\n", encoding="utf-8")
+    def test_traceability_markdown_is_not_an_independent_gate_input(self) -> None:
+        """追溯表是机器生成视图，缺失或过期不能替代 JSON 事实参与判定。"""
+        self.traceability.unlink()
+        self.context["traceability_path"] = str(self.traceability)
 
-        errors = validate_delivery_result(self.payload, self.context)
-
-        self.assertTrue(any("没有登记当前确认义务: BDD-001/T1" in error for error in errors))
-        self.traceability.write_text(
-            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 实现 | TEST-001\n",
-            encoding="utf-8",
-        )
-        self.assertEqual([], validate_delivery_result(self.payload, self.context))
-
-    def test_traceability_must_bind_current_requirement_revision(self) -> None:
-        """义务 ID 齐全但追溯表仍绑定旧修订时不能通过。"""
-        self.traceability.write_text(
-            "# 当前需求追溯表\n\n## R1\n\nBDD-001/T1 | 实现 | TEST-001 | 已覆盖\n",
-            encoding="utf-8",
-        )
-
-        errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("未绑定当前需求修订 R2" in error for error in errors))
-
-    def test_covered_obligation_rejects_pending_traceability_status(self) -> None:
-        """最终报告已覆盖的义务不能在追溯表中仍写待验证。"""
-        self.traceability.write_text(
-            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 实现 | TEST-001 | 待验证\n",
-            encoding="utf-8",
-        )
-
-        errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("已覆盖义务仍含过期状态" in error for error in errors))
-
-    def test_existing_business_obligation_requires_traceability_entry(self) -> None:
-        """验证中文报告引用追溯表前，文件存在且包含对应旧业务义务。"""
-        traceability = self.temp_root / "traceability.md"
-        traceability.write_text("# 当前需求追溯表\n", encoding="utf-8")
-        self.context["traceability_path"] = str(traceability)
-        self.context["expected_obligations"]["BDD-001/T1"]["text"] = (
-            "【修改已上线业务】普通用户免运费门槛调整为 80 元"
-        )
-
-        errors = validate_delivery_result(self.payload, self.context)
-
-        self.assertTrue(any("没有登记已上线业务义务" in error for error in errors))
-        traceability.write_text(
-            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 实现 | 调用方 | TEST-001\n",
-            encoding="utf-8",
-        )
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
 
     def test_cli_snapshot_outputs_json_serializable_route_context(self) -> None:

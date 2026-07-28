@@ -104,6 +104,10 @@ api:
 # 默认路线优先使用项目已有测试或 Android 命令行智能体；只有需求存在可稳定自动化的界面行为、
 # 默认路线不可用且独立壳已经初始化时，才读取下面配置执行 Journey 壳。
 testing:
+  # 常规 L1/L2 不强制 PIT；安全、支付等明确高风险逻辑可显式开启。
+  mutation_testing:
+    required: false
+
   journey_harness:
     # 当前需求的界面流程用例目录。null 时自动使用：
     # <requirement_dir>/test-cases/journeys/<需求作用域>，避免不同需求串用旧用例。

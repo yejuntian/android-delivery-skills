@@ -37,9 +37,14 @@ evidence:                       # 自动证据：声明 id/gate/receipt 路径
     artifacts: [{path: ui/01.png, kind: screenshot}]
 specialists:                     # 专项结果：声明 specialist JSON 路径
   - path: .state/evidence/.../specialists/android-review-diff.json
-obligations:                     # 业务映射：哪个义务由哪些证据覆盖（agent 给，机器不算）
-  BDD-001/T1: [unit, ui-journey]
-  BDD-005/T1: [ui-journey]
+obligations:                     # 逐义务声明覆盖状态；未验证项不得伪装成自动覆盖
+  BDD-001/T1:
+    status: COVERED_AUTOMATED
+    evidence: [unit]
+  BDD-005/T1:
+    status: UNVERIFIED
+    evidence: []
+    reason: 尚未执行设备验证
 gates:                           # 可选：覆盖 gate 的 required/status/reason
   android-ui-a11y: {required: false, reason: 无设计稿}
 ```
@@ -52,12 +57,12 @@ gates:                           # 可选：覆盖 gate 的 required/status/reas
 - `evidence[].receipt`：AUTOMATED 证据的执行收据路径（脚本读它算 sha）。
 - `evidence[]`（MANUAL）：summary/executor/environment/performed_at/steps/artifacts。
 - `specialists[].path`：专项结果 JSON 路径。
-- `obligations`：义务→证据 id 的业务映射（哪个测试覆盖哪个义务是业务判断）。
+- `obligations`：逐义务填写 `status`、`evidence`，`UNVERIFIED/BLOCKED` 还要填写 `reason`；缺少 `status` 时保守组装为 `UNVERIFIED`。
 
 **脚本自动计算（agent 不填，填了也以脚本为准）：**
 
 - `snapshot_sha256`、各 `obligation_sha256`：从当前 delivery_gate context 取。
-- `receipt_sha256`、`report_paths`、`command`、`exit_code`、`executed_tests`：从执行收据读。
+- `receipt_sha256`、`report_paths`、`command`、`exit_code`、适用时的 `executed_tests`：从执行收据读；清单 id 必须与收据 id 一致。
 - `obligation_test_cases`：从收据里的 junit 报告按 `classname#name` 自动提取。
 - `specialist_result_sha256`：算 specialist JSON 文件 sha。
 - `gates`：默认按 evidence 的 gate 自动推导；agent 可在 `gates` 段覆盖 `required`/`status`/`reason`。
@@ -78,4 +83,4 @@ assemble 组装完会立即 validate，失败时直接列出具体字段错误�
 
 ## 向后兼容
 
-assemble 是可选加速。若不适用（如需 schema 里 assemble 未覆盖的特殊字段），按 `delivery-result.schema.json` 手写 `delivery-result.json`，再执行 `delivery_gate.py validate`。两种方式产出的报告都走同一个 validate。
+旧的 `BDD-001/T1: [unit]` 列表格式仍可使用；只有引用的证据全是自动/Agent 证据时才推导为 `COVERED_AUTOMATED`，不能确定时保守记为 `UNVERIFIED`。assemble 是可选加速。若不适用，按 `delivery-result.schema.json` 手写 `delivery-result.json`，再执行 `delivery_gate.py validate`。两种方式产出的报告都走同一个 validate。

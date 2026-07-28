@@ -24,6 +24,7 @@ from .atomic_write import write_json_atomic
 MAPPING_VERSION = 1
 OBLIGATION_ID_PATTERN = "BDD-[0-9]+/T[0-9]+"
 MAPPING_STATUSES = {"CURRENT", "STALE"}
+TEMPLATE_TEST_IDS = {"ExampleUnitTest#addition_isCorrect"}
 
 
 class TestMappingError(RuntimeError):
@@ -69,6 +70,11 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
     status = item.get("mapping_status")
     if status not in MAPPING_STATUSES:
         raise TestMappingError(f"{label}.mapping_status 必须是 CURRENT 或 STALE")
+    manual_reason = item.get("manual_reason") if isinstance(item.get("manual_reason"), str) else None
+    if status == "CURRENT" and manual_reason and any(
+        marker in manual_reason for marker in ("重新登记", "待回填", "尚未登记", "STALE", "过期")
+    ):
+        raise TestMappingError(f"{label} 已标记 CURRENT 但 manual_reason 仍表示映射过期")
     architecture_tests = item.get("architecture_tests")
     if architecture_tests is not None:
         if not isinstance(architecture_tests, list) or not all(
@@ -82,7 +88,7 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
         "obligation_sha256": obligation_sha256 if isinstance(obligation_sha256, str) else None,
         "test_ids": list(test_ids),
         "mapping_status": status,
-        "manual_reason": item.get("manual_reason") if isinstance(item.get("manual_reason"), str) else None,
+        "manual_reason": manual_reason,
         "architecture_tests": [rule for rule in architecture_tests if isinstance(rule, str) and rule.strip()]
         if isinstance(architecture_tests, list) else [],
     }
@@ -130,6 +136,9 @@ def validate_test_mapping(
             errors.append(
                 f"义务 {identifier} 的测试映射声明 CURRENT 但未绑定当前需求语义摘要"
             )
+        for test_id in entry["test_ids"]:
+            if test_id in TEMPLATE_TEST_IDS or test_id.endswith(".ExampleUnitTest#addition_isCorrect"):
+                errors.append(f"义务 {identifier} 映射了无业务语义的模板测试: {test_id}")
     missing = sorted(expected_ids - seen)
     if missing:
         errors.append("测试映射缺少当前确认义务的登记: " + ", ".join(missing))

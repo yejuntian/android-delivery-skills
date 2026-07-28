@@ -41,6 +41,14 @@ from .specialist_result import (  # noqa: E402
 
 DELIVERY_RESULT_VERSION = 4
 ASSEMBLE_PRODUCER = "android-delivery-assemble"
+SPECIALIST_GATE_ALIASES = {"android-verify-ui": "android-ui-a11y"}
+OBLIGATION_STATUSES = {
+    "COVERED_AUTOMATED",
+    "COVERED_MANUAL",
+    "UNVERIFIED",
+    "BLOCKED",
+    "NOT_APPLICABLE",
+}
 
 
 class AssembleError(RuntimeError):
@@ -128,6 +136,10 @@ def _build_automated_evidence(
         receipt = load_execution_receipt(receipt_path)
     except Exception as exc:  # noqa: BLE001 - 转成 AssembleError
         raise AssembleError(f"evidence {decl.id}: 执行收据无法读取: {exc}") from exc
+    if receipt.get("id") != decl.id:
+        raise AssembleError(
+            f"evidence {decl.id}: 清单 id 与执行收据 id 不一致: {receipt.get('id')}"
+        )
     receipt_sha256 = sha256_file(receipt_path)
     reports = receipt.get("reports", [])
     report_paths = [r.get("path", "") for r in reports if isinstance(r, dict)]
@@ -156,7 +168,6 @@ def _build_automated_evidence(
         "snapshot_sha256": snapshot_sha256,
         "command": command,
         "exit_code": exit_code,
-        "executed_tests": executed_tests,
         "receipt_path": str(receipt_path),
         "receipt_sha256": receipt_sha256,
         "report_paths": report_paths,
@@ -164,6 +175,8 @@ def _build_automated_evidence(
         "obligation_sha256s": {},  # 由 assemble_result 填入
         "summary": f"由 {ASSEMBLE_PRODUCER} 从执行收据自动组装",
     }
+    if executed_tests is not None:
+        evidence["executed_tests"] = executed_tests
     return evidence, {decl.id: all_test_cases}
 
 
@@ -228,7 +241,7 @@ def _build_specialist_evidence(
     evidence = {
         "id": sid,
         "kind": "REVIEW",
-        "gate_id": payload.get("skill", ""),
+        "gate_id": SPECIALIST_GATE_ALIASES.get(skill, skill),
         "snapshot_sha256": snapshot_sha256,
         "summary": payload.get("summary", f"{skill} 专项结果"),
         "specialist": skill,
@@ -268,13 +281,36 @@ def assemble_delivery_result(
     raw_obligations = manifest.get("obligations")
     if not isinstance(raw_obligations, dict) or not raw_obligations:
         raise AssembleError("产物清单缺少 obligations 映射（义务→证据 id 列表）")
-    obligation_map: dict[str, list[str]] = {}
-    for oid, refs in raw_obligations.items():
+    obligation_map: dict[str, dict[str, Any]] = {}
+    for oid, declaration in raw_obligations.items():
         if not isinstance(oid, str) or not oid.strip():
             raise AssembleError(f"obligations 存在空 key")
-        if not isinstance(refs, list) or not refs:
-            raise AssembleError(f"obligation {oid} 必须引用至少一个证据 id")
-        obligation_map[oid.strip()] = [str(r).strip() for r in refs if str(r).strip()]
+        if isinstance(declaration, list):
+            refs = [str(ref).strip() for ref in declaration if str(ref).strip()]
+            if not refs:
+                raise AssembleError(f"obligation {oid} 必须引用至少一个证据 id")
+            obligation_map[oid.strip()] = {"status": None, "refs": refs, "reason": None}
+            continue
+        if not isinstance(declaration, dict):
+            raise AssembleError(f"obligation {oid} 必须是证据 id 数组或状态 object")
+        unknown = sorted(set(declaration) - {"status", "evidence", "reason"})
+        if unknown:
+            raise AssembleError(f"obligation {oid} 包含未知字段: {', '.join(unknown)}")
+        status = declaration.get("status", "UNVERIFIED")
+        if status not in OBLIGATION_STATUSES:
+            raise AssembleError(f"obligation {oid} 的 status 无效")
+        raw_refs = declaration.get("evidence", [])
+        if not isinstance(raw_refs, list):
+            raise AssembleError(f"obligation {oid}.evidence 必须是证据 id 数组")
+        refs = [str(ref).strip() for ref in raw_refs if str(ref).strip()]
+        reason = declaration.get("reason")
+        if status in {"COVERED_AUTOMATED", "COVERED_MANUAL"} and not refs:
+            raise AssembleError(f"obligation {oid} 标记覆盖时必须引用证据")
+        if status in {"UNVERIFIED", "BLOCKED"} and (
+            not isinstance(reason, str) or not reason.strip()
+        ):
+            raise AssembleError(f"obligation {oid} 标记 {status} 时必须说明 reason")
+        obligation_map[oid.strip()] = {"status": status, "refs": refs, "reason": reason}
 
     # 4. 构造 evidence 对象
     evidence_objs: dict[str, dict[str, Any]] = {}
@@ -293,19 +329,31 @@ def assemble_delivery_result(
 
     # 5. 填充 obligations + 给 evidence 回填 obligation_sha256s / obligation_test_cases
     obligation_list: list[dict[str, Any]] = []
-    for oid, refs in obligation_map.items():
+    for oid, declaration in obligation_map.items():
         expected = expected_obligations.get(oid)
         if expected is None:
             raise AssembleError(f"obligation {oid} 不在当前确认义务集合中")
         sha = expected.get("sha256")
         required = expected.get("required")
+        refs = declaration["refs"]
+        status = declaration["status"]
+        if status is None:
+            kinds = {evidence_objs.get(ref, {}).get("kind") for ref in refs}
+            if kinds and kinds <= {"AUTOMATED", "AGENT"}:
+                status = "COVERED_AUTOMATED"
+            elif kinds == {"MANUAL"}:
+                status = "COVERED_MANUAL"
+            else:
+                status = "UNVERIFIED"
         ob_entry: dict[str, Any] = {
             "id": oid,
             "required": required,
             "obligation_sha256": sha,
-            "status": "COVERED_AUTOMATED",
+            "status": status,
             "evidence_ids": refs,
         }
+        if isinstance(declaration.get("reason"), str):
+            ob_entry["reason"] = declaration["reason"]
         obligation_list.append(ob_entry)
         # 回填每个被引用证据的 obligation_sha256s 和 obligation_test_cases
         for ref in refs:

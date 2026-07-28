@@ -51,6 +51,7 @@ from ..delivery import (  # noqa: E402
     cmd_confirm_plan,
     cmd_confirm_requirement_update,
     cmd_init,
+    cmd_init_test_mapping,
     cmd_route,
     format_requirement_change,
     load_config,
@@ -1107,6 +1108,43 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("你已获准开始编码", text)
         self.assertIn("已确认实施计划", text)
 
+    def test_test_mapping_rejects_unconfirmed_requirement_content(self) -> None:
+        """需求正文变化但未确认时，独立 mapping validate 也必须阻断。"""
+        write_requirement_snapshot(
+            self.snapshot,
+            self.requirement,
+            "登录失败显示错误",
+            requirement_id="baseline-1",
+        )
+        apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            "登录失败显示错误",
+            self._manifest(0, [
+                self._change("BDD-001/T1", "ADDED", text="显示登录错误", required=True),
+            ]),
+        )
+        self.requirement.write_text("登录失败显示错误\n允许点击重试\n", encoding="utf-8")
+        paths = SimpleNamespace(
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+            test_mapping_path=self.requirement_dir / "test-cases" / "test-mapping.json",
+        )
+
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            self.assertRaisesRegex(DeliveryError, "尚未确认为最新修订"),
+        ):
+            cmd_init_test_mapping(SimpleNamespace(
+                config=str(self.root / "local.yaml"),
+                validate=True,
+            ))
+
 
 class ConfigReaderTests(unittest.TestCase):
     """验证配置读取失败时给出明确原因，不依赖真实用户配置。"""
@@ -1426,7 +1464,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         """验证脏工作区阻断新需求，清洁后才允许建立需求基线。"""
         args = SimpleNamespace(config=str(Path(self.temp_dir.name) / "local.yaml"))
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("已确认需求\n", encoding="utf-8")
+        requirement.write_text("BDD-001/T1 已确认需求\n", encoding="utf-8")
         check_baseline = Path(self.temp_dir.name) / "check-env-baseline.json"
         snapshot = Path(self.temp_dir.name) / "requirement-snapshot.json"
         paths = SimpleNamespace(
@@ -1454,9 +1492,46 @@ class GitDiffCollectionTests(unittest.TestCase):
             with patches[0], patches[1], patches[2], patches[3], redirect_stdout(io.StringIO()):
                 cmd_check_env(args)
             self.assertEqual(current_branch(self.repo), load_baseline(self.repo, check_baseline)["branch"])
-            self.assertEqual("已确认需求", load_requirement_snapshot(snapshot)["content"])
+            self.assertEqual("BDD-001/T1 已确认需求", load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
+
+    def test_check_env_rejects_requirement_without_atomic_bdd(self) -> None:
+        """不完整需求不能建立 Git 基线或需求快照。"""
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "prepare clean tree")
+        requirement = Path(self.temp_dir.name) / "incomplete-requirement.md"
+        requirement.write_text("需求还没确认，边界条件待补。\n", encoding="utf-8")
+        baseline = Path(self.temp_dir.name) / "incomplete-baseline.json"
+        snapshot = Path(self.temp_dir.name) / "incomplete-snapshot.json"
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement.parent,
+        )
+
+        old_cwd = Path.cwd()
+        try:
+            with (
+                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=snapshot,
+                ),
+                redirect_stdout(io.StringIO()),
+                self.assertRaisesRegex(DeliveryError, "原子 BDD/Then"),
+            ):
+                cmd_check_env(SimpleNamespace(
+                    config=str(Path(self.temp_dir.name) / "local.yaml"),
+                    new_requirement=False,
+                ))
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertFalse(baseline.exists())
+        self.assertFalse(snapshot.exists())
 
     def test_check_env_allows_current_document_evidence_without_code_dirty(self) -> None:
         """验证新建 document/<需求>/ 可作为交付证据，不阻断代码基线。"""
@@ -1465,7 +1540,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         requirement_dir = self.repo / "document" / "2026-07-28-login"
         requirement_dir.mkdir(parents=True)
         requirement = requirement_dir / "需求说明.md"
-        requirement.write_text("已确认需求\n", encoding="utf-8")
+        requirement.write_text("BDD-001/T1 已确认需求\n", encoding="utf-8")
         (requirement_dir / "issues.md").write_text("审计记录\n", encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "document-baseline.json"
         snapshot = Path(self.temp_dir.name) / "document-snapshot.json"
@@ -1496,7 +1571,7 @@ class GitDiffCollectionTests(unittest.TestCase):
             os.chdir(old_cwd)
 
         self.assertIn("交付文档改动已忽略", output.getvalue())
-        self.assertEqual("已确认需求", load_requirement_snapshot(snapshot)["content"])
+        self.assertEqual("BDD-001/T1 已确认需求", load_requirement_snapshot(snapshot)["content"])
         self.assertEqual(current_head(self.repo), load_baseline(self.repo, baseline)["head"])
 
     def test_check_env_reuses_existing_start_after_intermediate_commit(self) -> None:
@@ -1504,7 +1579,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "prepare clean tree")
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("同一需求\n", encoding="utf-8")
+        requirement.write_text("BDD-001/T1 同一需求\n", encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "check-env-reuse-baseline.json"
         snapshot = Path(self.temp_dir.name) / "check-env-reuse-snapshot.json"
         paths = SimpleNamespace(
@@ -1609,7 +1684,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-q", "-m", "prepare first requirement")
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("第一个需求\n", encoding="utf-8")
+        requirement.write_text("BDD-001/T1 第一个需求\n", encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "check-env-new-baseline.json"
         snapshot = Path(self.temp_dir.name) / "check-env-new-snapshot.json"
         paths = SimpleNamespace(
@@ -1638,14 +1713,14 @@ class GitDiffCollectionTests(unittest.TestCase):
                 self.write("app/src/main/java/example/FirstDone.kt", "class FirstDone\n")
                 self.git("add", ".")
                 self.git("commit", "-q", "-m", "finish first requirement")
-                requirement.write_text("第二个需求\n", encoding="utf-8")
+                requirement.write_text("BDD-002/T1 第二个需求\n", encoding="utf-8")
                 args.new_requirement = True
                 cmd_check_env(args)
 
             updated = load_baseline(self.repo, baseline)
             self.assertNotEqual(original_id, updated["id"])
             self.assertEqual(current_head(self.repo), updated["head"])
-            self.assertEqual("第二个需求", load_requirement_snapshot(snapshot)["content"])
+            self.assertEqual("BDD-002/T1 第二个需求", load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
 
@@ -1656,7 +1731,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         previous = b'{"id":"previous-baseline"}\n'
         self.baseline.write_bytes(previous)
         requirement = Path(self.temp_dir.name) / "requirement.md"
-        requirement.write_text("已确认需求\n", encoding="utf-8")
+        requirement.write_text("BDD-001/T1 已确认需求\n", encoding="utf-8")
         paths = SimpleNamespace(
             project_path=self.repo,
             requirement_path=requirement,
@@ -1706,6 +1781,8 @@ class RouteCommandTests(unittest.TestCase):
         changes: list[GitChange],
         *,
         requirement_dir: Path | None = None,
+        config: dict | None = None,
+        allowed_files: list[str] | None = None,
     ) -> tuple[str, dict]:
         """执行一次隔离 route，返回终端输出和写出的 route-impact。"""
         args = SimpleNamespace(config=str(self.root / "local.yaml"))
@@ -1722,7 +1799,7 @@ class RouteCommandTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch("scripts.delivery.load_config", return_value={}),
+                mock.patch("scripts.delivery.load_config", return_value=config or {}),
                 mock.patch("scripts.delivery.resolve_paths", return_value=paths),
                 mock.patch("scripts.delivery.current_branch", return_value="feature"),
                 mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.root / "baseline.json"),
@@ -1739,6 +1816,8 @@ class RouteCommandTests(unittest.TestCase):
                         "status": "CONFIRMED",
                         "pending_changes": [],
                         "sha256": requirement_sha,
+                        "requirement_path": str(self.requirement.resolve()),
+                        "obligations": [{"id": "BDD-001/T1", "sha256": "b" * 64}],
                     },
                 ),
                 mock.patch(
@@ -1756,6 +1835,21 @@ class RouteCommandTests(unittest.TestCase):
                         "implementation_plan_sha256": "d" * 64,
                         "impact_radius_sha256": "f" * 64,
                         "plan_confirmation_receipt_sha256": "e" * 64,
+                    },
+                ),
+                mock.patch(
+                    "scripts.delivery.load_impact_radius",
+                    return_value={
+                        "allowed_files": allowed_files
+                        if allowed_files is not None
+                        else [
+                            path
+                            for change in changes
+                            for path in (change.old_path, change.path)
+                            if path
+                        ],
+                        "allowed_dirs": [],
+                        "impacts": [],
                     },
                 ),
                 mock.patch("scripts.delivery.get_diff_changes", return_value=(changes, [])),
@@ -1842,6 +1936,30 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("android-verify-api-contract", route_gates)
         self.assertEqual(
             [api_path],
+            route_gates["android-verify-api-contract"]["basis_files"],
+        )
+
+    def test_route_rejects_diff_outside_confirmed_radius(self) -> None:
+        """route 发现 Manifest 越界时立即失败且不写 route 文件。"""
+        with self.assertRaisesRegex(DeliveryError, "超出已确认影响半径"):
+            self._run_route_with_changes(
+                [GitChange("M", "app/src/main/AndroidManifest.xml")],
+                allowed_files=["app/src/main/java/example/HomeScreen.kt"],
+            )
+
+        self.assertFalse((self.root / "route-impact.json").exists())
+
+    def test_route_includes_profile_declared_api_source(self) -> None:
+        """即使 diff 未命中 API 文件，profile 契约声明也必须触发 API gate。"""
+        _, route_payload = self._run_route_with_changes(
+            [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+            config={"api": {"files": ["api/openapi.json"]}},
+        )
+
+        route_gates = {item["id"]: item for item in route_payload["conditional_gates"]}
+        self.assertIn("android-verify-api-contract", route_gates)
+        self.assertIn(
+            "api/openapi.json",
             route_gates["android-verify-api-contract"]["basis_files"],
         )
 

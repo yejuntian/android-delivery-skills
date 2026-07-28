@@ -73,7 +73,7 @@ class AssembleResultTests(unittest.TestCase):
         self.obligation = "d" * 64
         self.traceability = self.root / "traceability.md"
         self.traceability.write_text(
-            "# 当前需求追溯表\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
             encoding="utf-8",
         )
         self.context = {
@@ -268,6 +268,8 @@ obligations:
         test_ev = next(e for e in written["evidence"] if e["id"] == "E-TEST")
         self.assertTrue(test_ev["receipt_sha256"])
         self.assertEqual(test_ev["executed_tests"], 2)
+        build_ev = next(e for e in written["evidence"] if e["id"] == "E-BUILD")
+        self.assertNotIn("executed_tests", build_ev)
 
         # obligation_test_cases 自动从 junit 提取
         self.assertIn("BDD-001/T1", test_ev["obligation_test_cases"])
@@ -295,6 +297,60 @@ obligations:
         with self.assertRaises(AssembleError) as ctx:
             assemble_delivery_result(manifest, self.context, self.root / "r.json")
         self.assertIn("E-NONE", str(ctx.exception))
+
+    def test_assemble_rejects_manifest_id_different_from_receipt(self) -> None:
+        """清单证据 id 与真实收据 id 不一致时在组装阶段立即失败。"""
+        receipt = self.receipt_paths["E-BUILD"]
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+        payload["id"] = "OTHER-BUILD"
+        receipt.write_text(json.dumps(payload), encoding="utf-8")
+
+        with self.assertRaisesRegex(AssembleError, "清单 id 与执行收据 id 不一致"):
+            assemble_delivery_result(
+                self._write_manifest(),
+                self.context,
+                self.root / "r.json",
+            )
+
+    def test_assemble_maps_ui_specialist_to_ui_a11y_gate(self) -> None:
+        """android-verify-ui 专项证据归入条件 gate android-ui-a11y。"""
+        ui_result = self.root / "E-UI.specialist.json"
+        ui_result.write_text(json.dumps({
+            "id": "E-UI",
+            "skill": "android-verify-ui",
+            "summary": "模拟器 UI 核验完成。",
+        }), encoding="utf-8")
+        manifest = self._write_manifest()
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8").replace(
+                "  - path: E-STABILITY.specialist.json\n",
+                "  - path: E-STABILITY.specialist.json\n  - path: E-UI.specialist.json\n",
+            ),
+            encoding="utf-8",
+        )
+
+        result = assemble_delivery_result(manifest, self.context, self.root / "r.json")
+        ui_evidence = next(item for item in result["evidence"] if item["id"] == "E-UI")
+        self.assertEqual("android-ui-a11y", ui_evidence["gate_id"])
+        self.assertIn("android-ui-a11y", {item["id"] for item in result["gates"]})
+
+    def test_obligation_without_coverage_status_defaults_to_unverified(self) -> None:
+        """对象格式未声明覆盖状态时不能被组装器自动标成已覆盖。"""
+        manifest = self._write_manifest()
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8").replace(
+                "conclusion: FULL_PASS",
+                "conclusion: INCOMPLETE",
+            ).replace(
+                "  BDD-001/T1: [E-TEST]",
+                "  BDD-001/T1:\n    evidence: []\n    reason: 尚未执行设备验证",
+            ),
+            encoding="utf-8",
+        )
+
+        result = assemble_delivery_result(manifest, self.context, self.root / "r.json")
+        self.assertEqual("UNVERIFIED", result["obligations"][0]["status"])
+        self.assertEqual([], result["obligations"][0]["evidence_ids"])
 
 
 if __name__ == "__main__":

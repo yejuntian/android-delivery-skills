@@ -21,6 +21,10 @@ from typing import Any
 from .config_paths import resolve_config_paths
 
 
+class RequirementInputError(RuntimeError):
+    """表示需求输入路径会被交付运行产物污染。"""
+
+
 def _sha256_file(path: Path) -> str:
     """流式计算资料摘要，避免截图或契约文件一次性读入内存。"""
     digest = hashlib.sha256()
@@ -56,6 +60,32 @@ def _declared_paths(section: Any, fields: tuple[str, ...]) -> list[tuple[str, st
             if isinstance(item, str) and item.strip():
                 declared.append((field, item.strip()))
     return declared
+
+
+def validate_requirement_input_boundaries(
+    config: dict[str, Any],
+    config_path: str | Path,
+) -> None:
+    """拒绝 UI/API 输入目录与运行证据、状态或结果目录重叠。"""
+    paths = resolve_config_paths(config, config_path)
+    output_roots = [
+        paths.requirement_dir / ".state",
+        paths.requirement_dir / "evidence",
+        paths.requirement_dir / "test-results",
+    ]
+    for section, fields in (
+        (config.get("ui", {}), ("directory", "screenshots", "assets")),
+        (config.get("api", {}), ("files",)),
+    ):
+        for field, declaration in _declared_paths(section, fields):
+            raw = Path(declaration).expanduser()
+            source = raw.resolve() if raw.is_absolute() else (paths.requirement_dir / raw).resolve()
+            for output in output_roots:
+                output = output.resolve()
+                if source == output or source in output.parents or output in source.parents:
+                    raise RequirementInputError(
+                        f"需求输入 {field}={declaration} 与运行输出目录重叠: {output}"
+                    )
 
 
 def _source_record(requirement_dir: Path, field: str, declaration: str) -> list[dict[str, Any]]:
@@ -115,6 +145,7 @@ def requirement_inputs_manifest(
     impact_radius_sha256: str | None = None,
 ) -> dict[str, Any]:
     """构造不含资料正文的规范清单，供摘要、诊断和测试共同使用。"""
+    validate_requirement_input_boundaries(config, config_path)
     paths = resolve_config_paths(config, config_path)
     ui = _json_safe(config.get("ui", {}))
     api = _json_safe(config.get("api", {}))

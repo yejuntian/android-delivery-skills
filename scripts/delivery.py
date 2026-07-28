@@ -58,6 +58,11 @@ from .implementation_plan import (  # noqa: E402
     implementation_plan_path,
     validate_plan_confirmation,
 )
+from .impact_radius import (  # noqa: E402
+    ImpactRadiusError,
+    changed_files_outside_radius,
+    load_impact_radius,
+)
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     apply_requirement_revision,
@@ -67,7 +72,11 @@ from .requirement_snapshot import (  # noqa: E402
     requirement_digest,
     write_requirement_snapshot,
 )
-from .requirement_inputs import requirement_inputs_digest  # noqa: E402
+from .requirement_inputs import (  # noqa: E402
+    RequirementInputError,
+    requirement_inputs_digest,
+    validate_requirement_input_boundaries,
+)
 from .route_impact import (  # noqa: E402
     RouteImpactError,
     build_route_impact,
@@ -90,6 +99,49 @@ DEFAULT_CONFIG_PATH = SKILL_ROOT / "profiles/local.yaml"
 REQUIREMENTS_PATH = SKILL_ROOT / "requirements.txt"
 class DeliveryError(RuntimeError):
     """表示已有明确原因、不能继续猜测的流程错误。"""
+
+
+def _require_atomic_bdd_before_baseline(content: str) -> None:
+    """新建需求起点前要求事实源已经包含至少一个原子 BDD/Then。"""
+    if not re.search(r"\bBDD-[0-9]+/T[0-9]+\b", content):
+        raise DeliveryError(
+            "需求事实源尚未包含原子 BDD/Then，不能建立需求起点；"
+            "请先补齐主流程、异常/边界和 BDD-###/T# 验收项并获得纯确认"
+        )
+
+
+def _require_current_confirmed_requirement(
+    snapshot: dict,
+    requirement_path: Path,
+    content: str,
+) -> None:
+    """确认后续命令读取的是当前已确认需求正文。"""
+    if Path(str(snapshot["requirement_path"])).resolve() != requirement_path.resolve():
+        raise DeliveryError("当前 requirement_file 与需求修订记录路径不一致")
+    if (
+        snapshot.get("revision", 0) < 1
+        or snapshot.get("status") != "CONFIRMED"
+        or snapshot.get("pending_changes")
+        or not snapshot.get("obligations")
+    ):
+        raise DeliveryError("当前需求尚未确认原子义务，不能继续后续流程")
+    if snapshot.get("sha256") != requirement_digest(content):
+        raise DeliveryError("当前 requirement_file 尚未确认为最新修订，不能继续后续流程")
+
+
+def _declared_api_sources(config: dict) -> list[str]:
+    """返回 profile 明确声明的 API 契约来源，供需求语义路由使用。"""
+    api = config.get("api")
+    if not isinstance(api, dict):
+        return []
+    sources: list[str] = []
+    for field in ("files", "links"):
+        raw = api.get(field)
+        values = raw if isinstance(raw, list) else [raw]
+        for value in values:
+            if isinstance(value, str) and value.strip() and value.strip() not in sources:
+                sources.append(value.strip())
+    return sources
 
 
 def _is_under_path(file_path: str, prefix: str) -> bool:
@@ -618,6 +670,7 @@ def cmd_init(args):
     防呆设计：严禁 AI 直接编码，强制先确认 BDD 和中途需求增删改。
     """
     config = load_config(args.config)
+    validate_requirement_input_boundaries(config, args.config)
     paths = resolve_paths(config, args.config)
     project_path = paths.project_path
     requirement_path = paths.requirement_path
@@ -864,6 +917,7 @@ def cmd_check_env(args):
     防呆设计：任何一份起点证据写入失败都不允许进入编码阶段。
     """
     config = load_config(args.config)
+    validate_requirement_input_boundaries(config, args.config)
     paths = resolve_paths(config, args.config)
     project_path = paths.project_path
     requirement_path = paths.requirement_path
@@ -925,6 +979,7 @@ def cmd_check_env(args):
         new_requirement=getattr(args, "new_requirement", False),
     ):
         return
+    _require_atomic_bdd_before_baseline(requirement_content)
     try:
         previous_baseline = baseline_path.read_bytes() if baseline_path.is_file() else None
     except OSError as exc:
@@ -1037,8 +1092,7 @@ def cmd_confirm_plan(args):
     snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(args.config))
     if snapshot is None:
         raise DeliveryError("尚未建立需求修订，请先执行 check-env 和 confirm-requirement-update")
-    if Path(str(snapshot["requirement_path"])).resolve() != requirement_path.resolve():
-        raise DeliveryError("当前 requirement_file 与需求修订记录路径不一致")
+    _require_current_confirmed_requirement(snapshot, requirement_path, content)
 
     receipt, receipt_path = confirm_implementation_plan(snapshot, content, paths.requirement_dir)
     plan_path = implementation_plan_path(paths.requirement_dir)
@@ -1105,8 +1159,6 @@ def cmd_route(args):
     )
     ui_files = impacts["ui"]
     api_files = impacts["api"]
-    conditional_gates = classify_conditional_gate_candidates(impacts)
-
     if not paths.requirement_path or not paths.requirement_path.is_file():
         raise DeliveryError(f"需求文件无效: {paths.requirement_path}")
     requirement_content = read_requirement(paths.requirement_path)
@@ -1119,15 +1171,38 @@ def cmd_route(args):
         raise DeliveryError(str(exc)) from exc
     if not requirement_snapshot:
         raise DeliveryError("尚未建立需求修订，请先执行 check-env 和 confirm-requirement-update")
-    if requirement_snapshot["status"] != "CONFIRMED" or requirement_snapshot["pending_changes"]:
-        raise DeliveryError("需求修订仍有待定或冲突项，不能生成最终路由影响快照")
-    if requirement_snapshot["sha256"] != requirement_sha256:
-        raise DeliveryError("当前需求正文尚未确认为最新修订，不能生成最终路由影响快照")
+    _require_current_confirmed_requirement(
+        requirement_snapshot,
+        paths.requirement_path,
+        requirement_content,
+    )
+    for source in _declared_api_sources(config):
+        if source not in impacts["api"]:
+            impacts["api"].append(source)
+    api_files = impacts["api"]
+    conditional_gates = classify_conditional_gate_candidates(impacts)
     plan_context = validate_plan_confirmation(
         requirement_snapshot,
         requirement_content,
         paths.requirement_dir,
     )
+    radius_path = getattr(paths, "impact_radius_path", None) or (
+        paths.requirement_dir / "test-cases" / "impact-radius.json"
+    )
+    try:
+        radius_payload = load_impact_radius(
+            radius_path,
+            requirement_snapshot,
+            requirement_content,
+        )
+    except ImpactRadiusError as exc:
+        raise DeliveryError(str(exc)) from exc
+    outside_radius = changed_files_outside_radius(diff_files, radius_payload)
+    if outside_radius:
+        raise DeliveryError(
+            "当前 diff 超出已确认影响半径，不能生成 route: "
+            + ", ".join(outside_radius)
+        )
     requirement_inputs_sha256 = requirement_inputs_digest(
         config,
         resolved_config,
@@ -1286,8 +1361,10 @@ def cmd_init_test_mapping(args):
     snapshot = load_requirement_snapshot(requirement_snapshot_path_for_config(resolved_config))
     if snapshot is None:
         raise DeliveryError("尚未建立需求快照，请先执行 check-env 和 confirm-requirement-update")
-    if snapshot["status"] != "CONFIRMED" or not snapshot.get("obligations"):
-        raise DeliveryError("当前需求尚未确认原子义务，无法生成测试映射")
+    if not paths.requirement_path:
+        raise DeliveryError("未配置 requirement_file，无法校验测试映射")
+    content = read_requirement(paths.requirement_path)
+    _require_current_confirmed_requirement(snapshot, paths.requirement_path, content)
     mapping_path = paths.test_mapping_path
     if args.validate:
         payload = load_test_mapping(mapping_path)
@@ -1335,6 +1412,8 @@ def main(argv=None):
         DeliveryError,
         GitInspectionError,
         ImplementationPlanError,
+        ImpactRadiusError,
+        RequirementInputError,
         RequirementSnapshotError,
     ) as exc:
         print(f"❌ {localize_machine_terms(exc)}", file=sys.stderr)

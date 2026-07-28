@@ -879,6 +879,12 @@ def validate_specialist_result(
                     errors.append(f"API 契约专项 PASS 必须通过检查 {check_id}")
             if not artifacts:
                 errors.append("API 契约专项 PASS 必须附带正式契约或核对结果 artifact")
+            elif any(
+                isinstance(item, dict)
+                and any(marker in str(item.get("kind", "")).lower() for marker in ("mock", "fake"))
+                for item in artifacts
+            ):
+                errors.append("API 契约专项 PASS 不能使用 mock/fake artifact 作为正式契约证据")
 
     if payload.get("skill") == JOURNEY_AGENT_SKILL:
         if not any(

@@ -466,16 +466,35 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 except (OSError, UnicodeError) as exc:
                     errors.append(f"当前需求追溯表无法读取: {traceability_path}: {exc}")
                 else:
+                    revision = context.get("requirement_revision")
+                    revision_pattern = re.compile(
+                        rf"(?m)(?:^#{{1,6}}\s+.*\bR{revision}\b|当前修订[：:]\s*R{revision}\b)"
+                    )
+                    if not revision_pattern.search(traceability_text):
+                        errors.append(f"当前需求追溯表未绑定当前需求修订 R{revision}")
+                    traceability_lines = traceability_text.splitlines()
                     for identifier in sorted(expected_ids):
-                        if identifier in traceability_text:
-                            continue
-                        if identifier in business_ids:
+                        matching_lines = [
+                            line for line in traceability_lines if identifier in line
+                        ]
+                        if not matching_lines and identifier in business_ids:
                             errors.append(
                                 f"当前需求追溯表没有登记已上线业务义务: {identifier}"
                             )
-                        else:
+                        elif not matching_lines:
                             errors.append(
                                 f"当前需求追溯表没有登记当前确认义务: {identifier}"
+                            )
+                        elif obligations.get(identifier, {}).get("status") in {
+                            "COVERED_AUTOMATED",
+                            "COVERED_MANUAL",
+                        } and any(
+                            marker in line
+                            for line in matching_lines
+                            for marker in ("待实现", "待执行", "待验证", "STALE", "TODO")
+                        ):
+                            errors.append(
+                                f"当前需求追溯表中的已覆盖义务仍含过期状态: {identifier}"
                             )
 
     specialist_results: dict[str, dict[str, Any]] = {}

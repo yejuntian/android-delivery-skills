@@ -232,7 +232,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 ```
 
-**AI 动作**：环境检查只在目标分支和代码工作区干净时一起建立当前需求 Git 基线与需求起点；已有起点时安全复用，绝不覆盖。任一失败都不进入编码。检测到需求开始前的代码改动时停止，不自动 stash、提交或清理；当前 `<requirement_dir>` 下新建或更新的需求、审计、测试记录、issue 和收据文档不算代码脏工作区，可以随交付提交。只有用户明确开始新的串行需求时才使用 `check-env --new-requirement`。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
+**AI 动作**：环境检查只在目标分支和代码工作区干净、需求事实源已包含原子 `BDD-###/T#`，且 UI/API 输入路径不与 `.state/evidence/test-results` 输出重叠时一起建立当前需求 Git 基线与需求起点；已有起点时安全复用，绝不覆盖。任一失败都不进入编码。检测到需求开始前的代码改动时停止，不自动 stash、提交或清理；当前 `<requirement_dir>` 下新建或更新的需求、审计、测试记录、issue 和收据文档不算代码脏工作区，可以随交付提交。只有用户明确开始新的串行需求时才使用 `check-env --new-requirement`。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
@@ -274,7 +274,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
-**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的代码 diff（排除 `document/` 交付证据），输出专项审查与测试顺序，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照同时绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接与本地资料摘要；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
+**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的代码 diff（排除 `document/` 交付证据）；diff 超出已确认影响半径时立即阻断。路由候选合并实际 diff 与 profile 声明的 API 契约来源，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照同时绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接与本地资料摘要；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
@@ -308,7 +308,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
   --config <配置> --manifest <产物清单.yaml>
 ```
 
-`obligations`（义务→证据映射）是业务判断，必须由 agent 提供；其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）全部由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
+`obligations` 的覆盖状态和证据映射是业务判断，必须由 agent 逐项提供；缺少覆盖状态时 assemble 保守标记为 `UNVERIFIED`，不得默认自动覆盖。其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
 
 **方式二（向后兼容）：手写后 validate**。若 assemble 不适用（如需特殊字段），按 `references/delivery-result.schema.json` 手写 `delivery-result.json`，再执行：
 
@@ -325,7 +325,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 - 每条 BDD 的所有原子 Then 均映射到实现及 JUnit 中真实通过的 testcase、Agent Journey 中实际执行的 action/check，或结构完整的实际人工收据；计划人工执行但尚未执行时不得写成已覆盖。
 - 需求修订状态为 `CONFIRMED`，不存在 `PENDING/CONFLICT`；最终报告的 obligation ID、必需性和语义摘要与当前有效 Then 集合完全一致。
 - 当前 `实施计划.md` 和 `test-cases/impact-radius.json` 已由用户确认，计划收据仍与需求修订、需求摘要、计划摘要和影响半径摘要一致；需求、计划或影响半径变化后没有复用旧确认或旧证据。
-- 当前需求追溯表覆盖全部已确认 `REQ-ID` 和必需 Then，需求映射率为 100%，每条记录包含最终实现、测试/实际人工验收、必需性与证据状态。
+- 当前需求追溯表明确绑定当前需求修订，覆盖全部已确认 `REQ-ID` 和必需 Then，需求映射率为 100%，每条记录包含最终实现、测试/实际人工验收、必需性与证据状态。
 - 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
 - 必需命令在最后一次代码或测试修复后重新执行，最终报告记录命令、退出码、测试数、关键输出和报告/产物路径。
 - OpenAPI、迁移、泄漏、性能、UI/A11y、安全隐私均已记录适用性；所有明确验收所必需的条件能力有新鲜通过证据。

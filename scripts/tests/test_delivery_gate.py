@@ -106,7 +106,7 @@ class DeliveryGateTests(unittest.TestCase):
         self.obligation = "d" * 64
         self.traceability = self.temp_root / "traceability.md"
         self.traceability.write_text(
-            "# 当前需求追溯表\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 显示错误提示 | TEST-001 | 已覆盖\n",
             encoding="utf-8",
         )
         self.context = {
@@ -1312,10 +1312,30 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("没有登记当前确认义务: BDD-001/T1" in error for error in errors))
         self.traceability.write_text(
-            "# 当前需求追溯表\n\nBDD-001/T1 | 实现 | TEST-001\n",
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 实现 | TEST-001\n",
             encoding="utf-8",
         )
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_traceability_must_bind_current_requirement_revision(self) -> None:
+        """义务 ID 齐全但追溯表仍绑定旧修订时不能通过。"""
+        self.traceability.write_text(
+            "# 当前需求追溯表\n\n## R1\n\nBDD-001/T1 | 实现 | TEST-001 | 已覆盖\n",
+            encoding="utf-8",
+        )
+
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("未绑定当前需求修订 R2" in error for error in errors))
+
+    def test_covered_obligation_rejects_pending_traceability_status(self) -> None:
+        """最终报告已覆盖的义务不能在追溯表中仍写待验证。"""
+        self.traceability.write_text(
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 实现 | TEST-001 | 待验证\n",
+            encoding="utf-8",
+        )
+
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("已覆盖义务仍含过期状态" in error for error in errors))
 
     def test_existing_business_obligation_requires_traceability_entry(self) -> None:
         """验证中文报告引用追溯表前，文件存在且包含对应旧业务义务。"""
@@ -1330,7 +1350,7 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("没有登记已上线业务义务" in error for error in errors))
         traceability.write_text(
-            "# 当前需求追溯表\n\nBDD-001/T1 | 实现 | 调用方 | TEST-001\n",
+            "# 当前需求追溯表\n\n## R2\n\nBDD-001/T1 | 实现 | 调用方 | TEST-001\n",
             encoding="utf-8",
         )
         self.assertEqual([], validate_delivery_result(self.payload, self.context))

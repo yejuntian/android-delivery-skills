@@ -423,11 +423,27 @@
         "properties": {
           "mutation_testing": {
             "properties": {
-              "languages": { "not": { "contains": { "const": "NONE" } } },
-              "generated_mutants": { "minimum": 1 }
+              "languages": { "not": { "contains": { "const": "NONE" } } }
             }
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "conclusion": { "const": "PASS" } },
+              "required": ["conclusion"]
+            },
+            "then": {
+              "properties": {
+                "mutation_testing": {
+                  "properties": {
+                    "generated_mutants": { "minimum": 1 }
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "else": {
         "not": { "required": ["mutation_testing"] }

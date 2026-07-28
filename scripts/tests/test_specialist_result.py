@@ -16,6 +16,8 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+
+from jsonschema import Draft202012Validator
 from contextlib import redirect_stdout
 from unittest import mock
 
@@ -301,6 +303,10 @@ class SpecialistResultTests(unittest.TestCase):
         }]
 
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
+        self.payload["artifacts"][0]["kind"] = "mock-only"
+        mock_errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("mock/fake" in error for error in mock_errors))
+        self.payload["artifacts"][0]["kind"] = "api-contract"
         self.payload["checks"][0]["required"] = False
         errors = validate_specialist_result(self.payload, self.context)
         self.assertTrue(any("required=true" in error for error in errors))
@@ -572,6 +578,42 @@ class SpecialistResultTests(unittest.TestCase):
             "report_sha256": sha256_file(report),
         }
         self.assertEqual([], validate_specialist_result(payload, self.context))
+
+    def test_zero_mutants_unverified_matches_schema_but_cannot_pass(self) -> None:
+        """PIT 未配置时 0 mutants 可诚实 UNVERIFIED，但不能伪装成 PASS。"""
+        report = self._mutation_report()
+        payload = self._test_and_fix_payload()
+        payload["conclusion"] = "UNVERIFIED"
+        payload["mutation_testing"] = {
+            "producer": "pitest",
+            "languages": ["KOTLIN"],
+            "target_classes": ["com.sample.Feature"],
+            "mutators": ["MATH"],
+            "generated_mutants": 0,
+            "killed": 0,
+            "survived": 0,
+            "killed_by_obligation": {},
+            "survival_blocked": [],
+            "report_path": str(report),
+            "report_sha256": sha256_file(report),
+        }
+        schema_path = (
+            SCRIPTS_DIR.parent
+            / "android-implement-and-verify"
+            / "references"
+            / "specialist-result.schema.json"
+        )
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        self.assertEqual([], validate_specialist_result(payload, self.context))
+        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
+
+        payload["conclusion"] = "PASS"
+        self.assertTrue(any(
+            "至少一个变异" in error
+            for error in validate_specialist_result(payload, self.context)
+        ))
+        self.assertNotEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
 
     def test_mutation_falsified_counts_blocked(self) -> None:
         """验证造假把 survived 改 0 但报告实际有存活时被交叉核对拦截。"""

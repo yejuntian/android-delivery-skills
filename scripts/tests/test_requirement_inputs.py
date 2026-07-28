@@ -20,7 +20,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
-from ..requirement_inputs import requirement_inputs_digest  # noqa: E402
+from ..requirement_inputs import (  # noqa: E402
+    RequirementInputError,
+    requirement_inputs_digest,
+    validate_requirement_input_boundaries,
+)
 
 
 class RequirementInputsTests(unittest.TestCase):
@@ -127,6 +131,19 @@ class RequirementInputsTests(unittest.TestCase):
             impact_radius_sha256="d" * 64,
         )
         self.assertNotEqual(first, second)
+
+    def test_output_directory_cannot_be_used_as_ui_input(self) -> None:
+        """验证截图输入不能指向运行时 evidence 输出目录。"""
+        config = {**self.config, "ui": {**self.config["ui"], "directory": "evidence/ui"}}
+
+        with self.assertRaisesRegex(RequirementInputError, "与运行输出目录重叠"):
+            validate_requirement_input_boundaries(config, self.config_path)
+
+    def test_read_only_ui_input_directory_is_allowed(self) -> None:
+        """验证独立只读参考目录不受输出边界门禁影响。"""
+        config = {**self.config, "ui": {**self.config["ui"], "directory": "ui/reference"}}
+
+        validate_requirement_input_boundaries(config, self.config_path)
 
 
 if __name__ == "__main__":

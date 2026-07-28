@@ -77,6 +77,44 @@ class TestMappingTests(unittest.TestCase):
         }
         self.assertEqual([], validate_test_mapping(mapping, make_snapshot(self.obligations)))
 
+    def test_current_mapping_rejects_stale_manual_reason(self) -> None:
+        """CURRENT 不能继续携带要求重新登记的过期说明。"""
+        mapping = {
+            "version": MAPPING_VERSION,
+            "mappings": [
+                {
+                    "obligation_id": item["id"],
+                    "obligation_sha256": item["sha256"],
+                    "test_ids": [f"FeatureTest#t{index}"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": "需求已变化，请重新登记测试" if index == 1 else None,
+                }
+                for index, item in enumerate(self.obligations, start=1)
+            ],
+        }
+
+        errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
+        self.assertTrue(any("仍表示映射过期" in error for error in errors))
+
+    def test_template_test_cannot_cover_business_obligations(self) -> None:
+        """Android Studio 默认模板测试不能作为业务义务证据。"""
+        mapping = {
+            "version": MAPPING_VERSION,
+            "mappings": [
+                {
+                    "obligation_id": item["id"],
+                    "obligation_sha256": item["sha256"],
+                    "test_ids": ["example.ExampleUnitTest#addition_isCorrect"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": None,
+                }
+                for item in self.obligations
+            ],
+        }
+
+        errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
+        self.assertTrue(any("无业务语义的模板测试" in error for error in errors))
+
     def test_revision_marks_changed_obligations_stale(self) -> None:
         """义务 sha256 变化后，脚本自动把对应登记刷新为 STALE。"""
         mapping_path = self.temp_root / "test-mapping.json"

@@ -354,7 +354,7 @@ class RequirementSnapshotTests(unittest.TestCase):
     def test_changed_requirement_confirmation_requires_matching_init(self) -> None:
         """需求变化后跳过 init 时不能直接确认，读取同一 SHA 后才放行。"""
         original = bdd_requirement(result="显示错误")
-        changed = bdd_requirement(result="显示错误并允许重试")
+        changed = bdd_requirement(result="显示重试入口")
         write_requirement_snapshot(
             self.snapshot, self.requirement, original, requirement_id="baseline-1",
         )
@@ -1057,7 +1057,7 @@ class RequirementSnapshotTests(unittest.TestCase):
     def test_repeated_init_reports_change_without_deleting_baseline(self) -> None:
         """验证编码中重复读取需求会输出增量上下文，并完整保留原 Git 基线。"""
         original = bdd_requirement(result="显示登录错误")
-        changed = bdd_requirement(result="显示登录错误并允许点击重试")
+        changed = bdd_requirement(result="显示登录重试入口")
         self.requirement.write_text(changed, encoding="utf-8")
         write_requirement_snapshot(self.snapshot, self.requirement, original)
         traceability = self.requirement_dir / "test-cases" / "traceability.md"
@@ -1084,7 +1084,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertEqual('{"id":"keep-me"}\n', self.baseline.read_text(encoding="utf-8"))
         text = output.getvalue()
         self.assertIn("需求变化候选", text)
-        self.assertIn("+Then 显示登录错误并允许点击重试", text)
+        self.assertIn("+Then 显示登录重试入口", text)
         self.assertIn("BDD-001", text)
         self.assertNotIn("COVERED_AUTOMATED", text)
         self.assertIn("当前正文：存在未确认变化", text)

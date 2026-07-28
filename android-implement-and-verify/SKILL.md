@@ -80,7 +80,7 @@ description: |
 
 ### 需求拆细铁律
 
-- `requirement.md`（或 docx 转写的 md）使用场景级 BDD：每个 `### BDD-### 场景名称` 必须包含 Given/When/Then。独立触发、异常和边界拆成独立场景；同一触发下不可分割的结果可用 And 表达。
+- `requirement.md`（或 docx 转写的 md）使用场景级 BDD：每个 `### BDD-### 场景名称` 必须包含 Given/When/Then。独立触发、异常和边界拆成独立场景；同一触发下多个验收结果使用结构化 `Then:` 列表表达，例如 `- visible_state: 显示失败状态`，不得用自由文本或 `And` 隐藏多个结果。
 - 信息不足的字段、文案、接口、数据来源必须进 requirement.md 的"待确认"段追问，不得脑补后写进需求说明。
 - 模板在 `android-implement-and-verify/templates/requirement.md`。`## 待确认` 必须存在，确认前只能写 `- 无`；否则后续命令阻断。
 

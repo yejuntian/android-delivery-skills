@@ -77,12 +77,47 @@ class RequirementRevisionGenerationTests(unittest.TestCase):
         unchanged = build_confirmed_revision_manifest(snapshot, original)
         changed = build_confirmed_revision_manifest(
             snapshot,
-            requirement("页面显示错误提示并保留账号输入"),
+            requirement("页面显示新的错误提示"),
         )
 
         self.assertEqual("UNCHANGED", unchanged["changes"][0]["change_type"])
         self.assertEqual("CHANGED", changed["changes"][0]["change_type"])
         self.assertFalse(changed["document_changed"])
+
+    def test_persists_structured_then_atoms_and_changes_digest(self) -> None:
+        original = requirement(
+            "页面显示错误提示",
+        )
+        snapshot = self._snapshot(original)
+        snapshot, _ = apply_requirement_revision(
+            self.snapshot_path,
+            self.requirement_path,
+            original,
+            build_confirmed_revision_manifest(snapshot, original),
+        )
+        structured = requirement(
+            ":\n- visible_state: 显示错误提示\n- retry_action: Retry 可点击",
+        ).replace("Then :", "Then:")
+
+        manifest = build_confirmed_revision_manifest(snapshot, structured)
+        self.assertEqual("CHANGED", manifest["changes"][0]["change_type"])
+        self.assertEqual(
+            ["BDD-001.visible_state", "BDD-001.retry_action"],
+            [item["id"] for item in manifest["changes"][0]["atoms"]],
+        )
+
+        self.requirement_path.write_text(structured, encoding="utf-8")
+        updated, applied = apply_requirement_revision(
+            self.snapshot_path,
+            self.requirement_path,
+            structured,
+            manifest,
+        )
+        self.assertTrue(applied)
+        self.assertEqual(
+            ["BDD-001.visible_state", "BDD-001.retry_action"],
+            [item["id"] for item in updated["obligations"][0]["atoms"]],
+        )
 
     def test_marks_non_bdd_requirement_change(self) -> None:
         original = requirement("页面显示错误提示")

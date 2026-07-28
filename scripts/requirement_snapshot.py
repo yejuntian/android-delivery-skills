@@ -22,6 +22,7 @@ from .bdd_scenarios import (
     BddScenarioError,
     bdd_ids_in_text,
     extract_bdd_scenarios,
+    is_bdd_atom_id,
     is_bdd_id,
     non_bdd_content,
     validate_requirement_readiness,
@@ -50,13 +51,27 @@ def requirement_digest(content: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def obligation_digest(identifier: str, text: str, required: bool) -> str:
-    """计算 BDD 场景语义摘要，使同一 ID 的行为变化可以被机器识别。"""
+def obligation_digest(
+    identifier: str,
+    text: str,
+    required: bool,
+    atoms: list[dict[str, str]] | None = None,
+) -> str:
+    """计算场景及结构化验收项摘要，使原子结果变化自动失效。"""
     normalized = {
         "id": identifier,
         "text": text.replace("\r\n", "\n").replace("\r", "\n").strip(),
         "required": required,
     }
+    if atoms:
+        normalized["atoms"] = [
+            {
+                "id": atom["id"],
+                "key": atom["key"],
+                "text": atom["text"].strip(),
+            }
+            for atom in atoms
+        ]
     encoded = json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -72,6 +87,7 @@ def requirement_summary_digest(snapshot: dict[str, Any]) -> str:
                 "text": item.get("text"),
                 "required": item.get("required"),
                 "sha256": item.get("sha256"),
+                "atoms": item.get("atoms") or [],
             }
             for item in snapshot.get("obligations", [])
         ],
@@ -159,7 +175,7 @@ def _upgrade_v1(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_obligation(item: Any, label: str) -> dict[str, Any]:
-    """校验并规范化一个已确认 BDD 场景，补充稳定语义摘要。"""
+    """校验一个 BDD 场景及其结构化验收项，补充稳定语义摘要。"""
     if not isinstance(item, dict):
         raise RequirementSnapshotError(f"{label} 必须是 object")
     identifier = item.get("id")
@@ -172,7 +188,42 @@ def _validate_obligation(item: Any, label: str) -> dict[str, Any]:
     if not isinstance(required, bool):
         raise RequirementSnapshotError(f"{label}.required 必须是 boolean")
     normalized = {"id": identifier, "text": text.strip(), "required": required}
-    normalized["sha256"] = obligation_digest(identifier, normalized["text"], required)
+    atoms = item.get("atoms")
+    if atoms is not None:
+        if not isinstance(atoms, list) or not atoms:
+            raise RequirementSnapshotError(f"{label}.atoms 必须是非空数组")
+        normalized_atoms: list[dict[str, str]] = []
+        seen_atom_ids: set[str] = set()
+        for atom_index, atom in enumerate(atoms):
+            atom_label = f"{label}.atoms[{atom_index}]"
+            if not isinstance(atom, dict):
+                raise RequirementSnapshotError(f"{atom_label} 必须是 object")
+            atom_id = atom.get("id")
+            key = atom.get("key")
+            atom_text = atom.get("text")
+            if not is_bdd_atom_id(atom_id, scenario_id=identifier):
+                raise RequirementSnapshotError(
+                    f"{atom_label}.id 必须符合 {identifier}.key"
+                )
+            if not isinstance(key, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", key):
+                raise RequirementSnapshotError(f"{atom_label}.key 格式无效")
+            if not isinstance(atom_text, str) or not atom_text.strip():
+                raise RequirementSnapshotError(f"{atom_label}.text 必须是非空字符串")
+            if atom_id in seen_atom_ids:
+                raise RequirementSnapshotError(f"{label}.atoms 存在重复 id: {atom_id}")
+            seen_atom_ids.add(atom_id)
+            normalized_atoms.append({
+                "id": atom_id,
+                "key": key,
+                "text": atom_text.strip(),
+            })
+        normalized["atoms"] = normalized_atoms
+    normalized["sha256"] = obligation_digest(
+        identifier,
+        normalized["text"],
+        required,
+        normalized.get("atoms"),
+    )
     return normalized
 
 
@@ -274,21 +325,27 @@ def build_confirmed_revision_manifest(
         text = scenario["text"]
         old = previous.get(identifier)
         if old is None:
-            changes.append({
+            change = {
                 "id": identifier,
                 "change_type": "ADDED",
                 "decision": "CONFIRMED",
                 "text": text,
                 "required": True,
-            })
-        elif obligation_digest(identifier, text, True) != old.get("sha256"):
-            changes.append({
+            }
+            if scenario.get("atoms"):
+                change["atoms"] = scenario["atoms"]
+            changes.append(change)
+        elif obligation_digest(identifier, text, True, scenario.get("atoms")) != old.get("sha256"):
+            change = {
                 "id": identifier,
                 "change_type": "CHANGED",
                 "decision": "CONFIRMED",
                 "text": text,
                 "required": True,
-            })
+            }
+            if scenario.get("atoms"):
+                change["atoms"] = scenario["atoms"]
+            changes.append(change)
         else:
             changes.append({
                 "id": identifier,
@@ -338,16 +395,23 @@ def _normalize_change(item: Any, index: int) -> dict[str, Any]:
         "change_type": change_type,
         "decision": decision,
     }
-    for field in ("text", "disposition", "replacement_id", "reason"):
+    for field in ("text", "disposition", "replacement_id", "reason", "atoms"):
         if field in item:
             normalized[field] = item[field]
     if "required" in item:
         normalized["required"] = item["required"]
     if change_type in {"ADDED", "CHANGED"}:
-        _validate_obligation(
-            {"id": identifier, "text": item.get("text"), "required": item.get("required")},
+        validated = _validate_obligation(
+            {
+                "id": identifier,
+                "text": item.get("text"),
+                "required": item.get("required"),
+                "atoms": item.get("atoms"),
+            },
             label,
         )
+        if "atoms" in validated:
+            normalized["atoms"] = validated["atoms"]
     if decision in {"PENDING", "REJECTED", "CONFLICT"}:
         if not isinstance(item.get("reason"), str) or not item["reason"].strip():
             raise RequirementSnapshotError(f"{label}.reason 必须说明待定、拒绝或冲突原因")
@@ -477,6 +541,7 @@ def _apply_changes(
                     "id": identifier,
                     "text": item.get("text"),
                     "required": item.get("required"),
+                    "atoms": item.get("atoms"),
                 },
                 f"change {identifier}",
             )

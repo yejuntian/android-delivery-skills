@@ -34,6 +34,59 @@ class BddScenarioTests(unittest.TestCase):
         scenarios = validate_requirement_readiness(content)
 
         self.assertEqual(["BDD-001"], [item["id"] for item in scenarios])
+        self.assertEqual([], scenarios[0]["atoms"])
+
+    def test_generates_atoms_from_structured_then(self) -> None:
+        content = requirement(
+            "### BDD-001 分类请求失败\nGiven 用户位于分类页\nWhen 分类请求失败\n"
+            "Then:\n"
+            "- visible_state: 显示失败状态\n"
+            "- retry_action: Retry 可点击\n"
+            "- content_state: 保留已有列表"
+        )
+
+        scenario = extract_bdd_scenarios(content)[0]
+
+        self.assertEqual(
+            ["BDD-001.visible_state", "BDD-001.retry_action", "BDD-001.content_state"],
+            [item["id"] for item in scenario["atoms"]],
+        )
+
+    def test_rejects_compound_free_text_then(self) -> None:
+        content = requirement(
+            "### BDD-001 分类请求失败\nGiven 用户位于分类页\nWhen 分类请求失败\n"
+            "Then 显示失败状态并允许点击 Retry"
+        )
+
+        with self.assertRaisesRegex(BddScenarioError, "结构化"):
+            extract_bdd_scenarios(content)
+
+    def test_rejects_malformed_structured_then(self) -> None:
+        content = requirement(
+            "### BDD-001 分类请求失败\nGiven 用户位于分类页\nWhen 分类请求失败\n"
+            "Then:\n- 显示失败状态"
+        )
+
+        with self.assertRaisesRegex(BddScenarioError, "key: value"):
+            extract_bdd_scenarios(content)
+
+    def test_rejects_and_as_hidden_second_result(self) -> None:
+        content = requirement(
+            "### BDD-001 分类请求失败\nGiven 用户位于分类页\nWhen 分类请求失败\n"
+            "Then 显示失败状态\nAnd Retry 可点击"
+        )
+
+        with self.assertRaisesRegex(BddScenarioError, "And"):
+            extract_bdd_scenarios(content)
+
+    def test_rejects_unstructured_continuation_after_then(self) -> None:
+        content = requirement(
+            "### BDD-001 分类请求失败\nGiven 用户位于分类页\nWhen 分类请求失败\n"
+            "Then 显示失败状态\n- Retry 可点击"
+        )
+
+        with self.assertRaisesRegex(BddScenarioError, "未结构化"):
+            extract_bdd_scenarios(content)
 
     def test_extracts_multiple_scenarios(self) -> None:
         content = requirement(

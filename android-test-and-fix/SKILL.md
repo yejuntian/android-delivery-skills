@@ -63,13 +63,13 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 
 ## 项目已有静态门禁发现与执行
 
-完整交付阶段必须根据最终 diff 自动发现目标项目已经具备的 Kotlin、Java 和 Android 静态能力，只执行与受影响语言、模块和 variant 相符的现有任务或配置。局部迭代复用已确认能力，只为本轮代码选择必要的最小编译；真实 task 未知或 Gradle/模块/variant 变化时才重新发现。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
+完整交付阶段只执行与最终 diff、受影响语言、模块和 variant 相符的现有任务或配置。局部迭代复用已确认命令，只为本轮代码选择必要的最小编译；已确认命令存在且 Gradle/模块/variant 未变化时不得重新探测。真实 task 或静态门禁来源缺失且本模块必须确认 Gradle 任务时，才读取 `references/gradle-task-discovery.md`。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
 
-先执行 `../scripts/android_project_capabilities.py --config <配置>` 获取原始 Gradle task、模块、variant，以及构建脚本、静态配置和 CI 中已有的工具信号。该结果只证明能力存在，不证明任务已经执行或通过；`static_analysis.discovery_truncated=true` 或发现器失败时，记录能力损失并只读核对需求影响范围内的明确配置，禁止猜 task 名或宣称全仓发现完整。
+命令来源优先级：已确认实施计划、`test-cases/impact-radius.json` 的 `expected_tests`、`test-cases/test-mapping.json`、本轮执行收据、CI、README、项目脚本、用户确认。前序文件已经覆盖当前需求修订时，直接读取复用；不得为了“再确认”重复执行耗时发现。
 
 执行顺序：
 
-1. **Kotlin/Java 编译**：读取项目模块、variant 和 Gradle task，优先执行受影响模块已有的 Kotlin/Java compile task；无法可靠确定独立 compile task 时，使用项目已有最小 assemble/test task 覆盖编译，不猜任务名造结果。
+1. **Kotlin/Java 编译**：读取已确认命令或按需发现结果，优先执行受影响模块已有的 Kotlin/Java compile task；无法可靠确定独立 compile task 时，使用项目已有最小 assemble/test task 覆盖编译，不猜任务名造结果。
 2. **Android Lint**：存在 Android 模块和对应 lint task 时执行受影响范围的现有 lint；最终机器证据保存本轮 XML 或 SARIF，HTML 可另存给人查看。收据解析 Fatal/Error，不能依赖 `abortOnError` 的进程退出码造绿。
 3. **语言专项**：Kotlin 仅执行项目已配置的 detekt；Java 仅执行项目已配置的 Error Prone、NullAway、SpotBugs 或 Infer。遵守现有版本、task、config 和扫描范围，不临时生成规则集。
 4. **质量任务**：PMD、Checkstyle 等格式或风格任务只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
@@ -234,7 +234,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 
 不得写死命令。先识别项目模块和已有命令，再选择最小验证：
 
-- 环境识别：例如 `which adb`、`adb devices`、`./gradlew tasks --all`、Android CLI 可用性检查。
+- 环境识别：例如 `which adb`、`adb devices`、Android CLI 可用性检查；Gradle 任务未知时按本模块 reference 处理。
 - 构建：例如 `./gradlew :app:assembleDebug`。
 - 单测：例如 `./gradlew :app:testDebugUnitTest`。
 - 指定测试：例如 `--tests "完整类名"`。

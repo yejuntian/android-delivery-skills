@@ -30,6 +30,12 @@ LEGACY_CONSTRAINT_PROTECTION_RULE = "旧约束保护清单"
 MAINTENANCE_GATE_COMMAND = "python3 scripts/validate_maintenance.py"
 MAINTENANCE_HOOK_INSTALL_COMMAND = "python3 scripts/install_maintenance_hook.py"
 FAST_EVAL_COMMAND = "python3 evals/runners/run_evals.py --suite fast"
+GRADLE_TASK_DISCOVERY_REFERENCE = (
+    REPOSITORY_ROOT
+    / "android-test-and-fix"
+    / "references"
+    / "gradle-task-discovery.md"
+)
 DOCUMENTATION_SYNC_GUIDES = [
     REPOSITORY_ROOT / "references" / "open-source-design-rationale.md",
 ]
@@ -144,6 +150,22 @@ class SkillRuleOwnershipTests(unittest.TestCase):
                 self.assertIn("本次新增目标", guide_text)
                 self.assertIn(LEGACY_CONSTRAINT_PROTECTION_RULE, guide_text)
                 self.assertIn("不得为适配新增目标删弱旧约束", guide_text)
+
+    def test_gradle_task_discovery_is_loaded_only_by_specific_module(self) -> None:
+        """验证 Gradle task 发现细节不进入总入口或模块主流程。"""
+        implement_text = read_text(REPOSITORY_ROOT / "android-implement-and-verify" / "SKILL.md")
+        test_text = read_text(REPOSITORY_ROOT / "android-test-and-fix" / "SKILL.md")
+        discovery_text = read_text(GRADLE_TASK_DISCOVERY_REFERENCE)
+
+        self.assertNotIn("android_project_capabilities.py", implement_text)
+        self.assertNotIn("android_project_capabilities.py", test_text)
+        self.assertNotIn("tasks --all", implement_text)
+        self.assertNotIn("tasks --all", test_text)
+        self.assertIn("已确认命令存在", test_text)
+        self.assertIn("references/gradle-task-discovery.md", test_text)
+        self.assertIn("android_project_capabilities.py", discovery_text)
+        self.assertIn("先读文件，不重跑发现", discovery_text)
+        self.assertIn("不得重新发现", discovery_text)
 
     def test_repository_ai_rules_require_project_validation(self) -> None:
         """验证仓库级 AI 约束要求执行子项目声明的验证命令。"""

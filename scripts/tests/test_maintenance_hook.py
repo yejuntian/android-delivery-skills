@@ -15,11 +15,19 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 import unittest
 from unittest import mock
 
-from ..install_maintenance_hook import HOOK_MARKER, install_hook
-from ..maintenance_pre_commit import decide_validation
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+# 同时支持 IDE 包测试、`python -m` 和直接运行当前测试文件。
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPTS_DIR.parent))
+    __package__ = "scripts.tests"
+
+from ..install_maintenance_hook import HOOK_MARKER, install_hook  # noqa: E402
+from ..maintenance_pre_commit import decide_validation  # noqa: E402
 
 
 class MaintenancePreCommitTests(unittest.TestCase):

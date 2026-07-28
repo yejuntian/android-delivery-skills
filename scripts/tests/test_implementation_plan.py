@@ -14,17 +14,25 @@ import json
 from pathlib import Path
 import stat
 import tempfile
+import sys
 import unittest
 
-from ..impact_radius import impact_radius_path
-from ..implementation_plan import (
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+# 同时支持 IDE 包测试、`python -m` 和直接运行当前测试文件。
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPTS_DIR.parent))
+    __package__ = "scripts.tests"
+
+from ..impact_radius import impact_radius_path  # noqa: E402
+from ..implementation_plan import (  # noqa: E402
     ImplementationPlanError,
     confirm_implementation_plan,
     implementation_plan_path,
     plan_confirmation_receipt_path,
     validate_plan_confirmation,
 )
-from ..requirement_snapshot import obligation_digest, requirement_digest, requirement_summary_digest
+from ..requirement_snapshot import obligation_digest, requirement_digest, requirement_summary_digest  # noqa: E402
 
 
 def valid_plan(extra: str = "") -> str:

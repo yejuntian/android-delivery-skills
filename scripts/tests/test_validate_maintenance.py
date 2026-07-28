@@ -16,9 +16,17 @@ import io
 from pathlib import Path
 import subprocess
 import unittest
+import sys
 from unittest import mock
 
-from ..validate_maintenance import planned_commands, run_validation
+
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+# 同时支持 IDE 包测试、`python -m` 和直接运行当前测试文件。
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(SCRIPTS_DIR.parent))
+    __package__ = "scripts.tests"
+
+from ..validate_maintenance import planned_commands, run_validation  # noqa: E402
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]

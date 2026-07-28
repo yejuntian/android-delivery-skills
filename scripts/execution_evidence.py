@@ -426,9 +426,11 @@ def validate_execution_receipt(
     expected_sha256: str,
     evidence: dict[str, Any],
     context: dict[str, Any],
+    allow_failure: bool = False,
 ) -> list[str]:
-    """复核收据、日志和报告摘要，确保自动证据属于当前需求和最终代码。"""
+    """复核收据、日志和报告摘要；可选接受真实失败作为 FAIL 证据。"""
     errors: list[str] = []
+    failure_observed = False
     target = Path(path).expanduser().resolve()
     try:
         actual_receipt_sha = sha256_file(target)
@@ -476,8 +478,15 @@ def validate_execution_receipt(
         r"[a-f0-9]{64}", receipt["command_sha256"]
     ):
         errors.append(f"自动证据 {evidence.get('id')} 的原始命令摘要无效")
-    if receipt.get("timed_out") is not False or receipt.get("exit_code") != 0:
+    if receipt.get("timed_out") is not False:
         errors.append(f"自动证据 {evidence.get('id')} 的命令未正常完成")
+    receipt_exit_code = receipt.get("exit_code")
+    if not isinstance(receipt_exit_code, int) or isinstance(receipt_exit_code, bool):
+        errors.append(f"自动证据 {evidence.get('id')} 的 exit_code 无效")
+    elif receipt_exit_code != 0:
+        failure_observed = True
+        if not allow_failure:
+            errors.append(f"自动证据 {evidence.get('id')} 的命令未正常完成")
     if not isinstance(receipt.get("timeout_seconds"), int) or receipt["timeout_seconds"] <= 0:
         errors.append(f"自动证据 {evidence.get('id')} 的 timeout_seconds 无效")
     try:
@@ -538,12 +547,24 @@ def validate_execution_receipt(
             executed = junit.get("executed")
             if isinstance(executed, int):
                 junit_executed += executed
-            if (
-                junit.get("failures", 0) > 0
-                or junit.get("errors", 0) > 0
+            junit_blocking = (
+                (
+                    isinstance(junit.get("failures"), int)
+                    and not isinstance(junit.get("failures"), bool)
+                    and junit["failures"] > 0
+                )
+                or (
+                    isinstance(junit.get("errors"), int)
+                    and not isinstance(junit.get("errors"), bool)
+                    and junit["errors"] > 0
+                )
                 or not isinstance(executed, int)
+                or isinstance(executed, bool)
                 or executed <= 0
-            ):
+            )
+            if junit_blocking:
+                failure_observed = True
+            if junit_blocking and not allow_failure:
                 errors.append(f"自动证据 {evidence.get('id')} 的 JUnit 报告存在失败或零执行: {report_path}")
             actual_junit = _junit_summary(report_path)
             if actual_junit != junit:
@@ -590,12 +611,15 @@ def validate_execution_receipt(
         junit_records == 0 or junit_executed != receipt_test_count
     ):
         errors.append(f"自动证据 {evidence.get('id')} 的测试数没有匹配的 JUnit 汇总")
-    if gate_id in JUNIT_REQUIRED_GATES and (
+    junit_required_but_missing = gate_id in JUNIT_REQUIRED_GATES and (
         junit_records == 0
         or not isinstance(receipt_test_count, int)
         or isinstance(receipt_test_count, bool)
         or receipt_test_count <= 0
-    ):
+    )
+    if junit_required_but_missing:
+        failure_observed = True
+    if junit_required_but_missing and not allow_failure:
         errors.append(
             f"自动证据 {evidence.get('id')} 的 {gate_id} gate 缺少实际执行大于零的 JUnit 报告"
         )
@@ -622,14 +646,21 @@ def validate_execution_receipt(
         if lint_records == 0:
             errors.append(f"自动证据 {evidence.get('id')} 缺少 Android Lint XML/SARIF 机器报告")
         if lint_blocking > 0:
-            errors.append(f"自动证据 {evidence.get('id')} 的 Android Lint 报告仍有 Fatal/Error")
+            failure_observed = True
+            if not allow_failure:
+                errors.append(f"自动证据 {evidence.get('id')} 的 Android Lint 报告仍有 Fatal/Error")
     if gate_id == "android-static-analysis":
         if static_records == 0:
             errors.append(f"自动证据 {evidence.get('id')} 缺少可解析的 SARIF 机器报告")
         if static_blocking > 0:
-            errors.append(
-                f"自动证据 {evidence.get('id')} 的静态分析报告仍有新增、更新或来源不明 Error"
-            )
+            failure_observed = True
+            if not allow_failure:
+                errors.append(
+                    f"自动证据 {evidence.get('id')} 的静态分析报告仍有新增、更新或来源不明 Error"
+                )
+
+    if allow_failure and not failure_observed:
+        errors.append(f"自动证据 {evidence.get('id')} 未包含可复核的失败结果")
 
     for log_name in ("stdout", "stderr"):
         record = receipt.get(log_name)

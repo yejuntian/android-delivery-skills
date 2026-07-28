@@ -268,6 +268,39 @@ class StaticAnalysisTests(unittest.TestCase):
         )
         self.assertIn("SUPPRESSION", {item["kind"] for item in audit["control_changes"]})
 
+    def test_control_audit_uses_delivery_snapshot_exclusions(self) -> None:
+        """需求文档和审计产物不能改变控制面审计绑定的代码快照。"""
+        subprocess.run(["git", "init", "-q"], cwd=self.project, check=True)
+        subprocess.run(["git", "config", "user.name", "Static Test"], cwd=self.project, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "static@example.invalid"],
+            cwd=self.project,
+            check=True,
+        )
+        source = self.project / "Feature.kt"
+        source.write_text("class Feature\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.project, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "baseline"], cwd=self.project, check=True)
+        baseline_path = Path(self.temp_dir.name) / "baseline.json"
+        write_baseline(self.project, baseline_path)
+        document = self.project / "document" / "audit" / "quality.yml"
+        document.parent.mkdir(parents=True)
+        document.write_text("exclude: app/src/**\n", encoding="utf-8")
+
+        audit = build_control_audit(
+            self.project,
+            baseline_path,
+            exclude_paths={"document"},
+        )
+
+        expected = current_delivery_snapshot(
+            self.project,
+            baseline_path,
+            exclude_paths={"document"},
+        )
+        self.assertEqual(expected["snapshot_sha256"], audit["snapshot_sha256"])
+        self.assertEqual([], audit["control_changes"])
+
     def test_build_control_audit_rejects_concurrent_code_change(self) -> None:
         """验证多窗口在审计期间改代码时不会把旧候选绑定到新摘要。"""
         baseline_path = Path(self.temp_dir.name) / "baseline.json"

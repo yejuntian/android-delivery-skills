@@ -311,6 +311,39 @@ class SpecialistResultTests(unittest.TestCase):
         errors = validate_specialist_result(self.payload, self.context)
         self.assertTrue(any("required=true" in error for error in errors))
 
+    def test_api_contract_pass_requires_complete_profile_status(self) -> None:
+        """正式契约资料仍为 partial 时，结构完整的 API 结果也不能 PASS。"""
+        contract = self.root / "api-contract.md"
+        contract.write_text("GET /user/list response schema\n", encoding="utf-8")
+        self.payload["skill"] = API_CONTRACT_SKILL
+        self.payload["provenance"] = {"skill": API_CONTRACT_SKILL}
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = [{
+            "id": API_CONTRACT_CAPABILITY_ID,
+            "required": True,
+            "status": "PASS",
+        }]
+        self.payload["checks"] = [
+            {
+                "id": check_id,
+                "required": True,
+                "status": "PASS",
+                "summary": "已核对正式契约。",
+            }
+            for check_id in sorted(API_CONTRACT_CHECK_IDS)
+        ]
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.payload["artifacts"] = [{
+            "path": str(contract),
+            "sha256": sha256_file(contract),
+            "kind": "api-contract",
+        }]
+        partial_context = {**self.context, "api_contract_status": "partial"}
+
+        errors = validate_specialist_result(self.payload, partial_context)
+
+        self.assertTrue(any("api.status=confirmed" in error for error in errors))
+
     def test_rejects_stale_context_and_changed_artifact(self) -> None:
         """验证代码变化或证据文件被改写后旧专项结果立即失效。"""
         stale_context = copy.deepcopy(self.context)

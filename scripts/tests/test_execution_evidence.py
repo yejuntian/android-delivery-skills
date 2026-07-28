@@ -483,6 +483,63 @@ class ExecutionEvidenceTests(unittest.TestCase):
             ),
         )
 
+    def test_lint_failure_receipt_is_valid_only_as_failure_evidence(self) -> None:
+        """验证可复核的 Lint Error 收据可证明 FAIL，但不能证明 PASS。"""
+        build_dir = self.repo / "build"
+        build_dir.mkdir(exist_ok=True)
+        wrapper = build_dir / "gradlew"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            "mkdir -p reports\n"
+            "printf '<issues><issue id=\"X\" severity=\"Error\"/></issues>' "
+            "> reports/lint-results.xml\n",
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o700)
+        report = build_dir / "reports" / "lint-results.xml"
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id="E-LINT-FAIL",
+            gate_id="android-lint",
+            command=["./gradlew", ":app:lintDebug"],
+            cwd=build_dir,
+            timeout_seconds=30,
+            reports=[report],
+            context=self.context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=self.receipt_dir,
+        )
+        evidence = {
+            "id": "E-LINT-FAIL",
+            "gate_id": "android-lint",
+            "command": receipt["command"],
+            "exit_code": 0,
+            "executed_tests": None,
+            "report_paths": [receipt["reports"][0]["path"]],
+            "obligation_test_cases": {},
+        }
+
+        self.assertEqual(3, exit_code)
+        self.assertEqual(
+            [],
+            validate_execution_receipt(
+                receipt_path,
+                sha256_file(receipt_path),
+                evidence,
+                self.context,
+                allow_failure=True,
+            ),
+        )
+        self.assertTrue(any(
+            "仍有 Fatal/Error" in error
+            for error in validate_execution_receipt(
+                receipt_path,
+                sha256_file(receipt_path),
+                evidence,
+                self.context,
+            )
+        ))
+
     def test_static_sarif_produces_stable_machine_receipt(self) -> None:
         """验证项目已有静态工具可以通过统一 SARIF 形成独立、可复核的自动证据。"""
         report = self._write_static_sarif("warning")

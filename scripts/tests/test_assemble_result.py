@@ -271,16 +271,66 @@ obligations:
         build_ev = next(e for e in written["evidence"] if e["id"] == "E-BUILD")
         self.assertNotIn("executed_tests", build_ev)
 
-        # obligation_test_cases 自动从 junit 提取
+        # obligation_test_cases 只保留当前义务映射的 testcase
         self.assertIn("BDD-001", test_ev["obligation_test_cases"])
         self.assertEqual(
-            sorted(test_ev["obligation_test_cases"]["BDD-001"]),
-            ["FeatureTest#regression", "FeatureTest#thenT1"],
+            test_ev["obligation_test_cases"]["BDD-001"],
+            ["FeatureTest#thenT1"],
         )
 
         # specialist 证据自动算了 sha
         diff_ev = next(e for e in written["evidence"] if e["id"] == "E-DIFF")
         self.assertTrue(diff_ev["specialist_result_sha256"])
+
+    def test_assemble_splits_shared_receipt_by_test_mapping(self) -> None:
+        """同一收据覆盖多个 BDD 时，每项只关联自己的测试。"""
+        self.context["expected_obligations"]["BDD-002"] = {
+            "required": True,
+            "sha256": "e" * 64,
+            "text": "保留回归行为",
+        }
+        self.context["test_mapping"]["BDD-002"] = {
+            "obligation_id": "BDD-002",
+            "obligation_sha256": "e" * 64,
+            "test_ids": ["FeatureTest#regression"],
+            "mapping_status": "CURRENT",
+            "manual_reason": None,
+        }
+        manifest = self._write_manifest()
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8") + "  BDD-002: [E-TEST]\n",
+            encoding="utf-8",
+        )
+
+        payload = assemble_delivery_result(manifest, self.context, self.root / "result.json")
+        test_evidence = next(item for item in payload["evidence"] if item["id"] == "E-TEST")
+
+        self.assertEqual(["FeatureTest#thenT1"], test_evidence["obligation_test_cases"]["BDD-001"])
+        self.assertEqual(["FeatureTest#regression"], test_evidence["obligation_test_cases"]["BDD-002"])
+        self.assertEqual([], validate_delivery_result(payload, self.context))
+
+    def test_assemble_preserves_failed_receipt_for_fail_gate(self) -> None:
+        """未完成报告可把失败收据直接绑定到对应 FAIL gate。"""
+        receipt_path = self.receipt_paths["E-BUILD"]
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["exit_code"] = 1
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        manifest = self._write_manifest()
+        manifest.write_text(
+            manifest.read_text(encoding="utf-8")
+            .replace("conclusion: FULL_PASS", "conclusion: INCOMPLETE")
+            .replace(
+                "obligations:\n",
+                "gates:\n  android-build:\n    status: FAIL\n    required: true\nobligations:\n",
+            ),
+            encoding="utf-8",
+        )
+
+        payload = assemble_delivery_result(manifest, self.context, self.root / "result.json")
+
+        self.assertEqual([], validate_delivery_result(payload, self.context))
+        build_gate = next(item for item in payload["gates"] if item["id"] == "android-build")
+        self.assertEqual("FAIL", build_gate["status"])
 
     def test_assemble_rejects_missing_manifest(self) -> None:
         """验证缺 evidence 数组时报清晰错误。"""

@@ -891,6 +891,11 @@ def validate_specialist_result(
             if item.get("required") is not True:
                 errors.append(f"API 契约专项检查 {check_id} 必须 required=true")
         if conclusion == "PASS":
+            api_status = context.get("api_contract_status") if context else None
+            if api_status is not None and api_status != "confirmed":
+                errors.append(
+                    f"API 契约资料状态为 {api_status}，只有 profile api.status=confirmed 才能标记 PASS"
+                )
             if not api_contract_capability or api_contract_capability.get("status") != "PASS":
                 errors.append("API 契约专项 PASS 必须有已通过的 api-contract 能力")
             if missing_api_checks:

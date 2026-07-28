@@ -442,9 +442,52 @@ class DeliveryGateTests(unittest.TestCase):
             ],
         }
 
+    def _set_receipt_exit_code(self, evidence_id: str, exit_code: int) -> None:
+        """同步修改夹具里的执行收据和自动证据退出码。"""
+        evidence = next(item for item in self.payload["evidence"] if item["id"] == evidence_id)
+        receipt_path = Path(evidence["receipt_path"])
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["exit_code"] = exit_code
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        evidence["exit_code"] = exit_code
+        evidence["receipt_sha256"] = sha256_file(receipt_path)
+
     def test_accepts_complete_fresh_result(self) -> None:
         """验证全部必需义务和门禁引用当前代码证据时允许通过。"""
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_failed_receipt_can_prove_matching_fail_gate(self) -> None:
+        """验证未完成报告可直接保留与当前 gate 匹配的真实失败收据。"""
+        self._set_receipt_exit_code("E-BUILD", 1)
+        self.payload["conclusion"] = "INCOMPLETE"
+        build_gate = next(gate for gate in self.payload["gates"] if gate["id"] == "android-build")
+        build_gate["status"] = "FAIL"
+
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_success_receipt_cannot_be_relabeled_as_fail(self) -> None:
+        """验证干净成功收据不能仅靠 gate 状态改写成失败证据。"""
+        self.payload["conclusion"] = "INCOMPLETE"
+        build_gate = next(gate for gate in self.payload["gates"] if gate["id"] == "android-build")
+        build_gate["status"] = "FAIL"
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("未包含可复核的失败结果" in error for error in errors))
+
+    def test_failed_receipt_cannot_prove_pass_gate_or_bdd_coverage(self) -> None:
+        """验证失败收据不能被 PASS gate 或 BDD 自动覆盖借用。"""
+        self._set_receipt_exit_code("E-TEST", 1)
+        self.payload["conclusion"] = "INCOMPLETE"
+        test_gate = next(
+            gate for gate in self.payload["gates"] if gate["id"] == "android-test-and-fix"
+        )
+        test_gate["status"] = "FAIL"
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("exit_code 必须为 0" in error for error in errors))
+        self.assertTrue(any("缺少自动执行证据" in error for error in errors))
 
     def test_out_of_scope_diff_blocks_passing_result(self) -> None:
         """验证最终 diff 超出影响半径时不能声明通过。"""
@@ -577,6 +620,20 @@ class DeliveryGateTests(unittest.TestCase):
         ]
         errors = validate_delivery_result(self.payload, self.context)
         self.assertTrue(any("登记了未执行的测试" in error for error in errors))
+
+    def test_automated_evidence_rejects_unmapped_testcase(self) -> None:
+        """验证自动证据不能把同一收据中的无关测试关联给当前 BDD。"""
+        self.payload["evidence"][0]["obligation_test_cases"]["BDD-001"].append(
+            "FeatureTest#regression"
+        )
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("自动证据关联了未登记测试" in error for error in errors))
+
+    def test_automated_coverage_requires_mapped_test_id(self) -> None:
+        """验证自动覆盖不能使用空 test_ids 绕过测试映射。"""
+        self.context["test_mapping"]["BDD-001"]["test_ids"] = []
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("自动覆盖但未登记测试 id" in error for error in errors))
 
     def test_requires_every_core_review_build_and_lint_gate(self) -> None:
         """验证 AI 不能通过省略质量、稳定性、构建或 lint 门禁缩短完整交付。"""

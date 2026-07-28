@@ -23,7 +23,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 
-from .config_paths import baseline_path_for_config, resolve_config_paths  # noqa: E402
+from .config_paths import (  # noqa: E402
+    baseline_path_for_config,
+    delivery_snapshot_exclusions,
+    resolve_config_paths,
+)
 from .delivery import DeliveryError, load_config  # noqa: E402
 from .git_changes import (  # noqa: E402
     GitChange,
@@ -352,13 +356,28 @@ def audit_control_changes(changes: Iterable[GitChange]) -> list[dict[str, str]]:
     return sorted(candidates.values(), key=lambda item: item["id"])
 
 
-def build_control_audit(project: str | Path, baseline_path: str | Path) -> dict[str, Any]:
+def build_control_audit(
+    project: str | Path,
+    baseline_path: str | Path,
+    *,
+    exclude_paths: set[str] | None = None,
+) -> dict[str, Any]:
     """生成绑定当前 Git 基线和代码摘要的控制面审计，不写文件或修改仓库。"""
     root = Path(project).expanduser().resolve()
     baseline = load_baseline(root, baseline_path)
-    snapshot_before = current_delivery_snapshot(root, baseline_path)
+    excluded = {str(path).replace("\\", "/").strip("/") for path in (exclude_paths or set())}
+    snapshot_before = current_delivery_snapshot(root, baseline_path, exclude_paths=excluded)
     changes, warnings = collect_changed_entries(root, baseline_path)
-    snapshot_after = current_delivery_snapshot(root, baseline_path)
+    if excluded:
+        changes = [
+            change for change in changes
+            if not any(
+                change.path.replace("\\", "/") == prefix
+                or change.path.replace("\\", "/").startswith(prefix + "/")
+                for prefix in excluded
+            )
+        ]
+    snapshot_after = current_delivery_snapshot(root, baseline_path, exclude_paths=excluded)
     if snapshot_before["snapshot_sha256"] != snapshot_after["snapshot_sha256"]:
         raise StaticAnalysisError("控制面审计期间代码发生变化，请在代码稳定后重试")
     return {
@@ -433,7 +452,12 @@ def main(argv: list[str] | None = None) -> int:
         if not paths.project_path:
             raise StaticAnalysisError("配置缺少 project_path")
         baseline_path = baseline_path_for_config(config_path)
-        payload = build_control_audit(paths.project_path, baseline_path)
+        excluded = delivery_snapshot_exclusions(paths.project_path, paths.requirement_dir)
+        payload = build_control_audit(
+            paths.project_path,
+            baseline_path,
+            exclude_paths=excluded,
+        )
         _write_json(Path(args.output) if args.output else None, payload)
         return 0
     except (DeliveryError, GitInspectionError, OSError, StaticAnalysisError) as exc:

@@ -332,6 +332,112 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("+允许点击重试", diff)
         self.assertEqual(0o600, stat.S_IMODE(self.snapshot.stat().st_mode))
 
+    def test_init_rejects_incomplete_requirement_without_receipt(self) -> None:
+        """一句话需求不能生成 init 收据或进入后续确认。"""
+        self.requirement.write_text("失败时可重试\n", encoding="utf-8")
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            self.assertRaises(DeliveryError),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        self.assertFalse(
+            (self.requirement_dir / ".state" / "requirement-init-receipt.json").exists()
+        )
+
+    def test_changed_requirement_confirmation_requires_matching_init(self) -> None:
+        """需求变化后跳过 init 时不能直接确认，读取同一 SHA 后才放行。"""
+        original = bdd_requirement(result="显示错误")
+        changed = bdd_requirement(result="显示错误并允许重试")
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, original, requirement_id="baseline-1",
+        )
+        self.requirement.write_text(changed, encoding="utf-8")
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        args = SimpleNamespace(config=str(self.root / "local.yaml"), revision_file=None)
+        patches = (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+        )
+        with patches[0], patches[1], patches[2], self.assertRaises(DeliveryError):
+            cmd_confirm_requirement_update(args)
+
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            cmd_init(SimpleNamespace(config=args.config))
+            result = cmd_confirm_requirement_update(args)
+
+        self.assertEqual(0, result)
+        self.assertEqual(1, load_requirement_snapshot(self.snapshot)["revision"])
+
+    def test_default_revision_manifest_is_not_silently_overwritten(self) -> None:
+        """确认命令必须校验调用前清单，不能静默补回被删掉的义务。"""
+        content = bdd_requirement(result="显示错误").replace(
+            "\n## 待确认",
+            "\n### BDD-002 重试\nGiven 页面显示错误\nWhen 用户点击重试\n"
+            "Then 系统重新请求\n\n## 待确认",
+        )
+        self.requirement.write_text(content, encoding="utf-8")
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, content, requirement_id="baseline-1",
+        )
+        paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=self.requirement,
+            requirement_dir=self.requirement_dir,
+        )
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        revision_file = self.requirement_dir / "test-cases" / "requirement-revision.json"
+        manifest = json.loads(revision_file.read_text(encoding="utf-8"))
+        manifest["changes"] = [
+            item for item in manifest["changes"] if item["id"] != "BDD-002"
+        ]
+        revision_file.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch(
+                "scripts.delivery.requirement_snapshot_path_for_config",
+                return_value=self.snapshot,
+            ),
+            self.assertRaises(RequirementSnapshotError),
+        ):
+            cmd_confirm_requirement_update(SimpleNamespace(
+                config=str(self.root / "local.yaml"), revision_file=None,
+            ))
+
     def test_requirement_change_is_presented_in_chinese(self) -> None:
         """验证用户看到中文变化、确认状态和删除处置，不需要理解内部英文枚举。"""
         text = format_requirement_change({
@@ -581,13 +687,15 @@ class RequirementSnapshotTests(unittest.TestCase):
 
     def test_init_prints_resume_brief_and_flow_position(self) -> None:
         """续接旧需求时，init 打印续接摘要块和当前流程位置（半状态驱动）。"""
+        content = bdd_requirement(result="显示错误")
+        self.requirement.write_text(content, encoding="utf-8")
         write_requirement_snapshot(
-            self.snapshot, self.requirement, "登录失败显示错误", requirement_id="baseline-1",
+            self.snapshot, self.requirement, content, requirement_id="baseline-1",
         )
         apply_requirement_revision(
             self.snapshot,
             self.requirement,
-            "登录失败显示错误",
+            content,
             self._manifest(0, [
                 self._change("BDD-001", "ADDED", text="显示错误", required=True),
             ]),
@@ -948,8 +1056,10 @@ class RequirementSnapshotTests(unittest.TestCase):
 
     def test_repeated_init_reports_change_without_deleting_baseline(self) -> None:
         """验证编码中重复读取需求会输出增量上下文，并完整保留原 Git 基线。"""
-        write_requirement_snapshot(self.snapshot, self.requirement, "登录失败显示错误")
-        self.requirement.write_text("登录失败显示错误\n允许点击重试\n", encoding="utf-8")
+        original = bdd_requirement(result="显示登录错误")
+        changed = bdd_requirement(result="显示登录错误并允许点击重试")
+        self.requirement.write_text(changed, encoding="utf-8")
+        write_requirement_snapshot(self.snapshot, self.requirement, original)
         traceability = self.requirement_dir / "test-cases" / "traceability.md"
         traceability.parent.mkdir()
         traceability.write_text("BDD-001 | COVERED_AUTOMATED\n", encoding="utf-8")
@@ -974,7 +1084,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertEqual('{"id":"keep-me"}\n', self.baseline.read_text(encoding="utf-8"))
         text = output.getvalue()
         self.assertIn("需求变化候选", text)
-        self.assertIn("+允许点击重试", text)
+        self.assertIn("+Then 显示登录错误并允许点击重试", text)
         self.assertIn("BDD-001", text)
         self.assertNotIn("COVERED_AUTOMATED", text)
         self.assertIn("当前正文：存在未确认变化", text)
@@ -1047,10 +1157,12 @@ class RequirementSnapshotTests(unittest.TestCase):
 
     def test_confirm_plan_is_the_only_step_that_authorizes_coding(self) -> None:
         """验证需求确认只进入只读计划，用户确认计划后才输出编码授权。"""
+        content = bdd_requirement(result="显示登录错误")
+        self.requirement.write_text(content, encoding="utf-8")
         write_requirement_snapshot(
             self.snapshot,
             self.requirement,
-            "登录失败显示错误",
+            content,
             requirement_id="baseline-1",
         )
         manifest = self._manifest(0, [
@@ -1059,7 +1171,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         applied_snapshot, _ = apply_requirement_revision(
             self.snapshot,
             self.requirement,
-            "登录失败显示错误",
+            content,
             manifest,
         )
         implementation_plan_path(self.requirement_dir).write_text(
@@ -1088,7 +1200,7 @@ class RequirementSnapshotTests(unittest.TestCase):
                 "generated_at": "2026-07-27T00:00:00+00:00",
                 "requirement_id": applied_snapshot["requirement_id"],
                 "requirement_revision": applied_snapshot["revision"],
-                "requirement_file_sha256": requirement_digest("登录失败显示错误"),
+                "requirement_file_sha256": requirement_digest(content),
                 "requirement_summary_sha256": requirement_summary_digest(applied_snapshot),
                 "allowed_files": ["LoginViewModel.kt"],
                 "allowed_dirs": [],
@@ -1615,7 +1727,7 @@ class GitDiffCollectionTests(unittest.TestCase):
         self.assertFalse(snapshot.exists())
 
     def test_check_env_allows_current_document_evidence_without_code_dirty(self) -> None:
-        """验证新建 document/<需求>/ 可作为交付证据，不阻断代码基线。"""
+        """验证任一 document/<需求>/ 的交付证据都不阻断代码基线。"""
         self.git("add", ".")
         self.git("commit", "-q", "-m", "prepare clean tree")
         requirement_dir = self.repo / "document" / "2026-07-28-login"
@@ -1624,6 +1736,9 @@ class GitDiffCollectionTests(unittest.TestCase):
         content = bdd_requirement()
         requirement.write_text(content, encoding="utf-8")
         (requirement_dir / "issues.md").write_text("审计记录\n", encoding="utf-8")
+        other_requirement = self.repo / "document" / "2026-07-27-other"
+        other_requirement.mkdir(parents=True)
+        (other_requirement / "审计记录.md").write_text("其他需求记录\n", encoding="utf-8")
         baseline = Path(self.temp_dir.name) / "document-baseline.json"
         snapshot = Path(self.temp_dir.name) / "document-snapshot.json"
         paths = SimpleNamespace(

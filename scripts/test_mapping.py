@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,8 @@ from .bdd_scenarios import is_bdd_id
 MAPPING_VERSION = 1
 MAPPING_STATUSES = {"CURRENT", "STALE"}
 TEMPLATE_TEST_IDS = {"ExampleUnitTest#addition_isCorrect"}
+NON_BUSINESS_TEST_METHOD_RE = re.compile(r"^(?:fake|dummy|placeholder|noop)(?:$|_|[A-Z])")
+STALE_REASON_MARKERS = ("重新登记", "待回填", "尚未登记", "STALE", "过期")
 
 
 class TestMappingError(RuntimeError):
@@ -49,7 +52,6 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
     identifier = item.get("obligation_id")
     if not is_bdd_id(identifier):
         raise TestMappingError(f"{label}.obligation_id 必须符合 BDD-###")
-    import re
     obligation_sha256 = item.get("obligation_sha256")
     # 跳过标记 STALE 的登记：旧摘要可能来自上一修订，不为当前 sha256，属正常待回填状态。
     is_stale = item.get("mapping_status") == "STALE"
@@ -71,7 +73,7 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
         raise TestMappingError(f"{label}.mapping_status 必须是 CURRENT 或 STALE")
     manual_reason = item.get("manual_reason") if isinstance(item.get("manual_reason"), str) else None
     if status == "CURRENT" and manual_reason and any(
-        marker in manual_reason for marker in ("重新登记", "待回填", "尚未登记", "STALE", "过期")
+        marker in manual_reason for marker in STALE_REASON_MARKERS
     ):
         raise TestMappingError(f"{label} 已标记 CURRENT 但 manual_reason 仍表示映射过期")
     architecture_tests = item.get("architecture_tests")
@@ -136,7 +138,12 @@ def validate_test_mapping(
                 f"义务 {identifier} 的测试映射声明 CURRENT 但未绑定当前需求语义摘要"
             )
         for test_id in entry["test_ids"]:
-            if test_id in TEMPLATE_TEST_IDS or test_id.endswith(".ExampleUnitTest#addition_isCorrect"):
+            method_name = test_id.rsplit("#", 1)[-1]
+            if (
+                test_id in TEMPLATE_TEST_IDS
+                or test_id.endswith(".ExampleUnitTest#addition_isCorrect")
+                or NON_BUSINESS_TEST_METHOD_RE.match(method_name)
+            ):
                 errors.append(f"义务 {identifier} 映射了无业务语义的模板测试: {test_id}")
     missing = sorted(expected_ids - seen)
     if missing:
@@ -168,10 +175,16 @@ def build_initial_mapping(
             has_valid_tests = isinstance(test_ids, list) and bool(test_ids) and all(
                 isinstance(test_id, str) and test_id.strip() for test_id in test_ids
             )
+            manual_reason = entry.get("manual_reason")
+            has_valid_manual_reason = (
+                isinstance(manual_reason, str)
+                and bool(manual_reason.strip())
+                and not any(marker in manual_reason for marker in STALE_REASON_MARKERS)
+            )
             if (
                 entry.get("mapping_status") == "CURRENT"
                 and entry.get("obligation_sha256") == current_sha[oid]
-                and has_valid_tests
+                and (has_valid_tests or has_valid_manual_reason)
             ):
                 preserved[oid] = dict(entry)
             elif has_valid_tests:

@@ -22,11 +22,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 
 # 直接运行时建立包上下文；IDE 和 `python -m` 始终解析同一个相对导入。
@@ -95,6 +97,7 @@ from .user_facing_labels import (  # noqa: E402
     localize_machine_terms,
     revision_label,
 )
+from .atomic_write import write_json_atomic  # noqa: E402
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +113,41 @@ def _require_atomic_bdd_before_baseline(content: str) -> None:
         validate_requirement_readiness(content)
     except BddScenarioError as exc:
         raise DeliveryError(str(exc)) from exc
+
+
+def _requirement_init_receipt_path(paths) -> Path:
+    """Return the receipt proving which requirement content init displayed."""
+    return Path(paths.requirement_dir) / ".state" / "requirement-init-receipt.json"
+
+
+def _write_requirement_init_receipt(paths, requirement_path: Path, content: str) -> None:
+    """Bind later confirmation to the exact requirement content read by init."""
+    payload = {
+        "version": 1,
+        "requirement_path": str(requirement_path.resolve()),
+        "requirement_sha256": requirement_digest(content),
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        write_json_atomic(_requirement_init_receipt_path(paths), payload)
+    except OSError as exc:
+        raise DeliveryError(f"无法写入需求 init 收据: {exc}") from exc
+
+
+def _require_matching_init_receipt(paths, requirement_path: Path, content: str) -> None:
+    """Reject semantic confirmation when the changed file skipped init."""
+    receipt_path = _requirement_init_receipt_path(paths)
+    try:
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise DeliveryError("需求正文已变化，请先重新执行 init 读取最新事实源") from exc
+    if (
+        not isinstance(payload, dict)
+        or payload.get("version") != 1
+        or payload.get("requirement_path") != str(requirement_path.resolve())
+        or payload.get("requirement_sha256") != requirement_digest(content)
+    ):
+        raise DeliveryError("需求正文在最近一次 init 后又发生变化，请重新执行 init")
 
 
 def _require_current_confirmed_requirement(
@@ -720,6 +758,8 @@ def cmd_init(args):
     content = read_requirement(requirement_path)
     print("\n=== 需求正文内容 ===")
     print(content)
+    _require_atomic_bdd_before_baseline(content)
+    _write_requirement_init_receipt(paths, requirement_path, content)
 
     snapshot_path = requirement_snapshot_path_for_config(args.config)
     try:
@@ -756,6 +796,12 @@ def cmd_init(args):
             print("如果用户明确这是新的串行需求，不沿用旧 ID；确认上一需求结束后，在干净工作区执行 check-env --new-requirement 建立新起点。")
             print("Git 基线保持原需求起点不变；只使受影响映射和证据失效，最终门禁仍基于最终代码重跑。")
         revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
+        try:
+            manifest = build_confirmed_revision_manifest(snapshot, content)
+            write_revision_manifest(revision_file, manifest)
+            print(f"📄 当前修订清单已刷新: {revision_file}")
+        except RequirementSnapshotError as exc:
+            print(f"⚠️ 当前变化需要显式修订清单: {exc}")
         print(f"📄 默认修订清单: {revision_file}")
 
     _render_resume_guide(paths, requirement_current=requirement_current)
@@ -997,18 +1043,15 @@ def cmd_check_env(args):
     status = working_tree_status(project_path, untracked_files="all")
     # document/ 是交付文档（git 跟踪、可 commit），不算代码改动，不阻断 check-env。
     # 只检查代码工作区是否干净，文档随时改不卡流程；防串需求靠代码基线 + document 日期目录隔离。
-    requirement_dir_rel = None
-    try:
-        requirement_dir_rel = paths.requirement_dir.resolve().relative_to(project_path.resolve())
-    except ValueError:
-        pass
     code_status = status
-    if status and requirement_dir_rel:
-        # 过滤掉 requirement_dir 下的所有行（文档/状态变化不算代码脏）。
-        prefix = str(requirement_dir_rel).replace("\\", "/")
+    if status:
+        excluded = delivery_snapshot_exclusions(project_path, paths.requirement_dir)
         code_lines = [
             line for line in status.splitlines()
-            if not _is_under_path(line.split(maxsplit=1)[-1] if " " in line else "", prefix)
+            if not _path_excluded_from_delivery(
+                line.split(maxsplit=1)[-1] if " " in line else "",
+                excluded,
+            )
         ]
         code_status = "\n".join(code_lines).strip()
     if code_status:
@@ -1059,7 +1102,9 @@ def cmd_check_env(args):
     print(f"✅ 需求起点快照: {requirement_snapshot['sha256'][:12]}")
     print(f"✅ 当前需求集合: {requirement_snapshot['requirement_id']} r0")
     revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
-    print("👉 AI 指令：用户确认需求事实源后，直接确认修订；脚本会生成普通增改清单。")
+    manifest = build_confirmed_revision_manifest(requirement_snapshot, requirement_content)
+    write_revision_manifest(revision_file, manifest)
+    print("👉 AI 指令：用户确认需求事实源后，使用当前机器修订清单确认。")
     print(f"机器生成修订清单: {revision_file}")
     print("未成功执行 confirm-requirement-update 前不得开始编码。")
 
@@ -1074,17 +1119,19 @@ def cmd_confirm_requirement_update(args):
     content = read_requirement(requirement_path)
     _require_atomic_bdd_before_baseline(content)
     snapshot_path = requirement_snapshot_path_for_config(args.config)
+    snapshot = load_requirement_snapshot(snapshot_path)
+    if snapshot is None:
+        raise DeliveryError("尚未建立需求快照，请先执行 check-env")
+    if snapshot.get("sha256") != requirement_digest(content):
+        _require_matching_init_receipt(paths, requirement_path, content)
     revision_file = (
         Path(args.revision_file).expanduser().resolve()
         if args.revision_file
         else (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve()
     )
-    if args.revision_file:
+    if revision_file.is_file():
         manifest = load_revision_manifest(revision_file)
     else:
-        snapshot = load_requirement_snapshot(snapshot_path)
-        if snapshot is None:
-            raise DeliveryError("尚未建立需求快照，请先执行 check-env")
         manifest = build_confirmed_revision_manifest(snapshot, content)
         write_revision_manifest(revision_file, manifest)
     snapshot, confirmed = apply_requirement_revision(

@@ -284,6 +284,11 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "impact_radius": radius_payload,
         "changed_files": sorted(set(changed_files)),
     }
+    api_config = config.get("api")
+    api_status = api_config.get("status") if isinstance(api_config, dict) else None
+    context["api_contract_status"] = (
+        api_status.strip().lower() if isinstance(api_status, str) and api_status.strip() else "missing"
+    )
     testing = config.get("testing")
     mutation_config = testing.get("mutation_testing") if isinstance(testing, dict) else None
     context["mutation_testing_required"] = bool(
@@ -460,6 +465,30 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
     valid_automated: set[str] = set()
     valid_manual: set[str] = set()
     structured_manual: set[str] = set()
+
+    def declared_evidence_refs(item: dict[str, Any]) -> list[str]:
+        refs = item.get("evidence_ids")
+        return [ref for ref in refs if isinstance(ref, str)] if isinstance(refs, list) else []
+
+    automated_coverage_refs = {
+        ref
+        for obligation in obligations.values()
+        if obligation.get("status") == "COVERED_AUTOMATED"
+        for ref in declared_evidence_refs(obligation)
+    }
+    pass_gate_refs = {
+        ref
+        for gate in gates.values()
+        if gate.get("status") == "PASS"
+        for ref in declared_evidence_refs(gate)
+    }
+    failed_gate_refs = {
+        ref
+        for gate_id, gate in gates.items()
+        if gate.get("status") == "FAIL"
+        for ref in declared_evidence_refs(gate)
+        if evidence.get(ref, {}).get("gate_id") == gate_id
+    }
     for identifier, item in evidence.items():
         kind = item.get("kind")
         if kind not in EVIDENCE_KINDS:
@@ -467,12 +496,18 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         if item.get("snapshot_sha256") != context["snapshot_sha256"]:
             errors.append(f"evidence {identifier} 不是当前最终代码上的新鲜证据")
         if kind == "AUTOMATED":
+            allow_failure = (
+                not passing
+                and identifier in failed_gate_refs
+                and identifier not in pass_gate_refs
+                and identifier not in automated_coverage_refs
+            )
             command = item.get("command")
             if not isinstance(command, list) or not command or not all(
                 isinstance(part, str) and part for part in command
             ):
                 errors.append(f"自动证据 {identifier} 缺少参数数组形式的 command")
-            if item.get("exit_code") != 0:
+            if item.get("exit_code") != 0 and not allow_failure:
                 errors.append(f"自动证据 {identifier} 的 exit_code 必须为 0")
             receipt_path = item.get("receipt_path")
             receipt_sha256 = item.get("receipt_sha256")
@@ -488,9 +523,10 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                     receipt_sha256,
                     item,
                     context,
+                    allow_failure=allow_failure,
                 )
                 errors.extend(receipt_errors)
-                if not receipt_errors:
+                if not receipt_errors and not allow_failure:
                     valid_automated.add(identifier)
         elif kind in {"MANUAL", "REVIEW", "AGENT"}:
             if not isinstance(item.get("summary"), str) or not item["summary"].strip():
@@ -702,7 +738,9 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                     errors.append(
                         f"义务 {identifier} 的测试映射过期：需求已增量但测试未同步"
                     )
-                elif entry.get("test_ids"):
+                elif not entry.get("test_ids"):
+                    errors.append(f"义务 {identifier} 标记自动覆盖但未登记测试 id")
+                else:
                     # 一致性只对 AUTOMATED 证据核对；纯 AGENT(Journey) 覆盖由专项结果 PASS 证明，
                     # 不走 junit testcase 收据，无法用 test_ids 交叉核对。
                     receipt_cases: set[str] = set()
@@ -720,6 +758,12 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                             errors.append(
                                 f"义务 {identifier} 的测试映射登记了未执行的测试: "
                                 + ", ".join(unmapped)
+                            )
+                        unexpected = sorted(receipt_cases - set(entry["test_ids"]))
+                        if unexpected:
+                            errors.append(
+                                f"义务 {identifier} 的自动证据关联了未登记测试: "
+                                + ", ".join(unexpected)
                             )
         if status == "COVERED_AUTOMATED" and not any(
             isinstance(evidence.get(ref, {}).get("executed_tests"), int)

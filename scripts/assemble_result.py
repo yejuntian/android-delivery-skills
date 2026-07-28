@@ -265,6 +265,7 @@ def assemble_delivery_result(
 
     snapshot_sha256 = context["snapshot_sha256"]
     expected_obligations: dict[str, Any] = context.get("expected_obligations", {})
+    test_mapping: dict[str, Any] = context.get("test_mapping") or {}
 
     # 1. 解析 evidence 声明
     raw_evidence = manifest.get("evidence")
@@ -356,14 +357,18 @@ def assemble_delivery_result(
             ob_entry["reason"] = declaration["reason"]
         obligation_list.append(ob_entry)
         # 回填每个被引用证据的 obligation_sha256s 和 obligation_test_cases
+        mapping = test_mapping.get(oid)
+        mapped_test_ids = set(mapping.get("test_ids", [])) if isinstance(mapping, dict) else set()
         for ref in refs:
             ev = evidence_objs.get(ref)
             if ev is None:
                 raise AssembleError(f"obligation {oid} 引用了不存在的证据: {ref}")
             ev.setdefault("obligation_sha256s", {})[oid] = sha
-            # AUTOMATED 证据:把该收据的全部 testcase 关联到此义务
+            # 只关联当前义务登记且本次实际执行的 testcase。
             if ev.get("kind") == "AUTOMATED":
-                ev.setdefault("obligation_test_cases", {})[oid] = evidence_test_cases.get(ref, [])
+                executed = evidence_test_cases.get(ref, [])
+                matched = list(dict.fromkeys(case for case in executed if case in mapped_test_ids))
+                ev.setdefault("obligation_test_cases", {})[oid] = matched
 
     # 6. 推导 gates
     raw_gates = manifest.get("gates")

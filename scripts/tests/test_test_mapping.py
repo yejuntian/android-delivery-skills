@@ -98,6 +98,27 @@ class TestMappingTests(unittest.TestCase):
         }
         self.assertEqual([], validate_test_mapping(mapping, make_snapshot(self.obligations)))
 
+    def test_rebuild_preserves_current_manual_mapping(self) -> None:
+        """重复初始化不能丢失同一需求语义上的人工验收登记。"""
+        existing = {
+            "version": MAPPING_VERSION,
+            "mappings": [
+                {
+                    "obligation_id": "BDD-001",
+                    "obligation_sha256": "a" * 64,
+                    "test_ids": [],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": "模拟器点击、截图和布局树验收",
+                }
+            ],
+        }
+
+        mapping = build_initial_mapping(make_snapshot(self.obligations), existing)
+        manual = mapping["mappings"][0]
+
+        self.assertEqual("CURRENT", manual["mapping_status"])
+        self.assertEqual("模拟器点击、截图和布局树验收", manual["manual_reason"])
+
     def test_current_mapping_rejects_stale_manual_reason(self) -> None:
         """CURRENT 不能继续携带要求重新登记的过期说明。"""
         mapping = {
@@ -134,6 +155,26 @@ class TestMappingTests(unittest.TestCase):
         }
 
         errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
+        self.assertTrue(any("无业务语义的模板测试" in error for error in errors))
+
+    def test_obviously_fake_test_name_cannot_cover_business_obligation(self) -> None:
+        """显式自称 fake/dummy 的测试不能登记成业务覆盖。"""
+        mapping = {
+            "version": MAPPING_VERSION,
+            "mappings": [
+                {
+                    "obligation_id": item["id"],
+                    "obligation_sha256": item["sha256"],
+                    "test_ids": ["FeatureTest#fakeCategoryFailureCoverage"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": None,
+                }
+                for item in self.obligations
+            ],
+        }
+
+        errors = validate_test_mapping(mapping, make_snapshot(self.obligations))
+
         self.assertTrue(any("无业务语义的模板测试" in error for error in errors))
 
     def test_revision_marks_changed_obligations_stale(self) -> None:

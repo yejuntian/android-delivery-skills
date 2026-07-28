@@ -109,7 +109,7 @@ description: |
 
 ### 中途需求修订
 
-- `<requirement_dir>/test-cases/requirement-revision.json` 由 `confirm-requirement-update` 针对普通新增、修改和未变化场景自动生成，并绑定当前 `requirement_id` 和 `base_revision`。
+- `<requirement_dir>/test-cases/requirement-revision.json` 由 `init/check-env` 针对普通新增、修改和未变化场景生成；`confirm-requirement-update` 校验调用前完整清单，不静默覆盖。
 - 同一需求逐项使用 `ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED`；决策使用 `CONFIRMED/PENDING/REJECTED/CONFLICT`。`PENDING/CONFLICT` 只保存候选且不推进版本，`REJECTED` 不进入当前总需求。
 - 删除或改号不会被自动确认；必须用 `--revision-file` 明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`，替代关系必须指向同轮新增 BDD。
 - 只在聊天中确认的变化先同步到 `requirement_file`。用户确认后，后续编码、测试、route 和最终报告重新读取当前需求和机器产物，确认前旧聊天理解不得作为执行依据。
@@ -213,7 +213,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 
 首次确认前，用户每次新增、修改、删除、纠正或改变旧业务处置时：先用自然中文列出本轮新增、修改、删除和保留摘要；将结果合并为最新完整需求并同步到 `requirement_file`；重新执行 `delivery.py init` 读取文件；只重新分析受影响代码、调用方、测试和旧业务；最后展示本轮变化摘要、最新 `requirement_file` 路径、更新后的影响说明和待确认点，默认不在聊天重贴完整需求，再等待确认。用户回复同时包含“确认”和新变化时仍按变化处理，禁止直接执行 `check-env`。只有用户已经收到最新 `requirement_file` 路径与变更摘要，并作出不带新变化的明确确认，才进入阶段 2。
 
-同一需求编码中途再次运行 `init` 时，比较当前需求事实源和最近确认修订，输出增改删候选。保留未变化的 BDD ID；普通新增和修改由脚本生成清单，删除或替代要求显式处置。`init` 和 `confirm-requirement-update` 均不修改 Git 基线。
+同一需求编码中途再次运行 `init` 时，比较当前需求事实源和最近确认修订，输出增改删候选并绑定当前正文 SHA；正文再次变化后必须重新 `init` 才能确认。保留未变化的 BDD ID；普通新增和修改由脚本生成清单，删除或替代要求显式处置。`init` 和 `confirm-requirement-update` 均不修改 Git 基线。
 **DoR (准备就绪) 门禁**：如果需求缺少继续实现所必需的业务含义、边界条件或报错证据，列出缺口并暂停请求补充；能够明确表达一个真实场景时，不得仅因条目少而阻塞。
 
 最小修改预览中的每个新增或改动组件必须附轻量架构边界卡片：`组件/文件 | 职责 | 输入 | 输出 | 依赖方向 | 复用点 | 明确不修改范围`。同一组件的相关文件可以合并一行；卡片服从目标项目现有架构，不用于强推分层、拆模块或技术迁移。
@@ -292,7 +292,8 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
 - `route` 或 Diff Reviewer 语义确认的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
-- 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；用于覆盖 BDD 场景的证据还必须把 obligation 映射到真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
+- 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；每个 BDD 只关联其 CURRENT mapping 登记且本次真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
+- 命令或机器报告真实失败时，自动收据只能在 `INCOMPLETE/BLOCKED` 中绑定同一 `FAIL` gate；不得绑定 BDD 自动覆盖或 `PASS` gate。
 - 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须记录必需静态语义能力、七项静态检查，以及动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
 - 人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
 - 最终中文摘要必须把 `【修改已上线业务】` 和 `【保护已上线业务】` 义务置顶分组展示；任一必需保护项缺少新鲜证据时，沿用现有义务门禁阻断完整通过。

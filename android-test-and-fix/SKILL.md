@@ -204,11 +204,17 @@ Journey 属于已安装 APK 的关键用户旅程冒烟测试，由本 Skill 根
 
 ### 默认 Android CLI Agent 执行
 
-默认路线在当前 AI 会话中完成，不存在可以由 Python 虚构调用的 `android journey` 或 `android agent` 子命令。使用目标项目自己的 Gradle wrapper 构建已确认 module/variant（不升级 AGP）或确认目标 APK 已安装，再用 `android run`/adb 启动、`android layout --device`/`android screen capture` 和必要 adb 输入逐个执行 XML action。
+默认路线在当前 AI 会话中完成，不存在可以由 Python 虚构调用的 `android journey` 或 `android agent` 子命令。使用目标项目自己的 Gradle wrapper 构建已确认 module/variant（不升级 AGP）或确认目标 APK 已安装，再用 adb 启动、截图、输入、抓日志逐个执行 XML action。稳定命令链按下方，不得依赖未经实测的命令。
 
-- action 只包含一个操作或一个可见断言，严格按顺序独立判断；任一步失败、应用退出、崩溃或冻结时停止该 Journey，后续 action 标记跳过。
-- 每步记录脱敏命令、布局/截图 SHA-256、状态和说明；不得把 AI 观察描述当作不存在的工具返回值。按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出 `specialist=android-test-and-fix/journey-agent` 统一结果，`executed_tests` 为实际完成的 Journey 数，`executed_checks` 为实际判断的 action 数，最终报告用 `AGENT` 证据类型。
-- Android CLI、adb 或设备不可用时先路由到项目已有 Compose/Espresso/UIAutomator；仍无等价能力时把对应 Then 标为未验证。设备只能完成部分步骤时把能独立闭环的已完成 Then 拆成短 Journey 并重跑通过，原中断结果记为 `PARTIAL + ENVIRONMENT_FAILED`；不得用中断前截图冒充通过，也不得把未执行的 Journey XML 写成通过。默认路线失败不要求用户初始化 Android Studio 壳。
+- **启动**：`adb -s <serial> shell am start -n <pkg>/<activity>`；`android run` 需要 `--apks` 不适用于已安装 APK，直接用 adb 启动。
+- **可见断言**：`adb -s <serial> exec-out screencap -p > <step>.png` 截图后人工/AI 视觉判断。不使用 `android screen capture`（有缓存、不支持 `--device`）。
+- **布局断言**：`android layout` 与 `adb shell uiautomator dump` 在部分真机返回 `null root node`，不可用时必须降级到截图视觉判断，不得假装布局可用。
+- **点击/输入**：`adb shell input tap <x> <y>`；点击坐标受状态栏+控件+margin 累积偏移影响，必须先截图视觉定位真实坐标，不能用固定假设值。`adb shell input text` 不支持中文，涉及中文输入用英文等价用例覆盖并说明等价性。
+- **行为断言**：`adb logcat -d -s <TAG>:<level>` 抓埋点/日志，验证内部行为而非仅页面可见结果。
+
+action 只包含一个操作或一个可见断言，严格按顺序独立判断；任一步失败、应用退出、崩溃或冻结时停止该 Journey，后续 action 标记跳过。
+每步记录脱敏命令、截图/布局 SHA-256、状态和说明；不得把 AI 观察描述当作不存在的工具返回值。按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出 `specialist=android-test-and-fix/journey-agent` 统一结果，`executed_tests` 为实际完成的 Journey 数，`executed_checks` 为实际判断的 action 数，最终报告用 `AGENT` 证据类型。
+Android CLI、adb 或设备不可用时先路由到项目已有 Compose/Espresso/UIAutomator；仍无等价能力时把对应 Then 标为未验证。设备只能完成部分步骤时把能独立闭环的已完成 Then 拆成短 Journey 并重跑通过，原中断结果记为 `PARTIAL + ENVIRONMENT_FAILED`；不得用中断前截图冒充通过，也不得把未执行的 Journey XML 写成通过。默认路线失败不要求用户初始化 Android Studio 壳。
 
 ### 可选壳项目执行
 

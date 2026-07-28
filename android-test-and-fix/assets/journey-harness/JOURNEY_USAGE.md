@@ -449,10 +449,10 @@ Then：列表中至少有一项标题包含“Android”
           ↓
 从最终 APK 读取真实 applicationId
           ↓
-android run / adb 安装并通过 pm path 校验
+adb install 安装并通过 pm path 校验
           ↓
 当前 AI 会话读取本需求 Journey XML
-  └─ android layout / screen + 必要 adb 输入
+  └─ adb am start 启动 + adb exec-out screencap 截图 + adb shell input 操作 + adb logcat 抓行为断言
           ↓
 逐个 action 执行并输出统一专项结果
 ```
@@ -460,11 +460,21 @@ android run / adb 安装并通过 pm path 校验
 安全要求：
 
 - 不修改目标项目的 AGP、Gradle 或 Kotlin 版本。
-- Android CLI 当前版本没有 `android journey` 或 `android agent` 子命令；“Agent”表示正在执行本 Skill 的 AI 会话使用受支持的 `android run/layout/screen` 和 adb，禁止脚本伪造不存在的调用。
+- Android CLI 当前版本没有 `android journey` 或 `android agent` 子命令；“Agent”表示正在执行本 Skill 的 AI 会话使用 adb 命令驱动已安装 APK，禁止脚本伪造不存在的调用。
 - 目标包名以 APK 为准，不依赖源码正则。
 - 每个 action 只做一个操作或一个可见断言，严格按顺序独立判断；任一步失败、崩溃、退出或冻结时停止当前 Journey。
-- 每一步保存脱敏命令、布局或截图文件及 SHA-256；最终使用 `specialist-result.schema.json`，记录实际 Journey 数、action 数和覆盖的 BDD/Then。
-- Android CLI、设备和认证失败不能触发目标代码修复；先换项目已有 UI 测试，仍无等价能力时标未验证。
+- 每一步保存脱敏命令、截图文件及 SHA-256；最终使用 `specialist-result.schema.json`，记录实际 Journey 数、action 数和覆盖的 BDD/Then。
+- adb、设备和认证失败不能触发目标代码修复；先换项目已有 UI 测试，仍无等价能力时标未验证。
+
+### 默认路线稳定命令链（真实环境实测验证）
+
+以下命令经真机实测稳定可用，AI 执行默认路线时按此选择，不得依赖未经实测的命令：
+
+- **启动应用**：`adb -s <serial> shell am start -n <pkg>/<activity>`。`android run` 需要 `--apks` 参数，不适用于已安装的 APK，故用 adb 直接启动。
+- **可见断言（截图）**：`adb -s <serial> exec-out screencap -p > <step>.png`，截图后人工/AI 视觉判断。不使用 `android screen capture`——它存在缓存（状态未变时输出完全相同 SHA）且不支持 `--device`。
+- **布局断言**：`android layout` 与 `adb shell uiautomator dump` 在部分真机环境持续返回 `null root node`。布局断言不可用时**必须降级到截图视觉判断**，不得假装布局可用。
+- **点击/输入**：`adb -s <serial> shell input tap <x> <y>`。点击坐标受状态栏+控件+margin 累积偏移影响，必须先用截图视觉定位真实坐标，不能用固定假设值。`adb shell input text` 不支持中文，涉及中文输入的场景用英文等价用例覆盖并在报告中说明等价性。
+- **行为断言**：`adb -s <serial> logcat -d -s <TAG>:<level>` 抓埋点/日志，证明内部行为而非仅页面可见结果。
 
 ### 可选 AGP 9 壳
 

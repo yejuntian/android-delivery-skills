@@ -222,7 +222,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M16 Kotlin / Java Android 静态语义分析
 
-- **调研日期**：2026-07-20；相关候选按 GitHub Star 近似排序，但只采用与 Android/Kotlin/Java 静态语义、生命周期、并发或泄漏证据直接相关的能力。
+- 相关候选按 GitHub Star 近似排序，但只采用与 Android/Kotlin/Java 静态语义、生命周期、并发或泄漏证据直接相关的能力。
 - **来源**：Kotlin 编译器、kotlinx.coroutines 与 RxJava 的语言/异步契约，AndroidX 的 Lifecycle/Compose/Lint 实现，LeakCanary 的引用链模型；detekt、Error Prone、NullAway、SpotBugs、Infer、Semgrep、CodeQL、PMD、Checkstyle、P3C、SonarJava 和 Slack Lints 的规则、类型/字节码/数据流、SARIF 与规则测试实践；Gradle、MobSF 和 OWASP MASTG 的可重复执行及静态/动态证据边界。
 - **决策**：不维护无限规则清单，统一用六条不变量审查：短生命周期不被长生命周期持有、注册/解绑成对、获取/释放成对、异步任务不超过宿主、清理路径可达、共享状态具有并发纪律。
 - **语言边界**：Kotlin 优先、Java 一等支持；混合调用额外核对 Nullability/platform type、primitive/boxed、异常、泛型、SAM/Callback、取消传播和公开 API/ABI，不复制第二套流程。
@@ -237,7 +237,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M17 自适应分层自动化测试
 
-- **调研日期**：2026-07-19。
 - **来源**：[Android 官方测试策略](https://developer.android.com/training/testing/fundamentals/strategies) 的单元、组件、功能、应用和候选版本分层，[Android 测试基础](https://developer.android.com/training/testing/fundamentals) 的可测试架构与解耦，[UIAutomator](https://developer.android.com/training/testing/other-components/ui-automator)、[Espresso](https://developer.android.com/training/testing/espresso) 和 [Compose UI Test](https://developer.android.com/develop/ui/compose/testing) 的能力边界；Maestro、Robolectric、Kaspresso、Paparazzi、Kotest 属性测试和 PIT Mutation Testing 作为补充对照。
 - **决策**：把每个 BDD 的复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，按 `L1/L2/L3/BLOCKED` 做需求初判和最终 diff 终判，再为每项选择最低且足够的测试层。Journey 只做少量关键黑盒旅程，并根据原子 Then 分配用 `FULL/PARTIAL/NONE` 表达整条 BDD 的适用性；Journey 通过只覆盖它实际断言的 Then。
 - **老项目边界**：低 AGP 项目继续使用自身 wrapper 构建 APK，当前 AI 会话优先使用 Android CLI/adb 对已安装 APK 执行 Journey；已经初始化的独立壳只作可选回退。项目已有 Compose/Espresso/UIAutomator 时复用，不升级目标项目。
@@ -247,7 +246,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M18 需求增量与最终证据新鲜度
 
-- **调研日期**：2026-07-19。
 - **来源**：[Git diff](https://git-scm.com/docs/git-diff) 的 name-status、rename detection、patch 与工作树比较能力，[JSON Schema 2020-12](https://json-schema.org/draft/2020-12) 的可移植数据契约；结合本流程“串行需求、外部基线、最终代码新鲜证据”的目标。
 - **决策**：`init` 只读需求，不触碰 Git 基线；`check-env` 在干净工作区同时保存 Git 起点与需求起点，重复执行只复用，只有用户明确的新串行需求使用 `--new-requirement` 更换起点。中途重读按最近确认修订和追溯表输出差异；独立修订清单逐项记录增改删、替代、确认/待定/拒绝/冲突及删除处置，只有全部解决才推进版本。路由消费 `A/M/D/R` 和实际 patch，最终 `delivery-result.json` 必须与当前有效 Then 集合精确一致，并绑定需求修订、基线与工作树摘要。
 - **职责边界**：需求修订脚本只校验连续性和原子保存，不判断业务语义或修改 Git；Git 脚本不决定路由，最终门禁不运行测试或修代码。Journey 只使用已确认修订的用例作用域，并只声明实际覆盖的 Then。
@@ -256,7 +254,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M19 条件门禁快照与执行收据
 
-- **调研日期**：2026-07-19。
 - **来源**：JSON Schema、Gradle/JUnit/Android Lint 原生报告；[Now in Android Build](https://github.com/android/nowinandroid/blob/main/.github/workflows/Build.yaml) 的分层 Build/Lint/Roborazzi/Instrumentation、[Lottie Validate](https://github.com/airbnb/lottie-android/blob/master/.github/workflows/validate.yml) 的 Lint/Unit/API/Snapshot 独立 Job，以及 [Detekt Danger](https://github.com/detekt/detekt/blob/main/bots/dangerfile.js) 的 diff 缺测试提示。
 - **决策**：`route` 把四类条件门禁及直接依据保存到项目外快照，并绑定需求修订、已确认实施计划、UI/API 输入、Git 基线和代码摘要。Diff Reviewer 使用专项结果 version 4 逐项确认七类语义影响，最终门禁把它与脚本快照取并集。自动命令由独立执行器按单一 gate 保存不可覆盖 attempt、JUnit testcase、Lint/通用 SARIF 机器报告和脱敏日志；测试/迁移收据强制要求非零 JUnit，普通自动收据不能越权证明专项 gate。稳定性固定记录静态语义、泄漏/性能/安全适用性，Journey 按需扩展。最终结果契约保持 version 4。
 - **职责边界**：路由快照只表达候选，不替代业务适用性终判；执行器只运行已经选定的命令，不选择 task、不修代码；最终门禁只校验，不运行命令。
@@ -264,14 +261,12 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M20 Android CLI Agent Journey 默认路线
 
-- **调研日期**：2026-07-19。
 - **来源**：Google Android CLI Skill 的 Journey action 顺序、失败和结构化汇总规则，以及 Android CLI `run/layout/screen` 的已安装 APK 操作能力。
 - **决策**：Journey 适用时，由执行当前 Skill 的 AI 会话优先读取 XML，使用 Android CLI/adb 逐个 action 操作和验证；统一专项结果保存 Journey 数、action 数、命令及布局/截图摘要。AGP 9 Studio Labs 壳保留为已经初始化后的可选 JUnit 回退。
 - **边界**：当前 Android CLI 没有可由 Python 调用的 `android journey` 或 `android agent` 子命令，不创建伪命令；没有 Agent 会话、设备或等价 UI 引擎时保持未验证。壳未初始化不再阻断默认路线，也不自动要求用户打开 Android Studio。
 
 ### M21 编码后局部迭代与最终门禁分层
 
-- **调研日期**：2026-07-19。
 - **来源**：[AndroidX Presubmits](https://github.com/androidx/androidx/blob/androidx-main/.github/workflows/presubmit.yml) 按变更文件处理格式并按项目拆分构建，[detekt Pre Merge](https://github.com/detekt/detekt/blob/main/.github/workflows/pre-merge.yaml) 在非主干启用预测式测试选择，[Now in Android Build](https://github.com/android/nowinandroid/blob/main/.github/workflows/Build.yaml) 在 PR 执行测试、构建、Lint 和设备任务并把 [Baseline Profile](https://github.com/android/nowinandroid/blob/main/.github/workflows/NightlyBaselineProfiles.yaml) 放入夜间任务，[LeakCanary Main](https://github.com/square/leakcanary/blob/main/.github/workflows/main.yml) 把普通构建与相关模块的多 API 设备测试拆分。
 - **决策**：首次编码前继续完整确认需求、BDD、测试设计和 Git 基线；首次实现后的完善、修改、删除或修复只执行受影响测试和必要编译，验收语义变化时只修订受影响义务；用户当前或最初明确要求最终检查、完整交付或准备提交时，才基于最终代码执行一次完整 route、专项、构建、Lint 和交付报告。
 - **证据边界**：局部结果只证明本轮受影响范围。最终结果生成后代码、测试、资源或构建配置变化会使其失效，但完善期间不要求每次立即重跑完整门禁；再次准备交付时统一生成最终新鲜证据。
@@ -287,7 +282,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ### M23 串行需求独立工作区与延迟回收
 
 - **问题**：长期复用一个 `current-requirement` 会让上一需求的正文、截图、接口证据、测试用例和报告与下一需求混放；每次开始需求就清空目录又会在误判完成状态、需要追溯或回看失败证据时造成不可逆丢失。纯机器编号可以隔离，但用户无法快速识别内容。
-- **调研日期**：2026-07-19。
 - **来源**：[XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/latest/) 区分持久状态与可再生成缓存；[Bazel Sandboxing](https://bazel.build/docs/sandboxing) 为动作建立隔离执行根，避免未声明的旧输入影响结果；[Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html#dir:gradle_user_home) 对缓存采用周期清理和不同保留期，而不是每次构建后全部删除。
 - **决策**：采用这些原则而不照搬工具实现。每个新串行需求创建 `REQ-日期-序号-中文名称` 独立目录；JSON 保存稳定机器状态，`需求说明.md` 提供中文入口。只有用户明确结束/取消上一需求并开始下一需求时才轮换；默认先预览，确认后执行。上一需求和新需求不共享正文、UI/API 固定证据、测试用例、报告或 Git 基线。
 - **回收边界**：已完成或取消的需求必须同时超出最近保留数量和最短保留天数才可回收；活动、未完成、近期、状态缺失或损坏的目录保留。可再生成的 `tempfile` 使用相同时间门槛，但仍只删除允许根目录的直接子项。轮换和回收不嵌入 `init`、测试或交付命令，避免隐式破坏。
@@ -353,7 +347,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M31 人读产物体系与多需求维护
 
-- **调研日期**：2026-07-24。
 - **问题**：现有交付产物（requirement-revision/test-mapping/route-impact/receipt）全是 JSON，机器能校验但用户打开看不懂、无法自检"这步对不对"；半个月后接旧需求 AI 需重新翻聊天才懂原状；多需求并存后无法一眼全局；旧需求删除后证据全丢。对标 shareit/shell 的 `docs/` 产物体系后发现差距。
 - **来源**：shareit/shell `docs/`（阶段目录 + 每产物人读 md + task 串联 + verify 脚本断言化）；[GitHub Spec Kit](https://github.com/github/spec-kit) 的 spec continuity 与稳定 ID；[XDG Base Directory](https://specifications.freedesktop.org/basedir/latest/) 与 [Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html) 的延迟回收（已落地为 M23）；[MADR](https://github.com/adr/madr) 的决策记录轻量化；[ArchUnit](https://github.com/TNG/ArchUnit) 的 JVM 架构测试替代易碎手写扫描脚本。
 - **决策**：
@@ -367,7 +360,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M32 多需求并行（git worktree）与交付文档落地
 
-- **调研日期**：2026-07-25。
 - **问题**：单配置流程默认一个 `profiles/local.yaml` 对应一个活动需求；多需求共用同一配置/工作树/需求目录并行会互相污染（Git 基线、route 快照、证据覆盖、未提交代码阻塞）。
 - **来源**：[git worktree 官方](https://git-scm.com/docs/git-worktree)、[Claude Code worktrees](https://code.claude.com/docs/en/worktrees)、[OpenAI Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)；Spec Kit spec continuity（集成批次汇总）。
 - **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 以各自 `requirement_dir/.state` 隔离 baseline/snapshot/route/evidence/capabilities；同文件同行冲突 git merge 自然检出；改不同文件无冲突；`git worktree remove/prune` 可回收；同 config 并发第二写窗口被 O_EXCL 锁拒。
@@ -382,7 +374,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M33 增量影响半径与越界 diff 门禁
 
-- **调研日期**：2026-07-27。
 - **问题**：用户在编码中新增、修改或删除需求时，希望只处理受影响部分；仅靠中文计划和 AI 自觉容易发生两类失控：旧需求被整体重做，或最终 diff 悄悄越过已确认范围。
 - **来源**：Spec Kit 的稳定需求 ID 和跨产物一致性、Cucumber Example Mapping 的需求到测试映射、AndroidX/LeakCanary/Detekt 等 CI 对变更文件选择受影响验证、M21 的局部反馈与最终兜底、M29 的计划确认收据。
 - **决策**：新增机器可读 `<requirement_dir>/test-cases/impact-radius.json`。它绑定当前 `requirement_id`、修订号、需求正文 SHA 和有效义务摘要 SHA；当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED 义务必须逐项登记影响原因、风险、允许文件/目录前缀、预计测试和模块。`confirm-plan` 把影响半径 digest 写入计划收据，`route` 和最终门禁继续绑定该 digest；最终 diff 中任何代码文件不在已确认范围内时阻断完整通过。

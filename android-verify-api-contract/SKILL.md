@@ -130,3 +130,11 @@ Java DTO 或 Java/Kotlin 混合模型还必须核对：primitive 与 boxed 对�
 10. 建议测试项
 
 由 `android-implement-and-verify` 编排时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 输出统一专项结果；记录契约摘要、operation/schema、机器能力状态、P0-P3 和未关闭项。缺少正式契约或存在未关闭 P0/P1 时不得标记 `PASS`。
+
+统一专项结果的 API 机器字段必须满足：
+
+- `capabilities` 包含 `{"id":"api-contract","required":true,"status":"PASS|UNVERIFIED|BLOCKED|FAIL"}`；正式契约缺失、无法访问或冲突时不能写 `PASS`。
+- `checks` 至少包含 `contract-source`（契约来源/版本/摘要）、`operation-schema`（本次 method/path/参数/schema/错误响应）、`implementation-mapping`（DTO/mapper/Repository/测试映射）。
+- `executed_checks` 必须等于实际 checks 数量；`PASS` 时上述三项检查均需完成且通过。
+- `artifacts` 至少绑定一个未变化文件：OpenAPI/Swagger/Postman/YApi 导出、结构化 Markdown 契约摘要、截图或核对报告，并填写 `sha256`。
+- 无 artifact、无 operation/schema、只凭客户端代码或自然语言总结，不得输出 `PASS`；应输出 `UNVERIFIED`、`BLOCKED` 或带 P0/P1 的 `FAIL`。

@@ -42,6 +42,13 @@ STABILITY_SKILL = "android-audit-stability"
 TEST_AND_FIX_SKILL = "android-test-and-fix"
 DIFF_REVIEW_SKILL = "android-review-diff"
 CODE_QUALITY_SKILL = "android-review-code-quality"
+API_CONTRACT_SKILL = "android-verify-api-contract"
+API_CONTRACT_CAPABILITY_ID = "api-contract"
+API_CONTRACT_CHECK_IDS = {
+    "contract-source",
+    "operation-schema",
+    "implementation-mapping",
+}
 # 允许声明产出来源的 Skill 白名单：provenance.skill 必须在此集合内，
 # 防止 AI 编造一个不存在的 Skill 名冒充原生专项产出。
 KNOWN_SPECIALIST_SKILLS = {
@@ -50,7 +57,7 @@ KNOWN_SPECIALIST_SKILLS = {
     TEST_AND_FIX_SKILL,
     DIFF_REVIEW_SKILL,
     CODE_QUALITY_SKILL,
-    "android-verify-api-contract",
+    API_CONTRACT_SKILL,
     "android-verify-ui",
 }
 CODE_QUALITY_CHECK_IDS = {
@@ -838,6 +845,40 @@ def validate_specialist_result(
                     errors.append(f"专项证据文件摘要已变化: {path}")
             except OSError as exc:
                 errors.append(f"专项证据文件无法读取: {path}: {exc}")
+
+    if payload.get("skill") == API_CONTRACT_SKILL:
+        api_contract_capability = next(
+            (
+                item for item in capabilities
+                if isinstance(item, dict) and item.get("id") == API_CONTRACT_CAPABILITY_ID
+            ),
+            None,
+        )
+        if not api_contract_capability or api_contract_capability.get("required") is not True:
+            errors.append("API 契约专项必须把 api-contract 标记为必需能力")
+        api_checks_by_id = {
+            item.get("id"): item
+            for item in checks
+            if isinstance(item, dict) and item.get("id") in API_CONTRACT_CHECK_IDS
+        }
+        missing_api_checks = sorted(API_CONTRACT_CHECK_IDS - seen_checks)
+        if missing_api_checks:
+            errors.append(
+                "API 契约专项缺少必需检查: " + ", ".join(missing_api_checks)
+            )
+        for check_id, item in sorted(api_checks_by_id.items()):
+            if item.get("required") is not True:
+                errors.append(f"API 契约专项检查 {check_id} 必须 required=true")
+        if conclusion == "PASS":
+            if not api_contract_capability or api_contract_capability.get("status") != "PASS":
+                errors.append("API 契约专项 PASS 必须有已通过的 api-contract 能力")
+            if missing_api_checks:
+                errors.append("API 契约专项 PASS 必须完成契约来源、operation/schema 和实现映射检查")
+            for check_id, item in sorted(api_checks_by_id.items()):
+                if item.get("status") != "PASS":
+                    errors.append(f"API 契约专项 PASS 必须通过检查 {check_id}")
+            if not artifacts:
+                errors.append("API 契约专项 PASS 必须附带正式契约或核对结果 artifact")
 
     if payload.get("skill") == JOURNEY_AGENT_SKILL:
         if not any(

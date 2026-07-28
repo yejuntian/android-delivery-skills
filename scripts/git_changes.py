@@ -87,10 +87,19 @@ def current_head(repo):
     return _git(repo, ["rev-parse", "HEAD"]).decode("utf-8").strip()
 
 
-def working_tree_status(repo):
-    """返回 Git porcelain 状态，空字符串表示工作区干净。"""
+def working_tree_status(repo, *, untracked_files="normal"):
+    """返回 Git porcelain 状态，空字符串表示工作区干净。
+
+    check-env 需要展开未跟踪目录，才能精确判断新增文件是否只属于当前
+    requirement_dir；默认保持 Git 原生 normal 行为，避免影响其他调用方。
+    """
     repo = _require_repository(repo)
-    return _git(repo, ["status", "--porcelain"]).decode("utf-8", errors="replace").strip()
+    args = ["status", "--porcelain"]
+    if untracked_files == "all":
+        args.append("--untracked-files=all")
+    elif untracked_files != "normal":
+        raise GitInspectionError("untracked_files 只能是 normal 或 all")
+    return _git(repo, args).decode("utf-8", errors="replace").strip()
 
 
 def write_baseline(repo, path):

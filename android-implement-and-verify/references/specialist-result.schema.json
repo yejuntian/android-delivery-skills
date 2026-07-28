@@ -328,6 +328,64 @@
     {
       "if": {
         "properties": {
+          "skill": { "const": "android-verify-api-contract" }
+        },
+        "required": ["skill"]
+      },
+      "then": {
+        "required": ["capabilities", "checks", "executed_checks", "artifacts"],
+        "properties": {
+          "capabilities": {
+            "minItems": 1,
+            "contains": {
+              "type": "object",
+              "required": ["id", "required"],
+              "properties": {
+                "id": { "const": "api-contract" },
+                "required": { "const": true }
+              }
+            }
+          },
+          "checks": {
+            "minItems": 3,
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "id": { "const": "contract-source" },
+                    "required": { "const": true }
+                  },
+                  "required": ["id", "required"]
+                }
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "id": { "const": "operation-schema" },
+                    "required": { "const": true }
+                  },
+                  "required": ["id", "required"]
+                }
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "id": { "const": "implementation-mapping" },
+                    "required": { "const": true }
+                  },
+                  "required": ["id", "required"]
+                }
+              }
+            ]
+          },
+          "executed_checks": { "minimum": 3 },
+          "artifacts": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "skill": { "const": "android-test-and-fix/journey-agent" }
         },
         "required": ["skill"]

@@ -71,6 +71,7 @@ from ..config_paths import (  # noqa: E402
 )
 from ..git_changes import (  # noqa: E402
     GitChange,
+    GitInspectionError,
     collect_changed_entries,
     collect_changed_files,
     current_delivery_snapshot,
@@ -719,6 +720,79 @@ class RequirementSnapshotTests(unittest.TestCase):
             )
         self.assertEqual(before, self.snapshot.read_bytes())
 
+    def test_manifest_must_cover_bdd_ids_written_in_requirement_file(self) -> None:
+        """验证需求正文已列出的 Then ID 不能被修订清单遗漏。"""
+        content = "BDD-001/T1 显示错误\nBDD-001/T2 允许重试"
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, content, requirement_id="baseline-1",
+        )
+
+        with self.assertRaisesRegex(RequirementSnapshotError, "未进入修订清单"):
+            apply_requirement_revision(
+                self.snapshot,
+                self.requirement,
+                content,
+                self._manifest(0, [
+                    self._change("BDD-001/T1", "ADDED", text="显示错误", required=True),
+                ]),
+            )
+
+    def test_can_backfill_omitted_bdd_when_text_already_in_requirement_file(self) -> None:
+        """验证漏拆补录只要来自既有需求正文，就不会被误判为聊天脑补。"""
+        content = "登录失败显示错误\n允许点击重试"
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, content, requirement_id="baseline-1",
+        )
+        apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            content,
+            self._manifest(0, [
+                self._change("BDD-001/T1", "ADDED", text="登录失败显示错误", required=True),
+            ]),
+        )
+
+        updated, applied = apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            content,
+            self._manifest(1, [
+                self._change("BDD-001/T1", "UNCHANGED"),
+                self._change("BDD-001/T2", "ADDED", text="允许点击重试", required=True),
+            ]),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(["BDD-001/T1", "BDD-001/T2"], [
+            item["id"] for item in updated["obligations"]
+        ])
+
+    def test_rejects_ungrounded_bdd_backfill_without_requirement_update(self) -> None:
+        """验证未写入需求正文的新语义仍必须先同步 requirement_file。"""
+        content = "登录失败显示错误\n允许点击重试"
+        write_requirement_snapshot(
+            self.snapshot, self.requirement, content, requirement_id="baseline-1",
+        )
+        apply_requirement_revision(
+            self.snapshot,
+            self.requirement,
+            content,
+            self._manifest(0, [
+                self._change("BDD-001/T1", "ADDED", text="登录失败显示错误", required=True),
+            ]),
+        )
+
+        with self.assertRaisesRegex(RequirementSnapshotError, "requirement_file 未更新"):
+            apply_requirement_revision(
+                self.snapshot,
+                self.requirement,
+                content,
+                self._manifest(1, [
+                    self._change("BDD-001/T1", "UNCHANGED"),
+                    self._change("BDD-001/T2", "ADDED", text="失败后自动重试三次", required=True),
+                ]),
+            )
+
     def test_removal_requires_disposition_and_updates_active_obligations(self) -> None:
         """验证删除已实现需求必须声明处置，确认后才从最终义务集合移除。"""
         write_requirement_snapshot(
@@ -1305,6 +1379,10 @@ class GitDiffCollectionTests(unittest.TestCase):
         status = working_tree_status(self.repo)
         self.assertIn("Mixed.kt", status)
         self.assertIn("app/src/main/res/", status)
+        expanded_status = working_tree_status(self.repo, untracked_files="all")
+        self.assertIn("app/src/main/res/layout/untracked.xml", expanded_status)
+        with self.assertRaisesRegex(GitInspectionError, "untracked_files"):
+            working_tree_status(self.repo, untracked_files="invalid")
 
     def test_standalone_git_script_outputs_json(self) -> None:
         """验证独立 Git 脚本输出可供其他编排器消费的结构化 JSON。"""
@@ -1379,6 +1457,47 @@ class GitDiffCollectionTests(unittest.TestCase):
             self.assertEqual("已确认需求", load_requirement_snapshot(snapshot)["content"])
         finally:
             os.chdir(old_cwd)
+
+    def test_check_env_allows_current_document_evidence_without_code_dirty(self) -> None:
+        """验证新建 document/<需求>/ 可作为交付证据，不阻断代码基线。"""
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "prepare clean tree")
+        requirement_dir = self.repo / "document" / "2026-07-28-login"
+        requirement_dir.mkdir(parents=True)
+        requirement = requirement_dir / "需求说明.md"
+        requirement.write_text("已确认需求\n", encoding="utf-8")
+        (requirement_dir / "issues.md").write_text("审计记录\n", encoding="utf-8")
+        baseline = Path(self.temp_dir.name) / "document-baseline.json"
+        snapshot = Path(self.temp_dir.name) / "document-snapshot.json"
+        paths = SimpleNamespace(
+            project_path=self.repo,
+            requirement_path=requirement,
+            requirement_dir=requirement_dir,
+        )
+        args = SimpleNamespace(
+            config=str(Path(self.temp_dir.name) / "local.yaml"),
+            new_requirement=False,
+        )
+        output = io.StringIO()
+        old_cwd = Path.cwd()
+        try:
+            with (
+                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
+                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
+                mock.patch(
+                    "scripts.delivery.requirement_snapshot_path_for_config",
+                    return_value=snapshot,
+                ),
+                redirect_stdout(output),
+            ):
+                cmd_check_env(args)
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertIn("交付文档改动已忽略", output.getvalue())
+        self.assertEqual("已确认需求", load_requirement_snapshot(snapshot)["content"])
+        self.assertEqual(current_head(self.repo), load_baseline(self.repo, baseline)["head"])
 
     def test_check_env_reuses_existing_start_after_intermediate_commit(self) -> None:
         """验证中途提交后重复检查只复用原起点，不隐藏已经提交的需求改动。"""
@@ -1582,20 +1701,19 @@ class RouteCommandTests(unittest.TestCase):
         self.requirement = self.root / "requirement.md"
         self.requirement.write_text("修改首页、用户接口和本地数据。\n", encoding="utf-8")
 
-    def test_route_prints_api_and_manual_ui_selection(self) -> None:
-        """验证 API 自动入队、UI 保持手动，并输出其他工程影响关注点。"""
+    def _run_route_with_changes(
+        self,
+        changes: list[GitChange],
+        *,
+        requirement_dir: Path | None = None,
+    ) -> tuple[str, dict]:
+        """执行一次隔离 route，返回终端输出和写出的 route-impact。"""
         args = SimpleNamespace(config=str(self.root / "local.yaml"))
-        files = [
-            "app/src/main/java/example/HomeScreen.kt",
-            "app/src/main/java/example/UserMapper.kt",
-            "app/src/main/java/example/UserDao.kt",
-            "gradle/libs.versions.toml",
-        ]
         output = io.StringIO()
         paths = SimpleNamespace(
             project_path=self.root,
             requirement_path=self.requirement,
-            requirement_dir=self.root,
+            requirement_dir=requirement_dir or self.root,
         )
         route_path = self.root / "route-impact.json"
         requirement_sha = hashlib.sha256(
@@ -1640,17 +1758,26 @@ class RouteCommandTests(unittest.TestCase):
                         "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                 ),
-                mock.patch(
-                    "scripts.delivery.get_diff_changes",
-                    return_value=([GitChange("M", path) for path in files], []),
-                ),
+                mock.patch("scripts.delivery.get_diff_changes", return_value=(changes, [])),
                 redirect_stdout(output),
             ):
                 cmd_route(args)
         finally:
             os.chdir(old_cwd)
 
-        text = output.getvalue()
+        return output.getvalue(), json.loads(route_path.read_text(encoding="utf-8"))
+
+    def test_route_prints_api_and_manual_ui_selection(self) -> None:
+        """验证 API 自动入队、UI 保持手动，并输出其他工程影响关注点。"""
+        files = [
+            "app/src/main/java/example/HomeScreen.kt",
+            "app/src/main/java/example/UserMapper.kt",
+            "app/src/main/java/example/UserDao.kt",
+            "gradle/libs.versions.toml",
+        ]
+        text, route_payload = self._run_route_with_changes([
+            GitChange("M", path) for path in files
+        ])
         self.assertIn("你主要看:", text)
         self.assertIn("需求文件:", text)
         self.assertIn("route、专项审查和最终报告前必须重新读取", text)
@@ -1669,8 +1796,6 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("UI/A11y: 候选适用", text)
         self.assertIn("无真机时继续其他门禁", text)
         self.assertIn("动态能力未验证不得写成通过", text)
-        self.assertTrue(route_path.is_file())
-        route_payload = json.loads(route_path.read_text(encoding="utf-8"))
         self.assertNotIn("impacts", route_payload)
         self.assertEqual("d" * 64, route_payload["implementation_plan_sha256"])
         self.assertEqual("f" * 64, route_payload["impact_radius_sha256"])
@@ -1681,6 +1806,42 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("android-data-migration", route_gates)
         self.assertIn(
             "app/src/main/java/example/UserMapper.kt",
+            route_gates["android-verify-api-contract"]["basis_files"],
+        )
+
+    def test_route_ignores_document_only_changes(self) -> None:
+        """验证交付文档变化不会触发代码影响面或专项 gate。"""
+        requirement_dir = self.root / "document" / "2026-07-28-login"
+        requirement_dir.mkdir(parents=True)
+
+        text, route_payload = self._run_route_with_changes(
+            [GitChange("A", "document/2026-07-28-login/审计总结.md")],
+            requirement_dir=requirement_dir,
+        )
+
+        self.assertIn("未检测到任何代码变更", text)
+        self.assertNotIn("android-verify-api-contract", text)
+        self.assertEqual([], route_payload["conditional_gates"])
+
+    def test_route_detects_http_url_connection_api_basis_from_source(self) -> None:
+        """验证 ApiClient/HttpURLConnection 变更触发接口契约且依据是源码路径。"""
+        api_path = "app/src/main/java/example/TikTokApiClient.java"
+        patch = (
+            "@@ public class TikTokApiClient {\n"
+            "+  private static final String API_BASE_URL = \"https://example.invalid\";\n"
+            "+  HttpURLConnection conn = (HttpURLConnection) new URL(API_BASE_URL).openConnection();\n"
+        )
+
+        _, route_payload = self._run_route_with_changes([
+            GitChange("M", api_path, patch=patch)
+        ])
+
+        route_gates = {
+            item["id"]: item for item in route_payload["conditional_gates"]
+        }
+        self.assertIn("android-verify-api-contract", route_gates)
+        self.assertEqual(
+            [api_path],
             route_gates["android-verify-api-contract"]["basis_files"],
         )
 

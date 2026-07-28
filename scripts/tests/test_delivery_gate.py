@@ -44,6 +44,7 @@ from ..requirement_snapshot import (  # noqa: E402
 from ..requirement_inputs import requirement_inputs_digest  # noqa: E402
 from ..route_impact import build_route_impact, write_route_impact  # noqa: E402
 from ..specialist_result import (  # noqa: E402
+    API_CONTRACT_SKILL,
     CODE_QUALITY_CHECK_IDS,
     IMPACT_CATEGORIES,
     SPECIALIST_PRODUCER,
@@ -673,6 +674,55 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("gate android-ui-a11y 没有专属于本 gate" in error for error in errors))
+
+    def test_api_contract_gate_rejects_specialist_pass_without_contract_evidence(self) -> None:
+        """验证最终门禁不能接受 API 专项空 PASS 冒充契约核验。"""
+        summary = "接口实现与契约一致。"
+        fake_result = {
+            "version": SPECIALIST_RESULT_VERSION,
+            "producer": SPECIALIST_PRODUCER,
+            "id": "E-API",
+            "skill": API_CONTRACT_SKILL,
+            "provenance": {"skill": API_CONTRACT_SKILL},
+            "requirement_id": "baseline-1",
+            "requirement_revision": 2,
+            "requirement_file_sha256": self.requirement,
+            "requirement_inputs_sha256": self.requirement_inputs,
+            "baseline_id": "baseline-1",
+            "snapshot_sha256": self.snapshot,
+            "conclusion": "PASS",
+            "summary": summary,
+            "findings": {"P0": 0, "P1": 0, "P2": 0, "P3": 0},
+            "unresolved_findings": [],
+            "obligation_sha256s": {},
+        }
+        result_path = self.temp_root / "E-API.specialist.json"
+        result_path.write_text(json.dumps(fake_result), encoding="utf-8")
+        self.payload["evidence"].append({
+            "id": "E-API",
+            "kind": "REVIEW",
+            "snapshot_sha256": self.snapshot,
+            "summary": summary,
+            "specialist": API_CONTRACT_SKILL,
+            "specialist_result_path": str(result_path),
+            "specialist_result_sha256": sha256_file(result_path),
+            "obligation_sha256s": {},
+        })
+        self.context["expected_conditional_gates"] = ["android-verify-api-contract"]
+        self.payload["gates"].append({
+            "id": "android-verify-api-contract",
+            "required": True,
+            "status": "PASS",
+            "evidence_ids": ["E-API"],
+        })
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("API 契约专项" in error for error in errors))
+        self.assertTrue(any(
+            "gate android-verify-api-contract 没有专属于本 gate" in error
+            for error in errors
+        ))
 
     def test_requires_route_triggered_conditional_gate(self) -> None:
         """验证 route 检出的条件能力不能被最终报告直接省略。"""

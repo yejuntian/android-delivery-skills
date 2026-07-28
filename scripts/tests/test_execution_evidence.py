@@ -347,6 +347,64 @@ class ExecutionEvidenceTests(unittest.TestCase):
             receipt["snapshot_sha256_after"],
         )
 
+    def test_document_receipts_do_not_pollute_code_snapshot(self) -> None:
+        """验证写入 document/<需求>/ 的收据和日志不改变代码摘要。"""
+        wrapper = self.repo / "gradlew"
+        wrapper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        wrapper.chmod(0o700)
+        requirement_dir = self.repo / "document" / "2026-07-28-login"
+        result_path = requirement_dir / "test-results" / "delivery-result.json"
+        requirement_dir.mkdir(parents=True)
+        context = {
+            **self.context,
+            "result_path": str(result_path),
+            "snapshot_sha256": current_delivery_snapshot(self.repo, self.baseline)["snapshot_sha256"],
+        }
+
+        receipt, receipt_path, exit_code = run_and_record(
+            evidence_id="E-BUILD-DOC",
+            gate_id="android-build",
+            command=["./gradlew", ":app:assembleDebug"],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[],
+            context=context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=requirement_dir / ".state" / "evidence",
+        )
+
+        self.assertEqual(0, exit_code)
+        self.assertIn("document/2026-07-28-login", str(receipt_path))
+        self.assertEqual(receipt["snapshot_sha256_before"], receipt["snapshot_sha256_after"])
+
+    def test_zero_test_under_document_fails_as_evidence_not_snapshot_pollution(self) -> None:
+        """验证缺少 JUnit 报告时返回证据失败，而不是被 document 收据误判代码变化。"""
+        requirement_dir = self.repo / "document" / "2026-07-28-zero-test"
+        result_path = requirement_dir / "test-results" / "delivery-result.json"
+        requirement_dir.mkdir(parents=True)
+        context = {
+            **self.context,
+            "result_path": str(result_path),
+            "snapshot_sha256": current_delivery_snapshot(self.repo, self.baseline)["snapshot_sha256"],
+        }
+
+        receipt, _, exit_code = run_and_record(
+            evidence_id="E-EMPTY-DOC",
+            gate_id="android-test-and-fix",
+            command=[sys.executable, "-c", "pass"],
+            cwd=self.repo,
+            timeout_seconds=30,
+            reports=[],
+            context=context,
+            project_path=self.repo,
+            baseline_path=self.baseline,
+            receipt_dir=requirement_dir / ".state" / "evidence",
+        )
+
+        self.assertEqual(3, exit_code)
+        self.assertEqual(receipt["snapshot_sha256_before"], receipt["snapshot_sha256_after"])
+
     def test_command_start_failure_is_recorded(self) -> None:
         """验证命令无法启动也保留不可覆盖收据，而不是只抛出 traceback。"""
         receipt, receipt_path, exit_code = run_and_record(

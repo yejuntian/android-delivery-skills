@@ -70,7 +70,7 @@ confirm-requirement-update 成功后，如果续接指南有 STALE 或新增义�
 ## 并行需求通道（多窗口同时推进）
 
 - 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。机器状态位于各自 `requirement_dir/.state`；隔离边界是需求目录，不是 profile 名称。
-- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交）；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`delivery_gate` 已在代码摘要里排除 `document/`，文档变化不污染 `snapshot_sha256`。
+- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交）；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`check-env` 只把当前 `<requirement_dir>` 下的文档排除出“代码脏工作区”，`route`、执行收据和最终门禁排除 `document/` 作为交付证据目录，文档变化不触发代码影响面、不污染 `snapshot_sha256`，但可以 `git add`/提交以保留需求证据链。
 - 不冲突的需求（改不同文件）各窗口独立闭环，从 `init`/`check-env` 到 `route`/`delivery_gate` 全套自带 `--config`。改同一文件时 git 合入自然报冲突，不做预检。
 - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 使 worktree 证据失效）、不用 cherry-pick（丢追溯链）。合入后在最终代码上重跑受影响门禁。
 - 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md`，各通道标 `MERGED`+批次号；`index --main-worktree <主工作树>` 刷新全局总览到 `<主工作树>/document/需求总览.md`（六列含分支和集成批次）。
@@ -232,7 +232,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py init
 python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 ```
 
-**AI 动作**：环境检查只在目标分支和工作区干净时一起建立当前需求 Git 基线与需求起点；已有起点时安全复用，绝不覆盖。任一失败都不进入编码。检测到已有改动时停止，不自动 stash、提交或清理。只有用户明确开始新的串行需求时才使用 `check-env --new-requirement`。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
+**AI 动作**：环境检查只在目标分支和代码工作区干净时一起建立当前需求 Git 基线与需求起点；已有起点时安全复用，绝不覆盖。任一失败都不进入编码。检测到需求开始前的代码改动时停止，不自动 stash、提交或清理；当前 `<requirement_dir>` 下新建或更新的需求、审计、测试记录、issue 和收据文档不算代码脏工作区，可以随交付提交。只有用户明确开始新的串行需求时才使用 `check-env --new-requirement`。随后按 `references/requirement-revision.schema.json` 把用户已确认的全部原子 Then 写入 `<requirement_dir>/test-cases/requirement-revision.json`，并执行：
 
 ```bash
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
@@ -274,7 +274,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
-**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的 diff，输出专项审查与测试顺序，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照同时绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接与本地资料摘要；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
+**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的代码 diff（排除 `document/` 交付证据），输出专项审查与测试顺序，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照同时绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接与本地资料摘要；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。

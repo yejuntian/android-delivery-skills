@@ -35,6 +35,7 @@ if __package__ in {None, ""}:
 
 from .config_paths import (  # noqa: E402
     baseline_path_for_config,
+    delivery_snapshot_exclusions,
     evidence_directory_for_config,
     evidence_scope_directory,
     resolve_config_paths,
@@ -744,8 +745,9 @@ def run_and_record(
         raise ExecutionEvidenceError(f"命令日志无法写入外部证据目录: {exc}") from exc
     finished_at = datetime.now(timezone.utc).isoformat()
 
-    excluded: set[str] = set()
     result_path = Path(str(context["result_path"]))
+    requirement_dir = result_path.parent.parent
+    excluded: set[str] = delivery_snapshot_exclusions(project_path, requirement_dir)
     try:
         excluded.add(result_path.relative_to(project_path).as_posix())
     except ValueError:

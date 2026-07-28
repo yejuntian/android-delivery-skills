@@ -729,3 +729,17 @@
 - **预期动作**：`confirm-requirement-update` 后同时更新 `<requirement_dir>/实施计划.md` 和 `<requirement_dir>/test-cases/impact-radius.json`，只登记登录提示义务的 ADDED/CHANGED/REMOVED/SUPERSEDED、允许文件/目录前缀、受影响测试和模块；`confirm-plan` 收据绑定影响半径摘要。最终门禁读取基线后 diff，发现支付 Repository 不在已确认半径内时阻断完整通过；AI 只能移除该无关改动，或把新增影响写回需求/计划/影响半径并重新确认后再继续。
 - **预期结论**：编码中需求变化只处理受影响义务、测试和代码，未变化登录行为不重做；越界文件不会因为测试通过或 AI 说明“只是日志”而进入通过报告。重新确认或移除越界改动后，route、测试和最终证据基于最终代码重新生成。
 - **禁止行为**：需求变化后从头重跑全部准备、把无关支付改动塞进最终报告口头豁免、自动扩大 `allowed_dirs`、复用旧 `confirm-plan` 收据，或为了通过删除/弱化旧测试。
+
+## 场景 89：交付文档可提交但不算代码 Diff
+
+- **用户请求**：在真实项目中把需求说明、审计记录、测试日志和最终报告放到 `document/2026-07-28-login/`，希望随需求一起提交，随后执行 `check-env`、`route` 和最终门禁。
+- **预期动作**：`check-env` 展开未跟踪目录并只忽略当前 `<requirement_dir>` 下的交付文档，其他代码改动仍阻断；`route` 和最终代码摘要排除 `document/` 证据目录，不由文档日志触发 UI/API/安全等专项；执行收据写入 `document/` 时不改变代码摘要。
+- **预期结论**：`document/<需求>/` 可以 `git add`/提交作为需求证据链，但不能作为本次代码影响面、代码摘要或专项触发依据。
+- **禁止行为**：把 `?? document/` 折叠目录当成代码脏区误拦、把审计日志路由成 API/安全风险、因收据自写入导致测试后代码摘要变化，或用忽略文档为理由忽略真实源码改动。
+
+## 场景 90：API 契约专项空 PASS 被拒绝
+
+- **用户请求**：最终 diff 修改 `ApiClient`、DTO 或 Repository 网络行为；API 专项报告只写“契约一致，PASS”，没有契约文件、operation/schema、实现映射或 artifact。
+- **预期动作**：API 专项结果必须记录 `api-contract` capability、`contract-source`、`operation-schema`、`implementation-mapping` 三项检查、执行数量和至少一个契约/核对 artifact；缺正式契约或无法读取时输出 `UNVERIFIED/BLOCKED/FAIL`，不能 PASS。最终门禁引用空 PASS 时失败，并指出缺 API 契约机器证据。
+- **预期结论**：接口变更不会因为自然语言总结而假绿；只有契约来源、schema 和实现映射均可复核且 artifact 摘要未变化时，`android-verify-api-contract` 才能通过。
+- **禁止行为**：根据客户端现状脑补后端契约、用日志或聊天摘要冒充正式 artifact、缺失 operation/schema 仍 PASS，或让最终报告自行省略 route 触发的 API 条件门禁。

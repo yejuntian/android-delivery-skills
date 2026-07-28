@@ -1,0 +1,33 @@
+id: 013-api-contract-pass-requires-evidence
+title: API 契约专项 PASS 必须绑定契约证据
+rubric: artifact-integrity-v1
+checks:
+  - name: 专项结果校验拒绝 API 空 PASS
+    path: "scripts/specialist_result.py"
+    contains:
+      - "API_CONTRACT_CAPABILITY_ID = \"api-contract\""
+      - "contract-source"
+      - "operation-schema"
+      - "implementation-mapping"
+      - "API 契约专项 PASS 必须附带正式契约或核对结果 artifact"
+  - name: schema 要求 API 契约结构化字段
+    path: "android-implement-and-verify/references/specialist-result.schema.json"
+    contains:
+      - "android-verify-api-contract"
+      - "api-contract"
+      - "contract-source"
+      - "operation-schema"
+      - "implementation-mapping"
+  - name: API Skill 明确无契约证据不得 PASS
+    path: "android-verify-api-contract/SKILL.md"
+    contains:
+      - "无 artifact、无 operation/schema、只凭客户端代码或自然语言总结，不得输出 `PASS`"
+      - "capabilities"
+      - "checks"
+  - name: 回归测试覆盖专项和最终门禁拒绝假 PASS
+    paths:
+      - "scripts/tests/test_specialist_result.py"
+      - "scripts/tests/test_delivery_gate.py"
+    contains:
+      - "test_api_contract_pass_requires_machine_contract_fields"
+      - "test_api_contract_gate_rejects_specialist_pass_without_contract_evidence"

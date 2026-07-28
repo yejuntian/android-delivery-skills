@@ -235,8 +235,7 @@ def delivery_snapshot_exclusions(project_path: str | Path, requirement_dir: str 
             pass
     document_dir = project_resolved / "document"
     try:
-        if document_dir.is_dir():
-            excluded.add(document_dir.relative_to(project_resolved).as_posix())
+        excluded.add(document_dir.relative_to(project_resolved).as_posix())
     except ValueError:
         pass
     return excluded

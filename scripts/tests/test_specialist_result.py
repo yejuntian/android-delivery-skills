@@ -27,6 +27,9 @@ if __package__ in {None, ""}:
 
 from ..execution_evidence import sha256_file  # noqa: E402
 from ..specialist_result import (  # noqa: E402
+    API_CONTRACT_CHECK_IDS,
+    API_CONTRACT_CAPABILITY_ID,
+    API_CONTRACT_SKILL,
     CODE_QUALITY_CHECK_IDS,
     IMPACT_CATEGORIES,
     SPECIALIST_PRODUCER,
@@ -256,6 +259,51 @@ class SpecialistResultTests(unittest.TestCase):
         self.payload["checks"] = passing_code_quality_checks()
         self.payload["executed_checks"] = len(self.payload["checks"])
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
+
+    def test_api_contract_pass_requires_machine_contract_fields(self) -> None:
+        """验证接口契约专项不能只写自然语言 PASS。"""
+        self.payload["skill"] = API_CONTRACT_SKILL
+        self.payload["provenance"] = {"skill": API_CONTRACT_SKILL}
+        self.payload.pop("confirmed_impacts")
+
+        errors = validate_specialist_result(self.payload, self.context)
+
+        self.assertTrue(any("api-contract" in error for error in errors))
+        self.assertTrue(any("缺少必需检查" in error for error in errors))
+        self.assertTrue(any("artifact" in error for error in errors))
+
+    def test_accepts_api_contract_pass_with_contract_checks_and_artifact(self) -> None:
+        """验证有契约来源、operation/schema 和实现映射证据时 API PASS 可通过。"""
+        contract = self.root / "api-contract.md"
+        contract.write_text("GET /user/list response schema\n", encoding="utf-8")
+        self.payload["skill"] = API_CONTRACT_SKILL
+        self.payload["provenance"] = {"skill": API_CONTRACT_SKILL}
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = [{
+            "id": API_CONTRACT_CAPABILITY_ID,
+            "required": True,
+            "status": "PASS",
+        }]
+        self.payload["checks"] = [
+            {
+                "id": check_id,
+                "required": True,
+                "status": "PASS",
+                "summary": "已核对正式契约、operation/schema 和实现映射。",
+            }
+            for check_id in sorted(API_CONTRACT_CHECK_IDS)
+        ]
+        self.payload["executed_checks"] = len(self.payload["checks"])
+        self.payload["artifacts"] = [{
+            "path": str(contract),
+            "sha256": sha256_file(contract),
+            "kind": "api-contract",
+        }]
+
+        self.assertEqual([], validate_specialist_result(self.payload, self.context))
+        self.payload["checks"][0]["required"] = False
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("required=true" in error for error in errors))
 
     def test_rejects_stale_context_and_changed_artifact(self) -> None:
         """验证代码变化或证据文件被改写后旧专项结果立即失效。"""

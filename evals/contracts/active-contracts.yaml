@@ -199,6 +199,41 @@ contracts:
       command:
         - command-007-impact-radius-out-of-scope-blocked
 
+  - id: delivery-documents-are-evidence-not-code
+    status: active
+    title: 交付文档可以提交但不得参与代码脏区、路由或代码摘要
+    kind: evidence_scope
+    oracle: delivery_documents_excluded_from_code_diff
+    owner_files:
+      - android-implement-and-verify/SKILL.md
+      - scripts/delivery.py
+      - scripts/git_changes.py
+      - scripts/execution_evidence.py
+    applies_to:
+      - check_env
+      - route
+      - final_delivery
+    covered_by:
+      artifact:
+        - 012-document-evidence-not-code-diff
+
+  - id: api-contract-pass-requires-contract-evidence
+    status: active
+    title: API 契约专项通过必须绑定契约来源、operation/schema、实现映射和 artifact
+    kind: anti_fake_green
+    oracle: api_contract_pass_requires_evidence
+    owner_files:
+      - android-verify-api-contract/SKILL.md
+      - android-implement-and-verify/references/specialist-result.schema.json
+      - scripts/specialist_result.py
+      - scripts/delivery_gate.py
+    applies_to:
+      - route
+      - final_delivery
+    covered_by:
+      artifact:
+        - 013-api-contract-pass-requires-evidence
+
   - id: maintenance-evals-are-wired
     status: active
     title: 流程维护必须能运行本地 eval 回归

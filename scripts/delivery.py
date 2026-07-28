@@ -100,6 +100,14 @@ def _is_under_path(file_path: str, prefix: str) -> bool:
     return normalized == prefix or normalized.startswith(prefix.rstrip("/") + "/")
 
 
+def _path_excluded_from_delivery(path: str | None, excluded: set[str]) -> bool:
+    """判断路径是否属于交付文档/状态产物，route 不应用它推导代码影响面。"""
+    if not path:
+        return False
+    normalized = path.replace("\\", "/").strip('"')
+    return any(_is_under_path(normalized, prefix) for prefix in excluded)
+
+
 def format_requirement_change(change):
     """把机器稳定枚举转换成面向用户的中文需求变化说明。"""
     change_type = CHANGE_TYPE_LABELS.get(change.get("change_type"), "未知变化")
@@ -446,7 +454,7 @@ def classify_route_impacts(diff_files, project_root=None, route_signals=None):
     }
     ui_name = re.compile(r"(?:Activity|Fragment|Adapter|ViewHolder|Screen|Composable|View)$", re.I)
     api_name = re.compile(
-        r"(?:Api|Dto|Request|Response|Repository|Endpoint|Mapper|DataSource)$",
+        r"(?:Api|ApiClient|HttpClient|ServiceClient|Dto|Request|Response|Repository|Endpoint|Mapper|DataSource)$",
         re.I,
     )
     api_segments = {"api", "network", "remote", "dto", "openapi", "swagger"}
@@ -535,8 +543,10 @@ def classify_route_impacts(diff_files, project_root=None, route_signals=None):
         if content:
             is_ui = is_ui or bool(re.search(r"@Composable\b", content))
             is_api = is_api or bool(re.search(
-                r"@(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|HTTP)\b",
+                r"@(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|HTTP)\b"
+                r"|\b(HttpURLConnection|OkHttpClient|Retrofit|Ktor|openConnection|baseUrl|API_BASE_URL)\b",
                 content,
+                re.I,
             ))
             is_data = is_data or bool(re.search(
                 r"@(Entity|Dao|Database|TypeConverter)\b|\bMigration\s*\(",
@@ -879,7 +889,7 @@ def cmd_check_env(args):
         raise DeliveryError(f"当前分支 ({branch}) 与目标分支 ({target_branch}) 不匹配")
     print("✅ 分支检查通过。")
 
-    status = working_tree_status(project_path)
+    status = working_tree_status(project_path, untracked_files="all")
     # document/ 是交付文档（git 跟踪、可 commit），不算代码改动，不阻断 check-env。
     # 只检查代码工作区是否干净，文档随时改不卡流程；防串需求靠代码基线 + document 日期目录隔离。
     requirement_dir_rel = None
@@ -1069,10 +1079,17 @@ def cmd_route(args):
         raise DeliveryError(f"当前分支 ({branch}) 与目标分支 ({target_branch}) 不匹配")
 
     baseline_path = baseline_path_for_config(resolved_config)
+    excluded = delivery_snapshot_exclusions(project_path, paths.requirement_dir)
     changes, warnings = get_diff_changes(baseline_path)
+    route_changes = []
+    for change in changes:
+        change_paths = [path for path in (change.old_path, change.path) if path]
+        if change_paths and all(_path_excluded_from_delivery(path, excluded) for path in change_paths):
+            continue
+        route_changes.append(change)
     diff_files = sorted({
         path.replace("\\", "/")
-        for change in changes
+        for change in route_changes
         for path in (change.old_path, change.path)
         if path
     })
@@ -1084,7 +1101,7 @@ def cmd_route(args):
     impacts = classify_route_impacts(
         diff_files,
         project_root=project_path,
-        route_signals={change.path: change.patch for change in changes},
+        route_signals={change.path: change.patch for change in route_changes},
     )
     ui_files = impacts["ui"]
     api_files = impacts["api"]
@@ -1126,7 +1143,6 @@ def cmd_route(args):
         plan_path=implementation_plan_path(paths.requirement_dir),
     )
 
-    excluded = delivery_snapshot_exclusions(project_path, paths.requirement_dir)
     try:
         code_snapshot = current_delivery_snapshot(
             project_path,
@@ -1157,7 +1173,7 @@ def cmd_route(args):
         return
 
     print("📜 变更文件列表:")
-    for change in changes:
+    for change in route_changes:
         rename = f" <- {change.old_path}" if change.old_path else ""
         change_status = GIT_CHANGE_LABELS.get(change.status, "文件状态暂时无法识别")
         print(f"  - [{change_status}] {change.path}{rename}")

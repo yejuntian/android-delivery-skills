@@ -287,6 +287,7 @@ def _normalize_change(item: Any, index: int) -> dict[str, Any]:
 def _validate_manifest(
     snapshot: dict[str, Any],
     manifest: dict[str, Any],
+    content: str,
 ) -> list[dict[str, Any]]:
     """验证修订清单绑定当前需求和版本，防止旧 AI 产物覆盖新需求。"""
     if manifest.get("version") != MANIFEST_VERSION:
@@ -318,6 +319,13 @@ def _validate_manifest(
     identifiers = [item["id"] for item in changes]
     if len(identifiers) != len(set(identifiers)):
         raise RequirementSnapshotError("需求修订清单存在重复 change id")
+    mentioned_ids = set(OBLIGATION_ID_PATTERN.findall(content))
+    missing_mentioned = sorted(mentioned_ids - set(identifiers))
+    if missing_mentioned:
+        raise RequirementSnapshotError(
+            "需求正文中已列出的 BDD/Then 未进入修订清单: "
+            + ", ".join(missing_mentioned)
+        )
 
     active_ids = {item["id"] for item in snapshot["obligations"]}
     prior_pending_ids = {item["id"] for item in snapshot["pending_changes"]}
@@ -333,6 +341,32 @@ def _validate_manifest(
         if identifier not in active_ids and item["change_type"] != "ADDED":
             raise RequirementSnapshotError(f"新义务必须标记 ADDED: {identifier}")
     return changes
+
+
+def _normalized_text_for_grounding(value: str) -> str:
+    """压缩空白用于判断漏拆补录是否已经写在 requirement_file 里。"""
+    return re.sub(r"\s+", "", value).strip()
+
+
+def _confirmed_changes_grounded_in_content(
+    changes: list[dict[str, Any]],
+    content: str,
+) -> bool:
+    """允许补录已写入需求正文的漏拆 BDD，继续阻断聊天脑补的新语义。"""
+    grounded = _normalized_text_for_grounding(content)
+    semantic_changes = [
+        item for item in changes
+        if item["decision"] == "CONFIRMED" and item["change_type"] != "UNCHANGED"
+    ]
+    if not semantic_changes:
+        return True
+    for item in semantic_changes:
+        if item["change_type"] not in {"ADDED", "CHANGED"}:
+            return False
+        text = item.get("text")
+        if not isinstance(text, str) or _normalized_text_for_grounding(text) not in grounded:
+            return False
+    return True
 
 
 def _apply_changes(
@@ -392,7 +426,7 @@ def apply_requirement_revision(
     resolved_requirement = Path(requirement_path).expanduser().resolve()
     if Path(str(snapshot["requirement_path"])).resolve() != resolved_requirement:
         raise RequirementSnapshotError("当前 requirement_file 与需求快照路径不一致")
-    changes = _validate_manifest(snapshot, manifest)
+    changes = _validate_manifest(snapshot, manifest, content)
     current_digest = requirement_digest(content)
     unresolved = [item for item in changes if item["decision"] in UNRESOLVED_DECISIONS]
     if unresolved:
@@ -427,7 +461,10 @@ def apply_requirement_revision(
         _atomic_write(snapshot_path, updated)
         return updated, True
     if snapshot["revision"] > 0 and semantic_confirmed and current_digest == snapshot["sha256"]:
-        if snapshot.get("proposed_sha256") != current_digest:
+        if (
+            snapshot.get("proposed_sha256") != current_digest
+            and not _confirmed_changes_grounded_in_content(changes, content)
+        ):
             raise RequirementSnapshotError(
                 "需求语义已变化但 requirement_file 未更新；请先同步最新完整需求"
             )

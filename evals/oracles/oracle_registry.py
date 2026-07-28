@@ -20,6 +20,8 @@ KNOWN_ORACLES = frozenset(
         "mutation_survivor_blocks_pass",
         "ui_visual_report_required",
         "conditional_gate_union_is_complete",
+        "delivery_documents_excluded_from_code_diff",
+        "api_contract_pass_requires_evidence",
         "maintenance_evals_are_wired",
         "flow_gates_hold",
         "fresh_evidence_required",

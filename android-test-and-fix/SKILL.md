@@ -101,6 +101,7 @@ detekt、Semgrep、CodeQL 或其他已有工具能够输出 SARIF 时，使用 `
 ### Java 与混合项目测试发现
 
 - 同时检索 `src/test/java`、`src/androidTest/java`、Kotlin source set、变体 source set 和自定义测试目录。
+- 新增或更新测试默认落盘到目标模块 `<module>/src/test/java|kotlin/`（Unit/JVM）或 `<module>/src/androidTest/java|kotlin/`（Android 插桩）；项目已有变体 source set 和自定义测试目录按实际约定沿用，不把测试代码放进需求 `test-cases/`。
 - 识别并沿用项目已有 JUnit4/JUnit5、Robolectric、Mockito、PowerMock、Espresso、Instrumentation runner 和自定义 Gradle task；不为统一风格迁移框架。
 - Mockito/PowerMock 只作为现有测试能力，仍优先断言状态、返回值和可观察副作用，不用内部调用次数代替业务行为。
 - 老框架无法安全先 Red 时，记录原因并选择覆盖相同 BDD 的最小编译、Robolectric、仪器或人工路径。
@@ -200,7 +201,7 @@ Journey 属于已安装 APK 的关键用户旅程冒烟测试，由本 Skill 根
 - Journey 用例名、说明和 action 自然语言用中文，界面真实文案、资源标识、包名、类名和 XML schema 保持原值并在中文步骤中引用，不为翻译改变查找目标。
 - XML 和最终报告必须标明覆盖的 BDD；一个 BDD 需要多层证据时，Journey 通过不改变其他证据的状态。
 - Journey XML 作为当前需求测试用例，默认放 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线、确认修订和需求正文/UI/API 输入摘要，单独调用时来自当前完整输入摘要。默认 Agent 路线用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
-- 不把需求用例长期保存在共享壳源码中；默认 Agent 直接读当前作用域，可选壳每次只同步当前用例集并清除上次残留 XML，防止跨项目串用。
+- 不把需求用例长期保存在共享壳源码中；正式来源是 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。共享 `assets/journey-harness` 只读，调用可选壳前复制到 `<requirement_dir>/.state/journey-runtime/<scope-key>/`，后续只在需求级副本中同步 XML、发现任务、构建和收集报告；全局 `~/.cache/android-delivery-skills/gradle/` 只保存可共享 Gradle 依赖缓存。
 
 ### 默认 Android CLI Agent 执行
 

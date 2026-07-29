@@ -478,7 +478,7 @@ adb install 安装并通过 pm path 校验
 
 ### 可选 AGP 9 壳
 
-已经完成官方初始化且希望得到 Gradle/JUnit 结构化结果时，可以改用独立 `journey-harness`。壳把 `GRADLE_USER_HOME`、项目缓存和构建输出放在 Skill 目录外，使用目标 APK 的真实 applicationId，不升级目标项目。
+已经完成官方初始化且希望得到 Gradle/JUnit 结构化结果时，可以改用独立 `journey-harness`。共享壳只读；执行器会先为当前需求创建可写副本。副本使用目标 APK 的真实 applicationId，不升级目标项目。
 
 ## 可选壳一次性初始化
 
@@ -491,7 +491,7 @@ adb install 安装并通过 pm path 校验
 5. 确认官方任务会在壳配置的外部 build 目录生成 JUnit XML 或等价的结构化测试结果；没有实际测试数量时执行器会拒绝判绿。
 6. 保留官方生成的结构，不手写猜测预览 DSL，也不通过放宽判绿条件绕过缺失结果。
 
-这一步只初始化可选共享壳一次，不要求每个目标项目重复执行，也不是默认 Agent Journey 的前置条件。
+这一步只初始化可选共享壳模板一次，不要求每个目标项目重复执行，也不是默认 Agent Journey 的前置条件。模板初始化不会把任何需求用例写回共享壳。
 
 ## 用例目录与跨项目隔离
 
@@ -509,20 +509,37 @@ adb install 安装并通过 pm path 校验
 harness-app/src/main/journeys/
 ```
 
-只是执行暂存区。脚本会在每次运行前：
+只是共享模板中的结构参考。脚本会在每次运行前创建需求级运行目录，再在副本中：
 
-1. 校验当前用例集。
-2. 清除上一次运行的 `.xml`。
+1. 校验当前需求用例集。
+2. 清除需求副本上一次运行的 `.xml`。
 3. 只同步当前需求的用例。
-4. 保留 `.xml.example` 和说明文件。
+4. 保留共享模板中的 `.xml.example` 和说明文件。
 
-不得把不同项目的需求用例长期混放在共享壳中。
+不得把不同项目的需求用例长期混放在共享壳中。需求级运行目录结构如下：
+
+```text
+<requirement_dir>/.state/journey-runtime/<scope-key>/
+├── gradlew、settings.gradle.kts、build.gradle.kts  ← 共享壳的需求级副本
+├── harness-app/                                    ← 可写 Journey XML 暂存
+├── harness-app-build/                              ← 壳构建输出、JUnit 和截图
+├── project-cache/                                  ← Gradle 项目缓存
+└── reports/                                        ← 壳运行兜底报告
+```
+
+全局只保留可共享的 Gradle 依赖缓存：
+
+```text
+~/.cache/android-delivery-skills/gradle/
+```
+
+设置 `XDG_CACHE_HOME` 后使用 `$XDG_CACHE_HOME/android-delivery-skills/gradle/`。该目录不是测试用例来源，不保存需求 XML、壳构建产物或最终证据。
 
 ## 配置与执行
 
 默认读取 `profiles/local.yaml`：
 
-该文件是被 Git 忽略的本机运行配置；首次使用时从 `profiles/local.example.yaml` 复制并按中文注释填写。示例文件不含真实项目、需求、设备或接口资料，不能直接作为执行事实；已有 `local.yaml` 时不得覆盖。当前 Journey 用例和报告继续保存在被忽略的需求工作区或外部状态目录，但仍参与证据新鲜度校验。
+该文件是被 Git 忽略的本机运行配置；首次使用时从 `profiles/local.example.yaml` 复制并按中文注释填写。示例文件不含真实项目、需求、设备或接口资料，不能直接作为执行事实；已有 `local.yaml` 时不得覆盖。当前 Journey 用例和最终报告继续保存在需求工作区；壳的临时副本、构建、项目缓存和兜底报告保存在需求 `.state/journey-runtime/<scope-key>/`，仍参与证据新鲜度校验。
 
 ```yaml
 testing:
@@ -641,9 +658,9 @@ python3 android-test-and-fix/scripts/run_journey.py \
 
 ### 壳构建被全局 Gradle 配置污染
 
-- 必须使用执行器解析出的 Skill 外专用 `GRADLE_USER_HOME`、Gradle 项目缓存和构建目录；不要把缓存或 build 重新放回壳目录。
+- 必须使用执行器解析出的全局 Gradle 依赖缓存和需求级项目缓存、构建目录；不要把需求 XML、报告或 build 重新放回共享壳目录。
 - 本机需要自定义位置时设置 `ANDROID_DELIVERY_JOURNEY_GRADLE_HOME` / `ANDROID_DELIVERY_JOURNEY_BUILD_ROOT`，不得把路径写死进 Skill。
-- 不使用目标项目或用户全局缓存替代隔离目录。
+- 不使用目标项目的 `.gradle` 或未声明的用户全局缓存替代上述目录。
 
 ### Gemini、认证或网络不可用
 

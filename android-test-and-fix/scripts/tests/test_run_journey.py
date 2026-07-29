@@ -119,22 +119,25 @@ class RunJourneyTest(unittest.TestCase):
             run_journey.variant_task_suffix("demo-debug")
 
     def test_harness_runtime_paths_stay_outside_skill_and_support_override(self):
-        """验证依赖/项目缓存、构建和兜底报告不写入 Skill，并允许私有覆盖。"""
+        """验证全局只共享 Gradle 缓存，其余运行产物都绑定需求目录。"""
         root = Path(tempfile.mkdtemp())
         harness = root / "skill" / "assets" / "journey-harness"
+        runtime = root / "requirement" / ".state" / "journey-runtime" / "scope-1"
         cache_root = root / "cache"
         with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": str(cache_root)}, clear=True):
             default_home = run_journey.resolve_harness_gradle_user_home(harness)
-            default_build = run_journey.resolve_harness_build_root(harness)
-            project_cache = run_journey.resolve_harness_project_cache(harness)
-            fallback_report = run_journey.resolve_fallback_result_path(harness)
+            default_build = run_journey.resolve_harness_build_root(runtime)
+            project_cache = run_journey.resolve_harness_project_cache(runtime)
+            fallback_report = run_journey.resolve_fallback_result_path(runtime)
 
         resolved_cache_root = cache_root.resolve()
-        self.assertTrue(default_home.is_relative_to(resolved_cache_root))
-        self.assertTrue(default_build.is_relative_to(resolved_cache_root))
-        self.assertTrue(project_cache.is_relative_to(resolved_cache_root))
-        self.assertTrue(fallback_report.is_relative_to(resolved_cache_root))
-        self.assertFalse(default_home.is_relative_to(harness))
+        self.assertEqual((resolved_cache_root / "android-delivery-skills" / "gradle"), default_home)
+        self.assertEqual((runtime / "harness-app-build").resolve(), default_build)
+        self.assertEqual((runtime / "project-cache").resolve(), project_cache)
+        self.assertEqual(
+            (runtime / "reports" / "journey-harness" / "result.json").resolve(),
+            fallback_report,
+        )
         self.assertFalse(default_build.is_relative_to(harness))
         self.assertFalse(project_cache.is_relative_to(harness))
         self.assertFalse(fallback_report.is_relative_to(harness))
@@ -151,6 +154,34 @@ class RunJourneyTest(unittest.TestCase):
         ):
             self.assertEqual(explicit_home.resolve(), run_journey.resolve_harness_gradle_user_home(harness))
             self.assertEqual(explicit_build.resolve(), run_journey.resolve_harness_build_root(harness))
+
+    def test_copies_shared_harness_to_private_runtime_without_mutating_source(self):
+        """验证共享壳只读，需求副本独立承载 Journey XML 和运行产物。"""
+        root = Path(tempfile.mkdtemp())
+        source = root / "skill" / "assets" / "journey-harness"
+        source_journeys = source / "harness-app" / "src" / "main" / "journeys"
+        source_journeys.mkdir(parents=True)
+        (source / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+        (source_journeys / "shared.xml").write_text(
+            "<journey><action>共享模板</action></journey>", encoding="utf-8"
+        )
+        runtime = root / "requirement" / ".state" / "journey-runtime" / "scope-1"
+        (runtime / "harness-app-build").mkdir(parents=True)
+        (runtime / "harness-app-build" / "old.txt").write_text("保留构建缓存", encoding="utf-8")
+
+        run_journey.prepare_harness_runtime(source, runtime)
+
+        self.assertEqual(
+            (source / "gradlew").read_text(encoding="utf-8"),
+            (runtime / "gradlew").read_text(encoding="utf-8"),
+        )
+        self.assertTrue((runtime / "harness-app" / "src" / "main" / "journeys" / "shared.xml").exists())
+        self.assertTrue((runtime / "harness-app-build" / "old.txt").exists())
+        current = root / "current.xml"
+        current.write_text("<journey><action>当前需求</action></journey>", encoding="utf-8")
+        run_journey.stage_journeys([current], runtime)
+        self.assertFalse((runtime / "harness-app" / "src" / "main" / "journeys" / "shared.xml").exists())
+        self.assertTrue((source_journeys / "shared.xml").exists())
 
     def test_environment_errors_never_trigger_app_repair(self):
         """验证只有明确 UI 断言才可进入应用分析，环境故障始终归壳失败。"""
@@ -260,6 +291,7 @@ class RunJourneyTest(unittest.TestCase):
         with (
             mock.patch.object(run_journey, "load_config", return_value={}),
             mock.patch.object(run_journey, "resolve_result_path", return_value=result_path),
+            mock.patch.object(run_journey, "resolve_journey_runtime_root", return_value=root / "runtime"),
             mock.patch.object(run_journey, "resolve_journeys_dir", return_value=journeys),
             mock.patch.object(run_journey, "resolve_android_sdk", return_value="/sdk"),
             mock.patch.object(
@@ -320,10 +352,15 @@ class RunJourneyTest(unittest.TestCase):
 
         first_scope = run_journey.requirement_scope_id(config_path, config)
         first_report = run_journey.resolve_result_path(config_path, config)
+        first_runtime = run_journey.resolve_journey_runtime_root(config_path, config)
         requirement.write_text("second requirement", encoding="utf-8")
         second_scope = run_journey.requirement_scope_id(config_path, config)
+        second_runtime = run_journey.resolve_journey_runtime_root(config_path, config)
 
         self.assertNotEqual(first_scope, second_scope)
+        self.assertNotEqual(first_runtime, second_runtime)
+        self.assertTrue(first_runtime.is_relative_to((root / "requirement" / ".state").resolve()))
+        self.assertTrue(second_runtime.is_relative_to((root / "requirement" / ".state").resolve()))
         self.assertIn(first_scope, str(first_report))
 
         baseline = root / "baseline.json"
@@ -463,7 +500,7 @@ class RunJourneyTest(unittest.TestCase):
         self.assertEqual(1, exit_code)
         resolve_cases.assert_not_called()
         result = json.loads(
-            run_journey.resolve_fallback_result_path(harness).read_text(encoding="utf-8")
+            run_journey._unresolved_result_path(harness).read_text(encoding="utf-8")
         )
         self.assertEqual(run_journey.HARNESS_UNAVAILABLE, result["status"])
         self.assertIn("尚未全部确认", result["message"])
@@ -666,6 +703,7 @@ class RunJourneyTest(unittest.TestCase):
         with (
             mock.patch.object(run_journey, "load_config", return_value=config),
             mock.patch.object(run_journey, "resolve_result_path", return_value=result_path),
+            mock.patch.object(run_journey, "resolve_journey_runtime_root", return_value=root / "runtime"),
             mock.patch.object(run_journey, "resolve_journeys_dir", return_value=journeys),
             mock.patch.object(run_journey, "resolve_android_sdk", return_value="/sdk"),
             mock.patch.object(run_journey, "choose_device", return_value=("device", None)),

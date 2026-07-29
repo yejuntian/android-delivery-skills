@@ -24,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
@@ -38,6 +39,7 @@ DEFAULT_HARNESS = SKILL_DIR / "assets" / "journey-harness"
 DEFAULT_CONFIG = SUITE_ROOT / "profiles" / "local.yaml"
 JOURNEY_GRADLE_HOME_ENV = "ANDROID_DELIVERY_JOURNEY_GRADLE_HOME"
 JOURNEY_BUILD_ROOT_ENV = "ANDROID_DELIVERY_JOURNEY_BUILD_ROOT"
+JOURNEY_RUNTIME_ARTIFACTS = {"harness-app-build", "project-cache", "reports"}
 
 # Journey 与总入口必须使用完全相同的配置路径语义。
 if str(SUITE_ROOT) not in sys.path:
@@ -87,42 +89,92 @@ ADB_TIMEOUT_SECONDS = 120
 GRADLE_TIMEOUT_SECONDS = 1800
 
 
-def _default_harness_runtime_root(harness: Path) -> Path:
-    """按壳路径生成稳定的本机运行目录，使不同 Skill 副本互不污染。"""
+def _default_gradle_cache_root() -> Path:
+    """返回只存放可复用 Gradle 依赖缓存的全局目录。"""
     cache_root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    return (cache_root.expanduser() / "android-delivery-skills" / "gradle").resolve()
+
+
+def resolve_journey_runtime_root(config_path: Path, config: dict[str, Any]) -> Path:
+    """返回当前需求唯一的可写 Journey 运行目录。"""
+    paths = resolve_config_paths(config, config_path)
+    return (
+        paths.requirement_dir
+        / ".state"
+        / "journey-runtime"
+        / requirement_scope_id(config_path, config)
+    ).resolve()
+
+
+def _unresolved_result_path(harness: Path) -> Path:
+    """配置尚未解析时，把故障兜底报告写入临时目录而非共享壳或全局缓存。"""
     harness_key = hashlib.sha256(str(harness.resolve()).encode("utf-8")).hexdigest()[:12]
-    return (cache_root.expanduser() / "android-delivery-skills" / "journey-runtime" / harness_key).resolve()
+    return (
+        Path(tempfile.gettempdir())
+        / "android-delivery-skills"
+        / "journey-runtime"
+        / "unresolved"
+        / harness_key
+        / "reports"
+        / "result.json"
+    ).resolve()
 
 
 def resolve_harness_gradle_user_home(harness: Path) -> Path:
-    """返回 Skill 目录外的独立 Gradle 用户缓存，避免依赖缓存撑大 Skill。"""
+    """返回全局共享 Gradle 依赖缓存；需求产物不写入此目录。"""
     explicit = os.environ.get(JOURNEY_GRADLE_HOME_ENV)
     if explicit:
         return Path(explicit).expanduser().resolve()
-    return (_default_harness_runtime_root(harness) / "gradle-user-home").resolve()
+    return _default_gradle_cache_root()
 
 
 def resolve_harness_build_root(harness: Path) -> Path:
-    """返回 Skill 目录外的壳构建目录，供 Gradle、结果和截图读取共用。"""
+    """返回当前需求运行目录内的壳构建目录。"""
     explicit = os.environ.get(JOURNEY_BUILD_ROOT_ENV)
     if explicit:
         return Path(explicit).expanduser().resolve()
-    return (_default_harness_runtime_root(harness) / "harness-app-build").resolve()
+    return (harness / "harness-app-build").resolve()
 
 
 def resolve_harness_project_cache(harness: Path) -> Path:
-    """返回 Skill 目录外的 Gradle 项目缓存，避免壳根目录重新生成 .gradle。"""
-    return (_default_harness_runtime_root(harness) / "project-cache").resolve()
+    """返回当前需求运行目录内的 Gradle 项目缓存。"""
+    return (harness / "project-cache").resolve()
 
 
 def resolve_fallback_result_path(harness: Path) -> Path:
-    """返回外部兜底报告路径，配置读取失败时也不在 Skill 内生成 build 目录。"""
-    return (
-        _default_harness_runtime_root(harness)
-        / "reports"
-        / "journey-harness"
-        / "result.json"
-    ).resolve()
+    """返回需求级运行目录内的壳报告路径。"""
+    return (harness / "reports" / "journey-harness" / "result.json").resolve()
+
+
+def prepare_harness_runtime(source: Path, runtime_root: Path) -> Path:
+    """复制只读共享壳到需求级目录，保留构建、缓存和报告目录。"""
+    source = source.expanduser().resolve()
+    runtime_root = runtime_root.expanduser().resolve()
+    if source == runtime_root:
+        return runtime_root
+    if runtime_root in source.parents or source in runtime_root.parents:
+        raise OSError(f"Journey 壳源目录不能与运行目录互相包含: {source}")
+    if not source.is_dir():
+        raise OSError(f"Journey 壳项目不存在: {source}")
+
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    for child in list(runtime_root.iterdir()):
+        if child.name in JOURNEY_RUNTIME_ARTIFACTS:
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+    for child in source.iterdir():
+        if child.name in JOURNEY_RUNTIME_ARTIFACTS:
+            continue
+        target = runtime_root / child.name
+        if child.is_dir() and not child.is_symlink():
+            shutil.copytree(child, target, dirs_exist_ok=True)
+        else:
+            shutil.copy2(child, target)
+    return runtime_root
 
 
 @dataclass
@@ -1120,8 +1172,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args(argv)
 
-    harness = Path(args.harness_dir).expanduser().resolve()
-    fallback_result_path = resolve_fallback_result_path(harness)
+    source_harness = Path(args.harness_dir).expanduser().resolve()
     started_at = datetime.now(timezone.utc).isoformat()
     applicability = args.applicability or ("NONE" if args.ui_impact != "behavior" else None)
     coverage_error = None
@@ -1149,15 +1200,22 @@ def main(argv: list[str] | None = None) -> int:
         result.started_at = started_at
         return finish(result, result_path)
 
-    if coverage_error:
-        return complete(JourneyResult(HARNESS_UNAVAILABLE, coverage_error, 1), fallback_result_path)
     config_path = Path(args.config).expanduser().resolve()
     try:
         config = load_config(config_path)
     except (OSError, RuntimeError) as exc:
-        return complete(JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1), fallback_result_path)
+        return complete(
+            JourneyResult(HARNESS_UNAVAILABLE, str(exc), 1),
+            _unresolved_result_path(source_harness),
+        )
 
     context.update(delivery_context(config_path, config))
+    try:
+        result_path = resolve_result_path(config_path, config)
+    except (OSError, ValueError):
+        result_path = _unresolved_result_path(source_harness)
+    if coverage_error:
+        return complete(JourneyResult(HARNESS_UNAVAILABLE, coverage_error, 1), result_path)
     if (
         args.ui_impact == "behavior"
         and context.get("requirement_status")
@@ -1169,9 +1227,8 @@ def main(argv: list[str] | None = None) -> int:
                 "当前需求或实施计划尚未全部确认，拒绝生成或执行可能过期的界面流程测试",
                 1,
             ),
-            fallback_result_path,
+            result_path,
         )
-    result_path = resolve_result_path(config_path, config)
     skipped = skip_result(args.ui_impact)
     if skipped:
         return complete(skipped, result_path)
@@ -1208,7 +1265,15 @@ def main(argv: list[str] | None = None) -> int:
             message += "\n应由测试流程根据已确认需求和验收场景自动生成，不要求用户编写 XML"
         return complete(JourneyResult(status, message, 1, journey_files=[str(p) for p in files]), result_path)
 
-    # 用例就绪后再检查壳、SDK、设备和任务，不触碰目标项目源码。
+    # 用例就绪后再复制壳；后续所有任务发现、暂存和执行都只写需求级副本。
+    try:
+        runtime_root = resolve_journey_runtime_root(config_path, config)
+        harness = prepare_harness_runtime(source_harness, runtime_root)
+    except (OSError, ValueError) as exc:
+        return complete(
+            JourneyResult(HARNESS_UNAVAILABLE, f"准备需求级 Journey 运行目录失败: {exc}", 1),
+            result_path,
+        )
     if not harness.is_dir():
         return complete(JourneyResult(HARNESS_UNAVAILABLE, f"壳项目不存在: {harness}", 1), result_path)
     gradlew = harness / "gradlew"

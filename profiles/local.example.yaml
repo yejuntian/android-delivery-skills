@@ -109,7 +109,8 @@ testing:
 
   journey_harness:
     # 当前需求的界面流程用例目录。null 时自动使用：
-    # <requirement_dir>/test-cases/journeys/<需求作用域>，避免不同需求串用旧用例。
+    # 正式用例来源：<requirement_dir>/test-cases/journeys/<需求作用域>，避免不同需求串用旧用例。
+    # 可选壳运行时会复制到 <requirement_dir>/.state/journey-runtime/<scope-key>/；共享壳只读。
     # 非空相对路径基于 requirement_dir，绝对路径直接使用。
     cases_dir: null
 

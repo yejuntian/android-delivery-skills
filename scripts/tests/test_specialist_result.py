@@ -36,6 +36,7 @@ from ..specialist_result import (  # noqa: E402
     SPECIALIST_PRODUCER,
     SPECIALIST_RESULT_VERSION,
     STABILITY_STATIC_CHECK_IDS,
+    UI_VERIFY_SKILL,
     conditional_gates_from_confirmed_impacts,
     main,
     validate_specialist_result,
@@ -171,6 +172,47 @@ class SpecialistResultTests(unittest.TestCase):
     def test_accepts_current_pass_result(self) -> None:
         """验证普通 Review 只填写公共阻断字段也能形成有效结果。"""
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
+
+    def test_ui_pass_uses_lightweight_visual_links(self) -> None:
+        """UI PASS 只要求设计、真机截图/差异图链接，不要求截图文件摘要。"""
+        self.payload["skill"] = UI_VERIFY_SKILL
+        self.payload["provenance"] = {"skill": UI_VERIFY_SKILL}
+        self.payload.pop("confirmed_impacts")
+        self.payload["capabilities"] = [{
+            "id": "android-ui-a11y",
+            "required": True,
+            "status": "PASS",
+        }]
+        self.payload["visual_review"] = {
+            "design_links": ["https://figma.example/file/design?node-id=1-2"],
+            "screenshot_links": ["https://evidence.example/ui/login.png"],
+            "diff_links": ["https://evidence.example/ui/login-diff.png"],
+            "dynamic_notes": "状态栏时间忽略，用户名使用固定测试数据。",
+        }
+
+        self.assertEqual([], validate_specialist_result(self.payload, self.context))
+
+        self.payload.pop("visual_review")
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("visual_review" in error for error in errors))
+
+    def test_ui_result_rejects_file_artifact_hash_contract(self) -> None:
+        """UI 专项不再把本地截图文件 SHA 当作视觉验收前置条件。"""
+        self.payload["skill"] = UI_VERIFY_SKILL
+        self.payload["provenance"] = {"skill": UI_VERIFY_SKILL}
+        self.payload.pop("confirmed_impacts")
+        self.payload["visual_review"] = {
+            "design_links": ["https://figma.example/file/design"],
+            "screenshot_links": ["https://evidence.example/ui/login.png"],
+        }
+        self.payload["artifacts"] = [{
+            "path": str(self.artifact),
+            "sha256": sha256_file(self.artifact),
+            "kind": "screenshot",
+        }]
+
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("不再要求截图或布局文件 SHA-256" in error for error in errors))
 
     def test_pass_rejects_unclosed_p1(self) -> None:
         """验证自然语言写 PASS 不能覆盖仍未关闭的 P1。"""

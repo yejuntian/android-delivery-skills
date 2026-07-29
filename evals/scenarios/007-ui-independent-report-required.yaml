@@ -15,3 +15,14 @@ checks:
     contains:
       - "必须附上独立 `android-verify-ui` 报告或用户明确豁免"
       - "UI 验收待执行"
+  - name: UI 报告采用轻量视觉链接，不绑定 APK 或截图哈希
+    path: "android-verify-ui/SKILL.md"
+    contains:
+      - "Figma 链接"
+      - "真机截图/差异图链接"
+      - "不要求 APK hash、versionCode、安装收据、执行人"
+  - name: UI 专项结果使用 visual_review 链接字段
+    path: "scripts/specialist_result.py"
+    contains:
+      - "visual_review"
+      - "只有 android-verify-ui 可以输出 visual_review"

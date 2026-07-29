@@ -39,7 +39,7 @@ description: 手动独立执行的 Android UI 实机、设计与无障碍表现�
 python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" --scale 1
 ```
 
-该命令只下载 PNG 并输出实际保存路径，不生成结构化标注、HTML 或 XML；多个链接必须在同一次调用中传入，避免后一次执行清理前一次缓存。将采用的 PNG 登记到本次需求的 `ui.screenshots` 或 `ui.directory`，使报告能够引用文件 SHA-256。结构化数据仍以实际读取到的 Figma MCP 为准；缺少结构化数据时可以进行截图级对比，但不得声称已核对未读取的设计令牌。
+该命令只下载 PNG 并输出实际保存路径，不生成结构化标注、HTML 或 XML；多个链接必须在同一次调用中传入，避免后一次执行清理前一次缓存。PNG 只作为视觉比对辅助，最终 UI 结果以 Figma 链接、真机截图/差异图链接和人工结论为准，不要求登记截图 SHA-256 或 APK 身份。结构化数据仍以实际读取到的 Figma MCP 为准；缺少结构化数据时可以进行截图级对比，但不得声称已核对未读取的设计令牌。
 
 ## UI 截图目录规则
 
@@ -54,6 +54,15 @@ python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" 
 - 多张截图：按文件名、截图内容和状态自动识别，例如 normal、empty、error、loading。
 - 无法唯一判断页面、区域或状态时，必须暂停确认，不得自行选择。
 - 截图只能表达 UI，不得据此脑补接口、业务规则或真实功能。
+
+## 真机截图与 Figma 比对规则
+
+- Figma Frame 链接是视觉基准；真机截图是当前验收结果，必要时附差异图链接。
+- 固定文案、颜色、图标、布局、间距、圆角和排版按严格视觉对比；默认不把所有动态内容放宽。
+- 动态业务内容优先使用固定测试数据；如果只验证布局，使用代表性长文本或空/错误状态。
+- 时间、电量、信号、倒计时、系统状态栏、随机图片和不可控网络内容可忽略或单独说明，不影响其他区域的比对。
+- 动画等待稳定后截图；Figma Frame 与目标真机分辨率/方向不一致时先记录差异，不用跨尺寸截图做像素级结论。
+- 不要求 APK hash、versionCode、安装收据、执行人、带时区时间或逐步人工收据；这些不属于 UI 视觉验收的必要输入。
 
 ## 使用边界
 
@@ -164,7 +173,7 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 失败 → 先报告证据；用户明确要求修复后才改最小布局 → 重新截图 → 再验
 ```
 
-- L2/L4 对比时必须记录设备、API、分辨率、density、字体缩放、语言、主题、方向、状态栏和导航栏。
+- L2/L4 对比时可在说明中写设备与分辨率，便于复看；这些信息不参与 APK/构建身份校验。
 - 如需静态复核,优先按 `references/xml-review-checklist.md` 逐项过一遍,再决定是否继续大改布局。
   - XML 涉及文本时，按需列出本次改动的 TextView 文本来源；Compose 则检查 stringResource、运行时状态和 Preview 数据。只审查受影响节点，不要求输出全页面控件清单。
 - 编码完成后,如存在设计稿、截图或 UI 目录,必须对照设计资料说明 UI 是否已按参考还原。如果没有实际运行截图,只能说明未做截图级验证。
@@ -174,9 +183,9 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 
 每次调用都必须使用 `references/implementation-summary.md` 输出报告：
 
-- 有 UI：包含基准、环境、引擎降级链、命令、截图、偏差、自修复、未验证项和结论；可引用 `android-test-and-fix` 的 Journey 报告作为辅助证据。
+- 有 UI：包含 Figma/截图基准、真机截图或差异图链接、动态区域说明、偏差和结论；可引用 `android-test-and-fix` 的 Journey 报告作为功能辅助结果。
 - 有 A11y 影响：增加语义、触摸区域、焦点、TalkBack、字体缩放、自动测试证据和未验证项。
 - 无 UI：输出最小 `SKIPPED_NO_UI` 报告，不启动验证工具。
 - 结论只能是 `PASS`、`STATIC_ONLY`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有实机/截图证据不得写 `PASS`，适用且必需的动态 A11y 没有证据时也不得写 `PASS`。
 
-输出被完整交付引用时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 写统一专项结果：`android-ui-a11y` capability 记录适用性和未验证原因，设备环境写入摘要/检查，截图或布局写入带 SHA-256 的产物。实际人工覆盖还必须记录执行人、带时区时间、逐步操作、预期和实际结果。人类报告的 `STATIC_ONLY` 映射为机器结果 `UNVERIFIED`，`SKIPPED_NO_UI` 映射为 `SKIPPED`；二者都不得冒充动态 UI `PASS`。
+输出被完整交付引用时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 写统一专项结果：`android-ui-a11y` capability 记录适用性和未验证原因，`visual_review` 记录 Figma 链接、真机截图/差异图链接和动态区域说明。UI 专项不使用通用 `MANUAL` 收据，也不绑定 APK、versionCode 或截图 SHA-256。人类报告的 `STATIC_ONLY` 映射为机器结果 `UNVERIFIED`，`SKIPPED_NO_UI` 映射为 `SKIPPED`；二者都不得冒充动态 UI `PASS`。

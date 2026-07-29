@@ -124,7 +124,7 @@
 | 数据迁移 | `android-test-and-fix` | `android-review-diff` 复核范围和回滚风险 |
 | 动态泄漏 | `android-audit-stability` | `android-test-and-fix` 复现和重验 |
 | 性能 | `android-audit-stability` | `android-test-and-fix` 执行 Benchmark/Trace 流程 |
-| UI/A11y | `android-verify-ui` 负责人工表现，`android-test-and-fix` 负责自动测试 | 总入口只提示独立视觉验收 |
+| UI/A11y | `android-verify-ui` 负责 Figma 与真机截图视觉对比，`android-test-and-fix` 负责自动测试 | 总入口只提示独立视觉验收；结果使用链接和结论，不要求 APK/截图哈希链 |
 | 安全隐私 | `android-audit-stability` 负责风险，`android-review-diff` 负责变更边界 | `android-test-and-fix` 执行已有安全任务 |
 
 ## 完成结论

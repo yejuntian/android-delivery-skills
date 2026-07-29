@@ -733,6 +733,40 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("界面与无障碍检查" in error and "专属于本门禁" in error for error in errors))
 
+    def test_ui_gate_rejects_generic_manual_receipt(self) -> None:
+        """UI 门禁只接受 android-verify-ui 专项结果，不接受通用人工收据。"""
+        manual = {
+            "id": "E-UI-MANUAL",
+            "kind": "MANUAL",
+            "gate_id": "android-ui-a11y",
+            "snapshot_sha256": self.snapshot,
+            "summary": "人工确认页面显示正常。",
+            "executor": "用户",
+            "environment": "Pixel 8",
+            "performed_at": "2026-07-19T08:00:00+08:00",
+            "steps": [{
+                "action": "打开页面",
+                "expected": "页面符合设计",
+                "actual": "页面符合设计",
+                "status": "PASS",
+            }],
+            "artifacts": [],
+            "no_artifact_reason": "UI 结果使用链接记录。",
+            "obligation_sha256s": {},
+        }
+        self.payload["evidence"].append(manual)
+        self.payload["gates"].append({
+            "id": "android-ui-a11y",
+            "required": True,
+            "status": "PASS",
+            "evidence_ids": ["E-UI-MANUAL"],
+        })
+        self.context["expected_conditional_gates"] = ["android-ui-a11y"]
+
+        errors = validate_delivery_result(self.payload, self.context)
+
+        self.assertTrue(any("界面与无障碍检查" in error and "专属于本门禁" in error for error in errors))
+
     def test_api_contract_gate_rejects_specialist_pass_without_contract_evidence(self) -> None:
         """验证最终门禁不能接受 API 专项空 PASS 冒充契约核验。"""
         summary = "接口实现与契约一致。"

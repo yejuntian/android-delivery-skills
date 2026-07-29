@@ -61,7 +61,6 @@ KNOWN_EVIDENCE_GATES = {
     "android-static-analysis",
     "android-verify-api-contract",
     "android-data-migration",
-    "android-ui-a11y",
     "android-security-privacy",
     "android-dynamic-leak",
     "android-performance",

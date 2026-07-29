@@ -216,7 +216,10 @@
               "anyOf": [
                 { "properties": { "artifacts": { "minItems": 1 } } },
                 { "required": ["no_artifact_reason"] }
-              ]
+              ],
+              "properties": {
+                "gate_id": { "not": { "const": "android-ui-a11y" } }
+              }
             }
           }
         ]

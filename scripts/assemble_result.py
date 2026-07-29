@@ -98,6 +98,11 @@ def _parse_evidence(raw: Any, index: int) -> EvidenceDecl:
     if kind not in {"AUTOMATED", "MANUAL"}:
         raise AssembleError(f"evidence {eid}: kind 必须是 AUTOMATED 或 MANUAL")
     gate = _require_str(raw.get("gate"), "gate", f"evidence {eid}")
+    if kind == "MANUAL" and gate == "android-ui-a11y":
+        raise AssembleError(
+            f"evidence {eid}: UI 视觉验收请使用 specialists 中的 android-verify-ui 结果，"
+            "不要填写通用 MANUAL 收据"
+        )
     receipt = raw.get("receipt")
     if kind == "AUTOMATED":
         if not isinstance(receipt, str) or not receipt.strip():

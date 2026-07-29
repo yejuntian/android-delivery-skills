@@ -223,6 +223,25 @@
         }
       }
     },
+    "visual_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "design_links": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "screenshot_links": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "diff_links": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "dynamic_notes": { "type": "string", "minLength": 1 }
+      }
+    },
     "executed_checks": { "type": "integer", "minimum": 0 },
     "executed_tests": { "type": ["integer", "null"], "minimum": 0 },
     "obligation_sha256s": {
@@ -398,6 +417,27 @@
             }
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "skill": { "const": "android-verify-ui" }
+        },
+        "required": ["skill"]
+      },
+      "then": {
+        "properties": {
+          "artifacts": { "maxItems": 0 }
+        },
+        "if": {
+          "properties": { "conclusion": { "const": "PASS" } },
+          "required": ["conclusion"]
+        },
+        "then": { "required": ["visual_review"] }
+      },
+      "else": {
+        "not": { "required": ["visual_review"] }
       }
     }
   ]

@@ -132,7 +132,6 @@ AUTOMATED_GATE_PROOFS = {
 MANUAL_GATE_PROOFS = {
     "android-test-and-fix",
     "android-data-migration",
-    "android-ui-a11y",
     "android-security-privacy",
     "android-dynamic-leak",
     "android-performance",

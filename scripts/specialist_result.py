@@ -60,6 +60,7 @@ SPECIALIST_FIELDS = {
     "commands",
     "checks",
     "artifacts",
+    "visual_review",
     "executed_checks",
     "executed_tests",
     "obligation_sha256s",
@@ -67,6 +68,7 @@ SPECIALIST_FIELDS = {
     "finished_at",
 }
 JOURNEY_AGENT_SKILL = "android-test-and-fix/journey-agent"
+UI_VERIFY_SKILL = "android-verify-ui"
 STABILITY_SKILL = "android-audit-stability"
 TEST_AND_FIX_SKILL = "android-test-and-fix"
 DIFF_REVIEW_SKILL = "android-review-diff"
@@ -87,7 +89,7 @@ KNOWN_SPECIALIST_SKILLS = {
     DIFF_REVIEW_SKILL,
     CODE_QUALITY_SKILL,
     API_CONTRACT_SKILL,
-    "android-verify-ui",
+    UI_VERIFY_SKILL,
 }
 CODE_QUALITY_CHECK_IDS = {
     "architecture-layering",
@@ -146,6 +148,35 @@ def _has_unique_values(value: Any) -> bool:
         return len(value) == len(set(value))
     except TypeError:
         return False
+
+
+def _validate_visual_review(value: Any, conclusion: Any) -> list[str]:
+    """校验 UI 专项的轻量视觉结果，不绑定 APK 或本地截图摘要。"""
+    errors: list[str] = []
+    if value is None:
+        if conclusion == "PASS":
+            errors.append("android-verify-ui PASS 必须提供 visual_review")
+        return errors
+    if not isinstance(value, dict):
+        return ["visual_review 必须是 object"]
+    allowed = {"design_links", "screenshot_links", "diff_links", "dynamic_notes"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        errors.append("visual_review 包含未知字段: " + ", ".join(unknown))
+    for field in ("design_links", "screenshot_links", "diff_links"):
+        links = value.get(field, [])
+        if not isinstance(links, list) or not all(
+            isinstance(link, str) and link.strip() for link in links
+        ):
+            errors.append(f"visual_review.{field} 必须是非空字符串数组")
+    if conclusion == "PASS":
+        for field in ("design_links", "screenshot_links"):
+            if not value.get(field):
+                errors.append(f"android-verify-ui PASS 必须提供 visual_review.{field}")
+    notes = value.get("dynamic_notes")
+    if notes is not None and (not isinstance(notes, str) or not notes.strip()):
+        errors.append("visual_review.dynamic_notes 必须是非空字符串")
+    return errors
 
 
 def _validate_static_analysis(
@@ -463,6 +494,10 @@ def validate_specialist_result(
     conclusion = payload.get("conclusion")
     if conclusion not in SPECIALIST_CONCLUSIONS:
         errors.append(f"专项结果 conclusion 必须是 {sorted(SPECIALIST_CONCLUSIONS)} 之一")
+    if payload.get("skill") == UI_VERIFY_SKILL:
+        errors.extend(_validate_visual_review(payload.get("visual_review"), conclusion))
+    elif payload.get("visual_review") is not None:
+        errors.append("只有 android-verify-ui 可以输出 visual_review")
 
     findings = payload.get("findings")
     if not isinstance(findings, dict) or set(findings) != SEVERITIES or not all(
@@ -689,6 +724,10 @@ def validate_specialist_result(
     if not isinstance(artifacts, list):
         errors.append("专项结果 artifacts 必须是数组")
     else:
+        if payload.get("skill") == UI_VERIFY_SKILL and artifacts:
+            errors.append(
+                "android-verify-ui 使用 visual_review 链接，不再要求截图或布局文件 SHA-256"
+            )
         for index, item in enumerate(artifacts):
             if not isinstance(item, dict):
                 errors.append(f"artifacts[{index}] 必须是 object")

@@ -27,16 +27,9 @@ evidence:                       # 自动证据：声明 id/gate/receipt 路径
   - id: unit
     gate: android-test-and-fix
     receipt: .state/evidence/.../unit/attempt-001/receipt.json
-  - id: ui-journey              # 可选 MANUAL 证据
-    kind: MANUAL
-    gate: android-ui-a11y
-    summary: 真机 Journey 结果…
-    executor: 驱动AI
-    environment: Pixel 8
-    performed_at: "2026-07-27T10:00:00+08:00"
-    artifacts: [{path: ui/01.png, kind: screenshot}]
 specialists:                     # 专项结果：声明 specialist JSON 路径
   - path: .state/evidence/.../specialists/android-review-diff.json
+  - path: .state/evidence/.../specialists/android-verify-ui.json
 obligations:                     # 逐义务声明覆盖状态；未验证项不得伪装成自动覆盖
   BDD-001:
     status: COVERED_AUTOMATED
@@ -55,7 +48,8 @@ gates:                           # 可选：覆盖 gate 的 required/status/reas
 
 - `conclusion`：交付结论。
 - `evidence[].receipt`：AUTOMATED 证据的执行收据路径（脚本读它算 sha）。
-- `evidence[]`（MANUAL）：summary/executor/environment/performed_at/steps/artifacts。
+- `evidence[]`（MANUAL）：仅用于需要逐步人工执行的业务/迁移/安全等覆盖；UI 视觉验收使用 `specialists` 中的 `android-verify-ui` 结果。
+- `android-verify-ui` 专项：`visual_review` 只记录 Figma 设计链接、真机截图/差异图链接和动态区域说明，不填写 APK、versionCode、安装收据或截图 SHA-256。
 - `specialists[].path`：专项结果 JSON 路径。
 - `obligations`：逐义务填写 `status`、`evidence`，`UNVERIFIED/BLOCKED` 还要填写 `reason`；缺少 `status` 时保守组装为 `UNVERIFIED`。
 
@@ -64,7 +58,7 @@ gates:                           # 可选：覆盖 gate 的 required/status/reas
 - `snapshot_sha256`、各 `obligation_sha256`：从当前 delivery_gate context 取。
 - `receipt_sha256`、`report_paths`、`command`、`exit_code`、适用时的 `executed_tests`：从执行收据读；清单 id 必须与收据 id 一致。
 - `obligation_test_cases`：从收据里的 junit 报告按 `classname#name` 自动提取。
-- `specialist_result_sha256`：算 specialist JSON 文件 sha。
+- `specialist_result_sha256`：算 specialist JSON 文件 sha；UI 专项的截图和设计链接不单独计算文件摘要。
 - `gates`：默认按 evidence 的 gate 自动推导；agent 可在 `gates` 段覆盖 `required`/`status`/`reason`。
 
 junit 报告用内容签名（剥离可变 timestamp），重跑收据不再失效。

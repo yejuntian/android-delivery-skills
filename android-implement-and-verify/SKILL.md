@@ -321,7 +321,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；每个 BDD 只关联其 CURRENT mapping 登记且本次真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
 - 命令或机器报告真实失败时，自动收据只能在 `INCOMPLETE/BLOCKED` 中绑定同一 `FAIL` gate；不得绑定 BDD 自动覆盖或 `PASS` gate。
 - 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须记录必需静态语义能力、七项静态检查，以及动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
-- 人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
+- 业务、迁移、安全等人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因；UI 视觉验收不走通用人工覆盖，只提交 `android-verify-ui` 的 Figma 链接、真机截图/差异图链接、动态区域说明和 PASS/FAIL。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
 - 最终中文摘要必须把 `【修改已上线业务】` 和 `【保护已上线业务】` 义务置顶分组展示；任一必需保护项缺少新鲜证据时，沿用现有义务门禁阻断完整通过。
 
 所有必需项完成后，获取当前确认修订、有效义务、Git 基线和最终代码摘要，生成 `<requirement_dir>/test-results/delivery-result.json`。**优先用 `assemble` 自动组装**（消除手填 sha/字段摩擦），只在 assemble 不适用时才手写：
@@ -335,7 +335,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
   --config <配置> --manifest <产物清单.yaml>
 ```
 
-`obligations` 的覆盖状态和证据映射是业务判断，必须由 agent 逐项提供；缺少覆盖状态时 assemble 保守标记为 `UNVERIFIED`，不得默认自动覆盖。其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
+`obligations` 的覆盖状态和证据映射是业务判断，必须由 agent 逐项提供；缺少覆盖状态时 assemble 保守标记为 `UNVERIFIED`，不得默认自动覆盖。UI 视觉专项使用 `specialists` 中的 `android-verify-ui` 结果，不再用通用 `MANUAL` 收据承载截图；`visual_review` 仅保留 Figma 链接、真机截图/差异图链接和动态区域说明。其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
 
 **方式二（向后兼容）：手写后 validate**。若 assemble 不适用（如需特殊字段），按 `references/delivery-result.schema.json` 手写 `delivery-result.json`，再执行：
 

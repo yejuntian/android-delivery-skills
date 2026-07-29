@@ -163,7 +163,7 @@ BDD-005：用户重启应用后仍保留已确认的本地选择
 
 - 普通 `COVERED_AUTOMATED` 必须有最终代码上的单 gate 收据，并把该 BDD 场景映射到 JUnit 报告中真实通过的 testcase；测试总数大于零不能替代具体映射。Agent Journey 则必须引用实际执行的 action/check、数量和布局/截图产物。
 - `android-test-and-fix` 和 `android-data-migration` 的自动 gate 证据本身也必须包含实际执行数大于零的本轮 JUnit；接口、UI/A11y、安全、泄漏和性能使用对应专项结果，不能用任意成功命令加同名 `gate_id` 占位。
-- `COVERED_MANUAL` 只允许用于已经实际完成并保留执行人、带时区时间、环境、步骤、预期、实际结果和产物的人工验收；没有产物时说明原因，计划由人工执行只能写 `UNVERIFIED`。
+- `COVERED_MANUAL` 只允许用于已经实际完成并保留执行人、带时区时间、环境、步骤、预期、实际结果和产物的业务/迁移/安全人工验收；UI 视觉验收不使用此状态承载，改由独立 `android-verify-ui` 结果记录 Figma 与真机截图/差异图链接。没有产物时说明原因，计划由人工执行只能写 `UNVERIFIED`。
 - Journey、截图、Unit 或静态扫描的通过都不能越过自身证据边界。
 - 替代测试必须覆盖同一 BDD 场景、输入、运行条件和证据边界；能力损失必须保留为未验证。
 - 所有必需 BDD 场景均为 `COVERED_AUTOMATED` 或实际 `COVERED_MANUAL` 后，才允许整体全绿。

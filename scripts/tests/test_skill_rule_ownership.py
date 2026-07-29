@@ -36,6 +36,12 @@ GRADLE_TASK_DISCOVERY_REFERENCE = (
     / "references"
     / "gradle-task-discovery.md"
 )
+TEST_RESULT_TEMPLATE = (
+    REPOSITORY_ROOT
+    / "android-implement-and-verify"
+    / "templates"
+    / "test.md"
+)
 DOCUMENTATION_SYNC_GUIDES = [
     REPOSITORY_ROOT / "references" / "open-source-design-rationale.md",
 ]
@@ -161,11 +167,20 @@ class SkillRuleOwnershipTests(unittest.TestCase):
         self.assertNotIn("android_project_capabilities.py", test_text)
         self.assertNotIn("tasks --all", implement_text)
         self.assertNotIn("tasks --all", test_text)
-        self.assertIn("已确认命令存在", test_text)
+        self.assertIn("普通单元测试不要求预先配置固定命令", test_text)
+        self.assertIn("直接选择最小验证命令", test_text)
         self.assertIn("references/gradle-task-discovery.md", test_text)
         self.assertIn("android_project_capabilities.py", discovery_text)
-        self.assertIn("先读文件，不重跑发现", discovery_text)
-        self.assertIn("不得重新发现", discovery_text)
+        self.assertIn("普通单元测试、局部编译和已有测试不以任务发现为前置步骤", discovery_text)
+        self.assertIn("不因“首次处理项目”或“要做一次单元测试”自动运行发现", discovery_text)
+
+    def test_test_template_is_a_human_summary(self) -> None:
+        """验证测试步骤保留在可执行载体，Markdown 只记录摘要和证据。"""
+        template_text = read_text(TEST_RESULT_TEMPLATE)
+        self.assertIn("测试结果摘要", template_text)
+        self.assertIn("可执行测试用例以项目测试代码、Journey XML", template_text)
+        self.assertIn("BDD 覆盖结论", template_text)
+        self.assertIn("收据 / 报告", template_text)
 
     def test_repository_ai_rules_require_project_validation(self) -> None:
         """验证仓库级 AI 约束要求执行子项目声明的验证命令。"""

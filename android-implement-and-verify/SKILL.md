@@ -60,7 +60,7 @@ description: |
 
 计划确认后按 BDD 场景执行测试先行，编码完成后不能直接跳 `route + gate`：
 
-1. **先建立测试清单**：执行 `init-test-mapping`，在 `docs/测试结果.md` 记录每个 BDD 场景的预期、测试层、真实测试 ID 和执行方式。
+1. **先建立测试清单**：执行 `init-test-mapping`，为每个 BDD 场景创建或更新真实测试代码、Journey XML 或人工验收记录并登记真实测试 ID；`docs/测试结果.md` 只记录执行摘要，不复制完整测试步骤。
 2. **先写失败测试**：逐个 BDD 补业务断言并观察 Red；测试在实现前已通过时，先检查断言是否真正覆盖新行为。
 3. **再写最少实现**：只修改影响半径内代码使测试 Green，再做必要重构并重跑受影响测试。
 4. **自动保存 TDD 周期**：Red 和 Green 都通过 `execution_evidence.py` 收据后，分别执行
@@ -264,7 +264,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
 ```
 
-退出码 `0` 只表示最新版需求已确认，不表示允许编码；删除、替代或冲突时提供显式 `--revision-file`。确认后把全部 BDD 映射为测试清单，将唯一实施计划写到 `<requirement_dir>/docs/实施计划.md`，并生成 `<requirement_dir>/test-cases/impact-radius.json`。影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED；计划必须包含“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”。此时保持只读，展示计划后等待用户确认。
+退出码 `0` 只表示最新版需求已确认，不表示允许编码；删除、替代或冲突时提供显式 `--revision-file`。确认后把全部 BDD 映射为真实测试清单，将唯一实施计划写到 `<requirement_dir>/docs/实施计划.md`，并生成 `<requirement_dir>/test-cases/impact-radius.json`。影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED；计划必须包含“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”。此时保持只读，展示计划后等待用户确认。
 
 用户明确确认已经展示的计划后运行：
 

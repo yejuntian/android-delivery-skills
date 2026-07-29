@@ -61,15 +61,15 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 - 每项最终命令使用 `scripts/execution_evidence.py --gate <gate-id>` 生成单一用途收据，记录 `TEST-ID`、参数数组、执行目录、退出码、JUnit testcase、日志、报告路径和 SHA-256；测试和迁移自动收据没有本轮实际执行数大于零的 JUnit 时不能证明 gate，没有具体通过 testcase 时不能覆盖 BDD 场景，一份收据不得兼任其他 gate。
 - 替代验证必须覆盖相同 BDD、运行条件和证据边界；能力损失仍标记未验证，不得用较弱证据冒充原门禁通过。
 
-## 项目已有静态门禁发现与执行
+## 项目已有静态门禁与测试执行
 
-完整交付阶段只执行与最终 diff、受影响语言、模块和 variant 相符的现有任务或配置。局部迭代复用已确认命令，只为本轮代码选择必要的最小编译；已确认命令存在且 Gradle/模块/variant 未变化时不得重新探测。真实 task 或静态门禁来源缺失且本模块必须确认 Gradle 任务时，才读取 `references/gradle-task-discovery.md`。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
+完整交付阶段只执行与最终 diff、受影响语言、模块和 variant 相符的现有任务或配置。AI 根据本次修改范围、项目模块、测试目录、Gradle 配置、CI、README 和项目脚本直接选择最小验证命令；普通单元测试不要求预先配置固定命令，也不先运行全量任务发现。只有静态门禁确实需要确认项目能力且现有资料无法判断时，才读取 `references/gradle-task-discovery.md`。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
 
-命令来源优先级：已确认实施计划、`test-cases/impact-radius.json` 的 `expected_tests`、`test-cases/test-mapping.json`、本轮执行收据、CI、README、项目脚本、用户确认。前序文件已经覆盖当前需求修订时，直接读取复用；不得为了“再确认”重复执行耗时发现。
+命令来源优先级：本次修改对应的测试与构建配置、已确认实施计划、`test-cases/impact-radius.json` 的 `expected_tests`、`test-cases/test-mapping.json`、本轮执行收据、CI、README、项目脚本和用户确认。前序文件已经覆盖当前需求修订时，直接读取复用；不得为了“再确认”重复执行耗时发现。
 
 执行顺序：
 
-1. **Kotlin/Java 编译**：读取已确认命令或按需发现结果，优先执行受影响模块已有的 Kotlin/Java compile task；无法可靠确定独立 compile task 时，使用项目已有最小 assemble/test task 覆盖编译，不猜任务名造结果。
+1. **Kotlin/Java 编译**：AI 根据受影响模块和项目已有测试/构建方式选择最小 compile、assemble 或 test 命令；无法单独确定 compile task 时，使用项目已有最小 assemble/test 覆盖编译，不猜任务名造结果。
 2. **Android Lint**：存在 Android 模块和对应 lint task 时执行受影响范围的现有 lint；最终机器证据保存本轮 XML 或 SARIF，HTML 可另存给人查看。收据解析 Fatal/Error，不能依赖 `abortOnError` 的进程退出码造绿。
 3. **语言专项**：Kotlin 仅执行项目已配置的 detekt；Java 仅执行项目已配置的 Error Prone、NullAway、SpotBugs 或 Infer。遵守现有版本、task、config 和扫描范围，不临时生成规则集。
 4. **质量任务**：PMD、Checkstyle 等格式或风格任务只有项目已配置时执行；其结果路由给代码质量审查，不能把格式/风格通过写成稳定性通过。
@@ -232,9 +232,11 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 
 ## 命令选择规则
 
-不得写死命令。先识别项目模块和已有命令，再选择最小验证：
+不得写死命令，也不要求用户先提供一份固定命令。AI 先识别本次修改对应的项目模块、测试类和已有测试方式，再直接选择最小验证：
 
-- 环境识别：例如 `which adb`、`adb devices`、Android CLI 可用性检查；Gradle 任务未知时按本模块 reference 处理。
+- 单测/编译：优先运行受影响模块已有的单元测试或最小构建命令；需要限定范围时追加真实测试类或方法筛选。
+- 环境/设备：只有 Journey 或设备验收适用时，才检查 `which adb`、`adb devices` 和 Android CLI 可用性。
+- Gradle 任务确实无法从项目资料和测试结构判断，且当前门禁必须确认能力时，才读取本模块的任务发现 reference；这不是普通单元测试前置步骤。
 - 构建：例如 `./gradlew :app:assembleDebug`。
 - 单测：例如 `./gradlew :app:testDebugUnitTest`。
 - 指定测试：例如 `--tests "完整类名"`。
@@ -258,7 +260,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 
 ## Android 版本兼容测试
 
-当需求涉及系统 API、权限、存储、通知、后台任务、前台服务、WebView、FileProvider、DeepLink、WindowInsets、相册、蓝牙、定位、媒体、软键盘、状态栏或导航栏时，测试用例矩阵必须包含 Android 版本兼容项。
+当需求涉及系统 API、权限、存储、通知、后台任务、前台服务、WebView、FileProvider、DeepLink、WindowInsets、相册、蓝牙、定位、媒体、软键盘、状态栏或导航栏时，测试覆盖清单必须包含 Android 版本兼容项；具体步骤保留在对应测试代码、Journey XML 或人工验收记录中。
 
 测试设计必须基于当前项目：
 
@@ -302,7 +304,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 5. 历史债务：`NEW` / `AFFECTED` / `PRE_EXISTING` / `UNKNOWN_ORIGIN` 数量、处置和证据
 6. release/R8/Java 兼容：适用性、variant、命令、结论与未验证项
 7. 条件能力矩阵：OpenAPI / 迁移 / 泄漏 / 性能 / UI-A11y / 安全隐私的适用性、设备类型和结论
-8. 测试用例矩阵：BDD 场景、影响类别、必需性、主/备用执行器、主流程 / 备选 / 异常 / 恢复 / 非功能及不适用理由
+8. 测试覆盖摘要：BDD 场景、影响类别、验证层、主/备用执行器、执行结果和不适用理由；具体步骤以测试代码或 Journey XML 为准
 9. TDD 结论：Red-Green-Refactor 是否完成；自动化 BDD 必须有有效 `.state/tdd-cycle.json`，不能只凭最终 Green
 10. 自动化可执行项和需要人工验证项
 11. 最终新鲜证据：命令、退出码、测试数、关键输出和报告/产物路径

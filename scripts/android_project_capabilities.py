@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """脚本名称：android_project_capabilities.py
 
-用途：在首次处理项目、构建配置变化或 task 未知时，只读发现 Gradle 能力及已有
-静态分析配置和 CI 信号。
+用途：在静态门禁或特殊老项目确实无法判断 task 时，独立只读诊断 Gradle 能力及已有
+静态分析配置和 CI 信号；普通单元测试不调用。
 
 核心流程：读取 settings/wrapper 基本事实，使用项目外 Gradle 用户/项目缓存运行目标项目
 自己的 ``gradlew tasks --all``，再有界扫描构建、静态配置与 CI 文件，结果写到项目之外。

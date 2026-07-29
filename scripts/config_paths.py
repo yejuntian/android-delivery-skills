@@ -226,7 +226,7 @@ def specialist_directory_for_config(
 
 
 def capabilities_path_for_config(config_path: str | Path) -> Path:
-    """返回 Android 项目能力发现结果路径，供不同模型复用同一工程事实。"""
+    """返回显式 Android 项目能力诊断结果路径，不作为普通单测门禁依据。"""
     return _state_dir_for(config_path) / "capabilities.json"
 
 

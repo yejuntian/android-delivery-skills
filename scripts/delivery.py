@@ -44,6 +44,12 @@ from .config_paths import (  # noqa: E402
     resolve_config_paths as resolve_paths,
     _md_filename_for_dir,
 )
+from .channel_guard import (  # noqa: E402
+    ChannelGuardError,
+    assert_channel,
+    claim_channel,
+    release_channel,
+)
 from .git_changes import (  # noqa: E402
     GitInspectionError,
     collect_changed_entries,
@@ -1101,6 +1107,50 @@ def _render_resume_guide(
         print(f"⚠️ 续接指南无法写入: {exc}")
 
 
+def _record_check_env_start(
+    project_path: Path,
+    requirement_path: Path,
+    requirement_content: str,
+    paths,
+    baseline_path: Path,
+    snapshot_path: Path,
+) -> None:
+    """在项目通道已占用后原子写入需求 Git 起点和修订清单。"""
+    try:
+        previous_baseline = baseline_path.read_bytes() if baseline_path.is_file() else None
+    except OSError as exc:
+        raise DeliveryError(f"无法备份原 Git 基线: {baseline_path}: {exc}") from exc
+    try:
+        baseline = write_baseline(project_path, baseline_path)
+    except OSError as exc:
+        raise DeliveryError(f"无法写入当前需求 Git 基线: {baseline_path}: {exc}") from exc
+    try:
+        requirement_snapshot = write_requirement_snapshot(
+            snapshot_path,
+            requirement_path,
+            requirement_content,
+            requirement_id=baseline["id"],
+        )
+    except RequirementSnapshotError as exc:
+        # 两份起点证据必须一起成功；快照失败时恢复调用前的基线，而不是误删旧需求起点。
+        try:
+            _restore_local_state(baseline_path, previous_baseline)
+        except OSError as restore_exc:
+            raise DeliveryError(
+                f"{exc}\n同时无法恢复原 Git 基线: {baseline_path}: {restore_exc}"
+            ) from restore_exc
+        raise DeliveryError(str(exc)) from exc
+    print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
+    print(f"✅ 需求起点快照: {requirement_snapshot['sha256'][:12]}")
+    print(f"✅ 当前需求集合: {requirement_snapshot['requirement_id']} r0")
+    revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
+    manifest = build_confirmed_revision_manifest(requirement_snapshot, requirement_content)
+    write_revision_manifest(revision_file, manifest)
+    print("👉 AI 指令：用户确认需求事实源后，使用当前机器修订清单确认。")
+    print(f"机器生成修订清单: {revision_file}")
+    print("未成功执行 confirm-requirement-update 前不得开始编码。")
+
+
 def cmd_check_env(args):
     """
     执行 `check-env`：工作区干净时同时锁定 Git 起点和已确认需求正文。
@@ -1165,41 +1215,60 @@ def cmd_check_env(args):
         snapshot_path,
         new_requirement=getattr(args, "new_requirement", False),
     ):
+        try:
+            claim_channel(
+                project_path,
+                paths.requirement_dir,
+                resolved_config,
+            )
+        except ChannelGuardError as exc:
+            raise DeliveryError(str(exc)) from exc
         return
     _require_atomic_bdd_before_baseline(requirement_content)
     try:
-        previous_baseline = baseline_path.read_bytes() if baseline_path.is_file() else None
-    except OSError as exc:
-        raise DeliveryError(f"无法备份原 Git 基线: {baseline_path}: {exc}") from exc
+        _, claim_created = claim_channel(
+            project_path,
+            paths.requirement_dir,
+            resolved_config,
+        )
+    except ChannelGuardError as exc:
+        raise DeliveryError(str(exc)) from exc
     try:
-        baseline = write_baseline(project_path, baseline_path)
-    except OSError as exc:
-        raise DeliveryError(f"无法写入当前需求 Git 基线: {baseline_path}: {exc}") from exc
-    try:
-        requirement_snapshot = write_requirement_snapshot(
-            snapshot_path,
+        # 获得 claim 后重新检查，避免状态检查和占用之间出现代码竞态。
+        status_after_claim = working_tree_status(project_path, untracked_files="all")
+        code_status_after_claim = status_after_claim
+        if status_after_claim:
+            excluded = delivery_snapshot_exclusions(project_path, paths.requirement_dir)
+            code_lines = [
+                line for line in status_after_claim.splitlines()
+                if not _path_excluded_from_delivery(
+                    line.split(maxsplit=1)[-1] if " " in line else "",
+                    excluded,
+                )
+            ]
+            code_status_after_claim = "\n".join(code_lines).strip()
+        if code_status_after_claim:
+            raise DeliveryError(
+                "获得项目通道后发现代码工作区出现改动，无法建立稳定基线。\n"
+                f"{code_status_after_claim}\n请先自行确认并处理；脚本不会自动 stash、提交或清理。"
+            )
+        _record_check_env_start(
+            project_path,
             requirement_path,
             requirement_content,
-            requirement_id=baseline["id"],
+            paths,
+            baseline_path,
+            snapshot_path,
         )
-    except RequirementSnapshotError as exc:
-        # 两份起点证据必须一起成功；快照失败时恢复调用前的基线，而不是误删旧需求起点。
-        try:
-            _restore_local_state(baseline_path, previous_baseline)
-        except OSError as restore_exc:
-            raise DeliveryError(
-                f"{exc}\n同时无法恢复原 Git 基线: {baseline_path}: {restore_exc}"
-            ) from restore_exc
-        raise DeliveryError(str(exc)) from exc
-    print(f"✅ 当前需求 Git 基线: {baseline['head'][:12]} ({baseline['id']})")
-    print(f"✅ 需求起点快照: {requirement_snapshot['sha256'][:12]}")
-    print(f"✅ 当前需求集合: {requirement_snapshot['requirement_id']} r0")
-    revision_file = paths.requirement_dir / "test-cases" / "requirement-revision.json"
-    manifest = build_confirmed_revision_manifest(requirement_snapshot, requirement_content)
-    write_revision_manifest(revision_file, manifest)
-    print("👉 AI 指令：用户确认需求事实源后，使用当前机器修订清单确认。")
-    print(f"机器生成修订清单: {revision_file}")
-    print("未成功执行 confirm-requirement-update 前不得开始编码。")
+    except (DeliveryError, GitInspectionError, RequirementSnapshotError, OSError) as exc:
+        if claim_created:
+            try:
+                release_channel(project_path, paths.requirement_dir)
+            except ChannelGuardError as release_exc:
+                raise DeliveryError(
+                    f"{exc}\n同时无法释放本轮项目通道: {release_exc}"
+                ) from release_exc
+        raise
 
 
 def cmd_confirm_requirement_update(args):
@@ -1358,6 +1427,10 @@ def cmd_route(args):
     branch = current_branch(project_path)
     if target_branch and branch != target_branch:
         raise DeliveryError(f"当前分支 ({branch}) 与目标分支 ({target_branch}) 不匹配")
+    try:
+        assert_channel(project_path, paths.requirement_dir)
+    except ChannelGuardError as exc:
+        raise DeliveryError(str(exc)) from exc
 
     baseline_path = baseline_path_for_config(resolved_config)
     excluded = delivery_snapshot_exclusions(project_path, paths.requirement_dir)

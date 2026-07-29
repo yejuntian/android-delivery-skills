@@ -411,6 +411,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
                 "title": title,
                 "branch": branch,
                 "requirement_id": channel.name,
+                "project_path": str(self.workspace / f"project-{channel.name}"),
             })
             (channel / "test-results").mkdir()
             (channel / "test-results" / "delivery-result.json").write_text(
@@ -419,9 +420,10 @@ class RequirementWorkspaceTests(unittest.TestCase):
             )
 
         main_worktree = self.workspace / "MyApp"
-        report = integrate_channels(
-            main_worktree, [channel_a, channel_b], "2026-07-25-批次1"
-        )
+        with patch("scripts.requirement_workspace.release_channel") as release_channel:
+            report = integrate_channels(
+                main_worktree, [channel_a, channel_b], "2026-07-25-批次1"
+            )
         self.assertTrue(report.is_file())
         content = report.read_text(encoding="utf-8")
         self.assertIn("登录页改造", content)
@@ -433,6 +435,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         state_a = json.loads((channel_a / "requirement-workspace.json").read_text(encoding="utf-8"))
         self.assertEqual("MERGED", state_a["status"])
         self.assertEqual("2026-07-25-批次1", state_a["integration_batch"])
+        self.assertEqual(2, release_channel.call_count)
 
 
     def test_next_preview_accepts_chinese_outcome_without_modifying_files(self) -> None:

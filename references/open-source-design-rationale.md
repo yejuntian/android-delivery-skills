@@ -353,22 +353,22 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
   - `docs/` 默认保持扁平：协作待办、变更审查、决策和问题分别使用 `协作待办.md`、`审查-<主题>.md`、`决策-<主题>.md`、`问题-<主题>.md`；`api/`、`ui/`、`config/`、`issues/` 只在有对应资料时创建。所有 AI 手写文档仍填 `android-implement-and-verify/templates/` 骨架（plan/review/test/result/decision/communications）。
   - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前 `archive_before_reclaim` 完整归档 `docs/` 到 `archive/<requirement_id>/`，机器 JSON 和原始证据随源清理不堆积；双门槛（keep_completed + retention_days）不变。
 - **边界**：续接指南是从事实源渲染的状态快照，不是第二事实源（不变量 #25 不变）；md 与 JSON 一致性靠脚本渲染（零漂移），手写 md 由 SKILL 要求填模板；JSON 路径全部原位不迁移，零破坏在途需求。
-- **拒绝**：不迁移 JSON 路径（破坏在途需求风险）；不新建 test/ result/ 子目录（与 test-cases/test-results 混淆）；不复制 Spec Kit/Matt Pocock 完整文件树或 Handoff 体系（M01/M27 已拒绝）；本轮不加并行冲突检测（目录已为多 requirement_dir 预留，用户明确后续补）；不做需求级度量或架构图（超范围）。
+- **拒绝**：不迁移 JSON 路径（破坏在途需求风险）；不新建 test/ result/ 子目录（与 test-cases/test-results 混淆）；不复制 Spec Kit/Matt Pocock 完整文件树或 Handoff 体系（M01/M27 已拒绝）；M31 阶段不加项目级并行冲突检测，后续由 M32 的轻量 worktree claim 补齐；不做需求级度量或架构图（超范围）。
 - **落点**：新增 `scripts/atomic_write.py`（公共原子写，渐进收敛 5+ 处重复）、`scripts/render_artifacts.py`；规则落 `_shared/android-global-rules.md`（产物体系一条）、`android-implement-and-verify/SKILL.md`（续接入口）；本文保存来源与取舍，评测场景防回归。
 
 ### M32 多需求并行（git worktree）与交付文档落地
 
 - **问题**：单配置流程默认一个 `profiles/local.yaml` 对应一个活动需求；多需求共用同一配置/工作树/需求目录并行会互相污染（Git 基线、route 快照、证据覆盖、未提交代码阻塞）。
 - **来源**：[git worktree 官方](https://git-scm.com/docs/git-worktree)、[Claude Code worktrees](https://code.claude.com/docs/en/worktrees)、[OpenAI Codex worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)；Spec Kit spec continuity（集成批次汇总）。
-- **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 以各自 `requirement_dir/.state` 隔离 baseline/snapshot/route/evidence/capabilities；同文件同行冲突 git merge 自然检出；改不同文件无冲突；`git worktree remove/prune` 可回收；同 config 并发第二写窗口被 O_EXCL 锁拒。
+- **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 以各自 `requirement_dir/.state` 隔离 baseline/snapshot/route/evidence/capabilities；同一物理 worktree 的第二需求 claim 被 O_EXCL 锁拒；改不同文件无冲突；`git worktree remove/prune` 可回收。
 - **决策**：
-  - 业界标准 = 纯 git worktree，零自研并行 wrapper 脚本。一个需求 = 一个 worktree + 独立分支 + 独立 profile + 独立 requirement_dir。
+  - 业界标准 = 纯 git worktree，零自研并行 wrapper 脚本；只增加一个按物理 worktree 路径的轻量 claim，阻断错误复用但不锁整个仓库。一个需求 = 一个 worktree + 独立分支 + 独立 profile + 独立 requirement_dir。
   - 文档落地：`requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），目录名英文 slug（kebab-case），中文名存 `docs/需求说明.md` 首行 + workspace state 的 title，只在总览/集成报告显示。
-  - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 断证据链）、不用 cherry-pick（丢追溯链）。
+  - 用户确认改为私有分支集成前一次 `git rebase`，主分支只用 `git merge --ff-only`，保持历史一条线；rebase 后旧分支证据不作为最终结论，合入后重跑最终门禁。
   - `requirement_workspace.py` 新增 `integrate`（汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md` + 各通道标 MERGED+批次号）、扩展 `index --main-worktree`（刷新全局 `<主工作树>/document/需求总览.md`，六列含分支和集成批次，分支自动从 workspace state 填）。
   - 不污染门禁：document/ 随 Android 项目代码提交；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。
 - **对不变量 #18 / M22 的覆盖说明**：M22 原则"需求资料默认不进 Android 项目"。本决策由用户明确确认：文档放 project_path/document/ 时跟代码提交 + 摘要排除，保证可追溯且不污染代码门禁，覆盖旧默认。rotate 单配置通道仍可用项目外 requirements-runtime，不变。
-- **拒绝**：不新增 parallel_channel.py 或任何自研并行 wrapper（业界无此实践）；不做冲突预检机器门禁（git 合入自然报冲突）；不用 rebase/cherry-pick 合并；不把 `document/` 加入目标项目 `.gitignore`。
+- **拒绝**：不新增 parallel_channel.py 或任何自研并行 wrapper（业界无此实践）；不锁整个 Git 仓库，不做内容级冲突预检（Git rebase/merge 自然暴露冲突）；不对共享分支 rebase，不使用 cherry-pick；不把 `document/` 加入目标项目 `.gitignore`。
 
 ### M33 增量影响半径与越界 diff 门禁
 
@@ -431,6 +431,8 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 25. `requirement_file` 始终是唯一需求事实；`docs/实施计划.md` 只说明如何实现，不得改写业务需求。需求、计划或影响半径变化后重新确认受影响计划和半径，旧 route 和证据不得复用。
 26. 编码中需求增删改必须走增量影响半径：只处理受影响义务、测试和代码；最终 diff 超出已确认半径时阻断通过，不能由 AI 口头豁免。
 27. 影响半径的允许范围只用精确路径和目录前缀两种确定性匹配，禁止通配符；无锚点通配（如 `**/*.kt`）放行整个仓库使门禁失效，目录前缀必须以 `/` 结尾避免兄弟目录歧义。
+28. 并行需求必须占用独立物理 Git worktree；同一 worktree 的活动通道由机器 claim 阻断，不同 worktree 可并行，check-env/route 复核当前 claim，最终 gate 复核 route 快照与当前代码摘要。
+29. 私有需求分支集成前只 rebase 一次，主分支只用 `git merge --ff-only` 保持历史一条线；rebase/合并后的最终代码必须重新验证。
 
 ## 维护规则
 

@@ -74,9 +74,10 @@ description: |
 ## 并行需求通道（多窗口同时推进）
 
 - 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。机器状态位于各自 `requirement_dir/.state`；隔离边界是需求目录，不是 profile 名称。
+- `check-env` 会原子占用当前物理 worktree 路径；同一 worktree 已有其他需求时直接阻断，不同 worktree 即使属于同一 Git 仓库也允许并行。后续 `route` 会复核占用身份，最终 gate 继续复核 route 快照、Git 基线和当前代码摘要；串行轮换、合并集成或取消需求后释放通道。
 - 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交），人工 Markdown 统一放在该需求目录的 `docs/`，机器 JSON 继续放在 `.state/`、`test-cases/` 和 `test-results/`；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `docs/需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`check-env` 只把当前 `<requirement_dir>` 下的文档排除出“代码脏工作区”，`route`、执行收据和最终门禁排除 `document/` 作为交付证据目录，文档变化不触发代码影响面、不污染 `snapshot_sha256`，但可以 `git add`/提交以保留需求证据链。
 - 不冲突的需求（改不同文件）各窗口独立闭环，从 `init`/`check-env` 到 `route`/`delivery_gate` 全套自带 `--config`。改同一文件时 git 合入自然报冲突，不做预检。
-- 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 使 worktree 证据失效）、不用 cherry-pick（丢追溯链）。合入后在最终代码上重跑受影响门禁。
+- 合并用私有分支集成前一次 `git rebase`，主工作树只执行 `git merge --ff-only` 保持历史一条线；rebase 后旧分支证据不作为最终结论，合入后的最终代码必须重跑受影响门禁。共享分支不得 rebase，不使用 cherry-pick。
 - 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md`，各通道标 `MERGED`+批次号；`index --main-worktree <主工作树>` 刷新全局总览到 `<主工作树>/document/需求总览.md`（六列含分支和集成批次）。
 - 并行通道不能用 `requirement_workspace.py next`（它只表示同通道内上一需求结束后开始下一项）；共享真机/模拟器/账号仍需串行。
 

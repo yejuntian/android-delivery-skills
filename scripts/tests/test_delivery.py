@@ -2119,6 +2119,7 @@ class RouteCommandTests(unittest.TestCase):
                 mock.patch("scripts.delivery.load_config", return_value=config or {}),
                 mock.patch("scripts.delivery.resolve_paths", return_value=paths),
                 mock.patch("scripts.delivery.current_branch", return_value="feature"),
+                mock.patch("scripts.delivery.assert_channel", return_value={}),
                 mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.root / "baseline.json"),
                 mock.patch(
                     "scripts.delivery.requirement_snapshot_path_for_config",

@@ -81,6 +81,19 @@ def current_branch(repo):
     return _git(repo, ["branch", "--show-current"]).decode("utf-8").strip()
 
 
+def worktree_root(repo):
+    """返回 Git worktree 根目录，供需求通道验证物理工作树边界。"""
+    repo = _require_repository(repo)
+    return Path(_git(repo, ["rev-parse", "--show-toplevel"]).decode("utf-8").strip()).resolve()
+
+
+def git_common_dir(repo):
+    """返回 Git common dir，供不同 worktree 共享私有运行时锁目录。"""
+    repo = _require_repository(repo)
+    raw = Path(_git(repo, ["rev-parse", "--git-common-dir"]).decode("utf-8").strip())
+    return (raw if raw.is_absolute() else repo / raw).resolve()
+
+
 def current_head(repo):
     """返回当前 HEAD commit，供一次需求记录稳定的 diff 起点。"""
     repo = _require_repository(repo)

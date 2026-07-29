@@ -30,6 +30,7 @@ if __package__ in {None, ""}:
     __package__ = "scripts"
 
 from .config_paths import _md_filename_for_dir, resolve_config_paths  # noqa: E402
+from .channel_guard import ChannelGuardError, release_channel  # noqa: E402
 from .delivery import DEFAULT_CONFIG_PATH, DeliveryError, load_config  # noqa: E402
 from .git_changes import GitInspectionError, working_tree_status  # noqa: E402
 from .user_facing_labels import ChineseArgumentParser  # noqa: E402
@@ -509,7 +510,7 @@ def render_workspace_index(workspace_root: Path) -> str:
         "- 代码在对应分支的 worktree 里（`MyApp-<英文名>/`）。",
         "- 集成批次详情见同目录 `integration-<日期>-<批次>.md`。",
         "- 已完成需求超保留数量与天数时回收前归档到 `archive/`；并行合并的需求原地保留。",
-        "- 不冲突的并行需求各窗口独立闭环；合并用 git merge --no-ff。",
+        "- 不冲突的并行需求各窗口独立闭环；私有分支集成前 rebase，主分支只用 git merge --ff-only。",
         "",
     ])
     return "\n".join(lines)
@@ -581,7 +582,7 @@ def render_integration_report(
         "",
         "## 合入后注意",
         "",
-        "- 代码已用 `git merge --no-ff` 合入集成分支，提交 hash 保留，证据链不断。",
+        "- 各私有分支先 rebase 到最新主分支，再用 `git merge --ff-only` 保持主分支历史一条线。",
         "- 合入后的最终代码上重新执行 build/lint/test 和 delivery_gate。",
         "- 各通道文档目录原地保留，不物理合并；细查见各自 `续接指南.md`。",
         "",
@@ -603,6 +604,7 @@ def integrate_channels(
     report_root = main_worktree / "document"
     report_root.mkdir(parents=True, exist_ok=True)
     triples: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    release_targets: list[tuple[Path, Path]] = []
     for channel_dir in channel_dirs:
         channel_dir = Path(channel_dir).expanduser().resolve()
         state, result = _read_channel_state(channel_dir)
@@ -614,8 +616,16 @@ def integrate_channels(
             existing["status"] = "MERGED"
             existing["integration_batch"] = batch_label
             _write_state(channel_dir, existing)
+            project_value = existing.get("project_path")
+            if project_value:
+                release_targets.append((Path(str(project_value)), channel_dir))
     report_path = report_root / f"{INTEGRATION_REPORT_PREFIX}{batch_label}.md"
     _write_text_atomic(report_path, render_integration_report(triples, batch_label))
+    for project_path, channel_dir in release_targets:
+        try:
+            release_channel(project_path, channel_dir)
+        except ChannelGuardError as exc:
+            raise RequirementWorkspaceError(f"并行需求项目通道无法释放: {exc}") from exc
     return report_path
 
 
@@ -848,6 +858,11 @@ def rotate_workspace(
                 str(Path(str(config.get("requirement_file", "requirement.docx"))).name),
                 current_time,
             )
+            if paths.project_path and (paths.project_path / ".git").exists():
+                try:
+                    release_channel(paths.project_path, paths.requirement_dir)
+                except ChannelGuardError as exc:
+                    raise RequirementWorkspaceError(f"上一需求项目通道无法释放: {exc}") from exc
     except Exception as exc:
         rollback_errors: list[str] = []
         # 只回滚本次调用实际修改的对象，避免并发失败误删其他窗口产物。
@@ -990,6 +1005,9 @@ def parse_args(argv: list[str] | None = None) -> Any:
         "--confirm", action="store_true", help="确认删除已经满足延迟回收条件的内容"
     )
 
+    release = subparsers.add_parser("release", help="释放当前需求占用的 Git worktree 通道")
+    release.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="本机配置路径")
+
     index_parser = subparsers.add_parser("index", help="渲染或刷新需求总览.md")
     index_parser.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="本机配置路径")
     index_parser.add_argument(
@@ -1024,6 +1042,15 @@ def main(argv: list[str] | None = None) -> int:
         policy, paths = load_workspace_policy(config, config_path)
         if args.command == "status":
             return print_status(config_path, config)
+        if args.command == "release":
+            if not paths.project_path:
+                raise RequirementWorkspaceError("配置缺少 project_path，无法释放项目通道")
+            try:
+                released = release_channel(paths.project_path, paths.requirement_dir)
+            except ChannelGuardError as exc:
+                raise RequirementWorkspaceError(str(exc)) from exc
+            print("✅ 项目通道已释放。" if released else "✅ 当前没有需要释放的项目通道。")
+            return 0
         if args.command == "index":
             index_root = (
                 Path(args.main_worktree).expanduser().resolve() / "document"

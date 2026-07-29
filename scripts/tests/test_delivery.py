@@ -1313,6 +1313,14 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("影响半径已确认", text)
         self.assertIn("先建立测试映射并用业务断言得到 Red", text)
         self.assertIn("已确认实施计划", text)
+        traceability = self.requirement_dir / "test-cases" / "traceability.md"
+        self.assertTrue(traceability.is_file())
+        traceability_text = traceability.read_text(encoding="utf-8")
+        self.assertIn("需求与实施计划确认", traceability_text)
+        self.assertIn("实施计划状态：已确认", traceability_text)
+        resume = self.requirement_dir / "续接指南.md"
+        self.assertTrue(resume.is_file())
+        self.assertIn("实施计划：已确认", resume.read_text(encoding="utf-8"))
 
         implementation_plan_path(self.requirement_dir).write_text(
             implementation_plan_path(self.requirement_dir).read_text(encoding="utf-8")

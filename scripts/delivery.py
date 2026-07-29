@@ -11,7 +11,7 @@
 1. `init`: 负责首次需求提炼，或对比最近确认修订汇总中途需求变化并制定 BDD。
 2. `check-env`: 负责编码前的环境安全校验、Git 基线与需求起点建立。
 3. `confirm-requirement-update`: 负责确认原子义务修订，不修改 Git 基线。
-4. `confirm-plan`: 负责把用户确认的实施计划和影响半径绑定当前需求修订，不修改业务文件。
+4. `confirm-plan`: 负责把用户确认的实施计划和影响半径绑定当前需求修订，并刷新人读追溯 Markdown，不修改业务文件。
 5. `route`: 识别七类工程影响和第二轮条件能力候选，保存绑定当前代码的路由快照，
    再负责编码后的动态审查、测试与自修复闭环分发；泄漏和性能仍由 AI 语义终判。
 
@@ -1004,6 +1004,7 @@ def _render_resume_guide(
     paths,
     revision_manifest=None,
     requirement_current: bool | None = None,
+    strict: bool = False,
 ) -> None:
     """刷新续接指南.md 及配套人读影子；传入 manifest 时附本次增量波及清单。
 
@@ -1069,10 +1070,12 @@ def _render_resume_guide(
         if snapshot is not None:
             write_text_atomic(
                 requirement_dir / "test-cases" / "traceability.md",
-                render_traceability_md(snapshot, mapping, delivery_result),
+                render_traceability_md(snapshot, mapping, delivery_result, receipt),
             )
         print(f"📄 续接指南已刷新: {resume_path}")
     except OSError as exc:
+        if strict:
+            raise DeliveryError(f"需求 Markdown 追溯文档无法同步: {exc}") from exc
         print(f"⚠️ 续接指南无法写入: {exc}")
 
 
@@ -1297,6 +1300,11 @@ def cmd_confirm_plan(args):
     print(f"✅ 影响半径已确认: {receipt['impact_radius_path']}")
     print(f"✅ 计划确认收据: {receipt_path}")
     print("✅ 收据已绑定当前需求修订、需求摘要、计划摘要和影响半径；任一内容变化后自动失效。")
+    _render_resume_guide(paths, requirement_current=True, strict=True)
+    print("✅ 需求追溯 Markdown 已同步: 续接指南.md、需求修订说明.md、traceability.md")
+    mapping_path = getattr(paths, "test_mapping_path", None)
+    if mapping_path is not None and Path(mapping_path).is_file():
+        print("✅ 测试映射 Markdown 已同步: 测试映射说明.md")
     print_confirmed_fact_sources(
         requirement_path.resolve(),
         (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),

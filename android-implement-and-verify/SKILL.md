@@ -34,7 +34,7 @@ description: |
 
 ## 人读产物与续接
 
-- 机器 JSON 是门禁附件；脚本从 JSON 渲染同名 md 影子供用户自检：`续接指南.md`（每次 `init` 刷新，聚合需求快照/映射/计划收据/最终结论）、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`、`test-results/交付结论.md`（强制未验证项与残留风险段）。
+- 机器 JSON 是门禁附件；脚本从 JSON 渲染同名 md 影子供用户自检：`续接指南.md`（每次 `init`、`confirm-plan` 和最终报告刷新，聚合需求快照/映射/计划收据/最终结论）、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`、`test-cases/traceability.md`、`test-results/交付结论.md`（强制未验证项与残留风险段）。需求语义先写入配置的 `requirement_file`，确认后必须同步相关人读 Markdown；JSON 只做机器校验，不能替代需求追溯。
 - 续做旧需求时，先读 `<requirement_dir>/续接指南.md`，秒懂当前修订、义务状态（CURRENT/STALE）、计划是否确认、最终结论和下一步，不翻聊天。
 - 协作待办、`review/变更审查.md`（Diff 发现 + Context 发现双表）、`decisions/<日期>-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 手写，必须填 `android-implement-and-verify/templates/` 骨架（plan/review/decision 等）。
 - 补充文档目录：`config/` 只记非密配置元数据（key 名/环境/owner/来源，绝不存 token/私钥/凭据）；`issues/` 每个问题一个 md（bug/数据偏差/QA反馈/Journey 失败，含现象/根因/处置/证据）；`ui/design-notes.md` 记设计说明文字（页面状态/交互/资源对照/与实现差异）。均填对应模板骨架。
@@ -270,7 +270,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 ```
 
-退出码 `0` 才允许编码。该命令只生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，不修改业务文件或 Git。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划五类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
+退出码 `0` 才允许编码。该命令生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，并同步刷新 `续接指南.md`、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`（存在时）和 `test-cases/traceability.md`；不修改业务文件或 Git。需求语义必须先写入 `requirement_file`，计划变化必须先写入同一份 `实施计划.md`，相关人读 Markdown 同步成功后才允许进入编码。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划五类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
 1. **BDD + TDD**：先把全部已确认 BDD 映射到真实测试，再逐场景执行 `Red -> Green -> Refactor`。Red 必须由业务断言失败证明，并由自动生成的 `.state/tdd-cycle.json` 保存 Red receipt、Green receipt、代码快照、测试源码快照和 BDD/testcase 关系；Green 后再重构并重跑受影响测试。一个 BDD 可以由 Unit、集成、UI 或人工证据共同覆盖，但任何工具不得越过自己的断言边界。
 2. **主动检索与共享边界保护**：动笔前，主动寻找同类组件、Base 类和测试范式，并复核拟修改共享边界的每个已上线业务调用方已归入“明确修改、必须保护、暂时无法确认”。新发现项按中途需求修订同步确认；未明确授权且旧行为有可靠依据时默认保护，依据不足或与新需求冲突时暂停。按上一条先运行或补齐保护测试，闭环前不得修改共享边界；能够局部实现时优先新增语义明确的入口、overload 或策略，保持旧入口默认语义不变。
 3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。

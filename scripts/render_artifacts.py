@@ -139,6 +139,7 @@ def render_traceability_md(
     snapshot: dict[str, Any],
     mapping: dict[str, Any] | None,
     delivery_result: dict[str, Any] | None,
+    plan_receipt: dict[str, Any] | None = None,
 ) -> str:
     """Render the requirement-to-test traceability view from machine facts."""
     mappings = {
@@ -159,9 +160,25 @@ def render_traceability_md(
         f"- 需求集合：`{snapshot.get('requirement_id', '未知')}`",
         f"- 当前修订：{revision_label(snapshot.get('revision', '?'))}",
         "",
+        "## 需求与实施计划确认",
+        "",
+    ]
+    if plan_receipt and plan_receipt.get("confirmed_at"):
+        lines.extend([
+            "- 需求状态：已确认",
+            "- 实施计划状态：已确认",
+            f"- 计划确认时间：{plan_receipt['confirmed_at']}",
+            f"- 需求正文摘要：`{plan_receipt.get('requirement_file_sha256', '未知')}`",
+            f"- 实施计划摘要：`{plan_receipt.get('implementation_plan_sha256', '未知')}`",
+            f"- 影响半径摘要：`{plan_receipt.get('impact_radius_sha256', '未知')}`",
+        ])
+    else:
+        lines.append("- 实施计划状态：尚未确认或已失效")
+    lines.extend([
+        "",
         "| BDD 场景 | 场景内容 | 映射状态 | 测试用例 | 交付状态 | 证据 |",
         "|---|---|---|---|---|---|",
-    ]
+    ])
     for obligation in snapshot.get("obligations", []):
         identifier = obligation.get("id")
         mapped = mappings.get(identifier, {})

@@ -95,6 +95,22 @@ class RenderArtifactsTests(unittest.TestCase):
         self.assertIn("E-TEST", md)
         self.assertIn("BDD-004", md)
 
+    def test_traceability_records_confirmed_requirement_and_plan(self) -> None:
+        """需求确认和计划确认必须在可读追溯表中留下绑定信息。"""
+        receipt = {
+            "confirmed_at": "2026-07-29T10:00:00+00:00",
+            "requirement_file_sha256": "a" * 64,
+            "implementation_plan_sha256": "b" * 64,
+            "impact_radius_sha256": "c" * 64,
+        }
+
+        md = render_traceability_md(make_snapshot(), None, None, receipt)
+
+        self.assertIn("需求与实施计划确认", md)
+        self.assertIn("实施计划状态：已确认", md)
+        self.assertIn("2026-07-29T10:00:00+00:00", md)
+        self.assertIn("`" + "b" * 64 + "`", md)
+
     def test_resume_guide_flags_stale_and_next_steps(self) -> None:
         """续接指南标记 STALE 映射，并列出下一步。"""
         mapping = {"mappings": [

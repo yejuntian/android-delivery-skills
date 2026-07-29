@@ -1157,10 +1157,24 @@ def write_generated_traceability(
     mapping = {
         "mappings": list(mapping_index.values())
     } if isinstance(mapping_index, dict) else None
+    plan_receipt = None
+    plan_path = context.get("implementation_plan_path")
+    if isinstance(plan_path, str):
+        receipt_path = (
+            Path(plan_path).resolve().parent
+            / "test-cases"
+            / "implementation-plan-receipt.json"
+        )
+        try:
+            payload_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            payload_receipt = None
+        if isinstance(payload_receipt, dict):
+            plan_receipt = payload_receipt
     try:
         write_text_atomic(
             Path(path).expanduser().resolve(),
-            render_traceability_md(snapshot, mapping, payload),
+            render_traceability_md(snapshot, mapping, payload, plan_receipt),
         )
     except OSError as exc:
         raise DeliveryGateError(f"需求测试追溯表无法写入: {path}: {exc}") from exc

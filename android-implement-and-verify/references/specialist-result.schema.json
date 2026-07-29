@@ -230,60 +230,6 @@
       "propertyNames": { "pattern": "^BDD-[0-9]+$" },
       "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
     },
-    "mutation_testing": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "producer",
-        "languages",
-        "target_classes",
-        "mutators",
-        "generated_mutants",
-        "killed",
-        "survived",
-        "killed_by_obligation",
-        "survival_blocked",
-        "report_path",
-        "report_sha256"
-      ],
-      "properties": {
-        "producer": { "const": "pitest" },
-        "languages": {
-          "type": "array",
-          "items": { "enum": ["KOTLIN", "JAVA", "MIXED", "NONE"] },
-          "minItems": 1,
-          "uniqueItems": true
-        },
-        "target_classes": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
-        },
-        "mutators": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
-        },
-        "generated_mutants": { "type": "integer", "minimum": 0 },
-        "killed": { "type": "integer", "minimum": 0 },
-        "survived": { "type": "integer", "minimum": 0 },
-        "killed_by_obligation": {
-          "type": "object",
-          "propertyNames": { "pattern": "^BDD-[0-9]+$" },
-          "additionalProperties": {
-            "type": "array",
-            "items": { "type": "string", "minLength": 1 },
-            "uniqueItems": true
-          }
-        },
-        "survival_blocked": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "report_path": { "type": "string", "minLength": 1 },
-        "report_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
-      }
-    },
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" }
   },
@@ -409,18 +355,6 @@
           "executed_checks": { "minimum": 1 },
           "executed_tests": { "type": "integer", "minimum": 1 }
         }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "skill": { "const": "android-test-and-fix" }
-        },
-        "required": ["skill"]
-      },
-      "then": {},
-      "else": {
-        "not": { "required": ["mutation_testing"] }
       }
     },
     {

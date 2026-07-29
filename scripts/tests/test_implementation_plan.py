@@ -110,7 +110,6 @@ def write_valid_impact_radius(root: Path, snapshot: dict, requirement: str) -> N
                 "id": "BDD-001",
                 "change_type": "ADDED",
                 "reason": "登录失败提示只影响 ViewModel 和对应单测。",
-                "risk_level": "L1",
                 "expected_files": [
                     "app/src/main/java/LoginViewModel.kt",
                     "app/src/test/java/LoginViewModelTest.kt",

@@ -231,18 +231,17 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **报告与控制面**：项目已有工具能够输出 SARIF 时使用独立 `android-static-analysis` version 3 收据，直接解析报告 Error、`baselineState` 和稳定 `FND-...`；`new/updated/unknown` Error 阻断，明确 `unchanged` 的历史 Error 只记录不扩改。新增 suppress、baseline、exclude 或失败策略生成 `CTL-...` 并逐项说明，不因命令零退出或配置放宽造绿。
 - **模型评测**：使用 Kotlin、Java、混合语言、安全反例、闭源证据不足和控制面放宽样例评估所有权、调用链、契约和结论边界；评测答案不进入日常 Skill 上下文。
 - **历史债务**：告警区分 `NEW`、`AFFECTED`、`PRE_EXISTING`、`UNKNOWN_ORIGIN`；不更新 baseline 掩盖新增问题，也不借需求清理无关旧问题。
-- **变异测试边界**：Kotlin 项目变异测试必须排除编译器自动注入的 `kotlin.jvm.internal.Intrinsics` 空检查变异。这些变异由编译器对参数非空约束生成，不属于业务逻辑，业务测试无法杀死，若不排除则正常交付永远 `survived > 0`，使 FULL_PASS 门禁形同虚设。排除只针对编译器插桩，不排除任何业务代码变异；Java 项目无此类注入，无需排除。
 - **证据边界**：生成代码、反射、AIDL、JNI、闭源 SDK 或 release 行为无法确认时标未验证；静态零告警只能写“未发现明确静态问题”，不能宣称无泄漏、线程安全或实机通过。
 - **原因**：项目配置变化只影响能力发现与证据，不要求修改路由脚本或强制迁移语言、AGP、Gradle、JDK 和测试框架。
 
 ### M17 自适应分层自动化测试
 
-- **来源**：[Android 官方测试策略](https://developer.android.com/training/testing/fundamentals/strategies) 的单元、组件、功能、应用和候选版本分层，[Android 测试基础](https://developer.android.com/training/testing/fundamentals) 的可测试架构与解耦，[UIAutomator](https://developer.android.com/training/testing/other-components/ui-automator)、[Espresso](https://developer.android.com/training/testing/espresso) 和 [Compose UI Test](https://developer.android.com/develop/ui/compose/testing) 的能力边界；Maestro、Robolectric、Kaspresso、Paparazzi、Kotest 属性测试和 PIT Mutation Testing 作为补充对照。
-- **决策**：把每个 BDD 的复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，按 `L1/L2/L3/BLOCKED` 做需求初判和最终 diff 终判，再为每项选择最低且足够的测试层。Journey 只做少量关键黑盒旅程，并根据原子 Then 分配用 `FULL/PARTIAL/NONE` 表达整条 BDD 的适用性；Journey 通过只覆盖它实际断言的 Then。
+- **来源**：[Android 官方测试策略](https://developer.android.com/training/testing/fundamentals/strategies) 的单元、组件、功能、应用和候选版本分层，[Android 测试基础](https://developer.android.com/training/testing/fundamentals) 的可测试架构与解耦，[UIAutomator](https://developer.android.com/training/testing/other-components/ui-automator)、[Espresso](https://developer.android.com/training/testing/espresso) 和 [Compose UI Test](https://developer.android.com/develop/ui/compose/testing) 的能力边界；Maestro、Robolectric、Kaspresso、Paparazzi 和 Kotest 属性测试作为补充对照。
+- **决策**：把每个 BDD 的复合 Then 拆成 `BDD-001/T1` 形式的原子验证义务，按影响类别和可执行证据选择最低且足够的测试层。Journey 只做少量关键黑盒旅程，并根据原子 Then 分配用 `FULL/PARTIAL/NONE` 表达整条 BDD 的适用性；Journey 通过只覆盖它实际断言的 Then。
 - **老项目边界**：低 AGP 项目继续使用自身 wrapper 构建 APK，当前 AI 会话优先使用 Android CLI/adb 对已安装 APK 执行 Journey；已经初始化的独立壳只作可选回退。项目已有 Compose/Espresso/UIAutomator 时复用，不升级目标项目。
-- **工具边界**：不自动安装 Maestro、Appium、Kaspresso、属性测试或 Mutation 工具。只有场景仍适合黑盒 UI、Journey 引擎能力不足且项目已有或用户允许时才考虑 Maestro；业务上不适合 Journey 的场景不能通过换黑盒引擎解决。
+- **工具边界**：不自动安装新的 UI 测试框架、属性测试工具或其他长期测试体系。只有场景仍适合黑盒 UI、Journey 引擎能力不足且项目已有或用户允许时才考虑额外工具；业务上不适合 Journey 的场景不能通过换黑盒引擎解决。
 - **原因**：成熟方案不是万能 E2E 兜底，而是大量快速确定的小测试加少量高保真流程。原子证据可以补齐 UI 与业务混合需求、Journey 部分覆盖和无设备降级，同时避免每个小改动机械执行完整测试矩阵。
-- **拒绝**：不按代码行数判断风险，不把 Journey/截图/Unit/静态扫描越权写成整条业务通过，不把计划人工测试写成已覆盖，不建立跨需求持久化状态机。
+- **拒绝**：不按代码行数决定测试范围，不把 Journey/截图/Unit/静态扫描越权写成整条业务通过，不把计划人工测试写成已覆盖，不建立跨需求持久化状态机。
 
 ### M18 需求增量与最终证据新鲜度
 
@@ -318,7 +317,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **采用**：测试必须落在调用方可观察的稳定业务边界，预期来自需求/契约/确定样例而不是重复生产算法，新增 Mock 优先停在不可控外部边界；全部义务先完成映射，实际编码按原子 Then 或不可分割 BDD 逐个完成 Red-Green 小闭环。
 - **采用**：疑难、偶现、性能回退或首次修复未关闭的问题，在继续修改生产代码前建立能够捕获原始症状的最小反馈命令；无法可靠复现时请求真实环境或证据，不把假设冒充根因。明确编译、Lint 和单测失败仍走轻量直接闭环。
 - **采用**：目标项目已有领域术语表、`CONTEXT.md`、`CONTEXT-MAP.md` 或 ADR 时按当前范围读取；缺失时不自动创建、不阻断，事实与业务决策冲突时才请求确认。
-- **采用**：只有跨会话的大型需求，或者 `L3` 同时包含多条独立验收链路时，才在现有追溯表编排纵向切片和依赖；普通需求和单点高风险小改动保持原流程，不引入 Ticket 系统。
+- **采用**：只有跨会话的大型需求，或者包含多条独立验收链路时，才在现有追溯表编排纵向切片和依赖；普通需求和单点改动保持原流程，不引入 Ticket 系统。
 - **拒绝**：不复制其完整 Skill 套件、Issue/Wayfinder/Handoff 体系、每个需求逐题长时间访谈、定期主动重构或实现后自动提交；这些做法会增加认知和运行成本，或违背用户授权、最小修改及旧业务保护目标。
 - **落点**：领域资料与疑难诊断只写共享规则，测试可信度只写测试 Skill，大型切片只写总入口；本文保存来源和取舍，评测场景防回归。不新增 Skill、脚本、Schema、状态、配置或运行时文档副本。
 
@@ -350,7 +349,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **问题**：现有交付产物（requirement-revision/test-mapping/route-impact/receipt）全是 JSON，机器能校验但用户打开看不懂、无法自检"这步对不对"；半个月后接旧需求 AI 需重新翻聊天才懂原状；多需求并存后无法一眼全局；旧需求删除后证据全丢。对标 shareit/shell 的 `docs/` 产物体系后发现差距。
 - **来源**：shareit/shell `docs/`（阶段目录 + 每产物人读 md + task 串联 + verify 脚本断言化）；[GitHub Spec Kit](https://github.com/github/spec-kit) 的 spec continuity 与稳定 ID；[XDG Base Directory](https://specifications.freedesktop.org/basedir/latest/) 与 [Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html) 的延迟回收（已落地为 M23）；[MADR](https://github.com/adr/madr) 的决策记录轻量化。
 - **决策**：
-  - md 是主产物（人读/自检/AI 执行依据），JSON 是门禁附件（SHA 链/变异测试/哈希校验全读 JSON 不动）。人工 Markdown 统一放在 `docs/`，`render_artifacts.py` 从 JSON 渲染 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`、`docs/需求测试追溯.md` 和 `docs/交付结论.md`。需求语义必须先写回 requirement_file，计划确认成功后同步相关人读 md；JSON 不能成为唯一追溯记录。
+  - md 是主产物（人读/自检/AI 执行依据），JSON 是门禁附件（SHA 链/自动化证据/哈希校验全读 JSON 不动）。人工 Markdown 统一放在 `docs/`，`render_artifacts.py` 从 JSON 渲染 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`、`docs/需求测试追溯.md` 和 `docs/交付结论.md`。需求语义必须先写回 requirement_file，计划确认成功后同步相关人读 md；JSON 不能成为唯一追溯记录。
   - `docs/` 默认保持扁平：协作待办、变更审查、决策和问题分别使用 `协作待办.md`、`审查-<主题>.md`、`决策-<主题>.md`、`问题-<主题>.md`；`api/`、`ui/`、`config/`、`issues/` 只在有对应资料时创建。所有 AI 手写文档仍填 `android-implement-and-verify/templates/` 骨架（plan/review/test/result/decision/communications）。
   - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前 `archive_before_reclaim` 完整归档 `docs/` 到 `archive/<requirement_id>/`，机器 JSON 和原始证据随源清理不堆积；双门槛（keep_completed + retention_days）不变。
 - **边界**：续接指南是从事实源渲染的状态快照，不是第二事实源（不变量 #25 不变）；md 与 JSON 一致性靠脚本渲染（零漂移），手写 md 由 SKILL 要求填模板；JSON 路径全部原位不迁移，零破坏在途需求。
@@ -375,7 +374,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **问题**：用户在编码中新增、修改或删除需求时，希望只处理受影响部分；仅靠中文计划和 AI 自觉容易发生两类失控：旧需求被整体重做，或最终 diff 悄悄越过已确认范围。
 - **来源**：Spec Kit 的稳定需求 ID 和跨产物一致性、Cucumber Example Mapping 的需求到测试映射、AndroidX/LeakCanary/Detekt 等 CI 对变更文件选择受影响验证、M21 的局部反馈与最终兜底、M29 的计划确认收据。
-- **决策**：新增机器可读 `<requirement_dir>/test-cases/impact-radius.json`。它绑定当前 `requirement_id`、修订号、需求正文 SHA 和有效义务摘要 SHA；当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED 义务必须逐项登记影响原因、风险、允许文件/目录前缀、预计测试和模块。`confirm-plan` 把影响半径 digest 写入计划收据，`route` 和最终门禁继续绑定该 digest；最终 diff 中任何代码文件不在已确认范围内时阻断完整通过。
+- **决策**：新增机器可读 `<requirement_dir>/test-cases/impact-radius.json`。它绑定当前 `requirement_id`、修订号、需求正文 SHA 和有效义务摘要 SHA；当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED 义务必须逐项登记影响原因、影响类别、允许文件/目录前缀、预计测试和模块。`confirm-plan` 把影响半径 digest 写入计划收据，`route` 和最终门禁继续绑定该 digest；最终 diff 中任何代码文件不在已确认范围内时阻断完整通过。
 - **匹配语义**：影响半径的允许范围只用两种确定性匹配，不允许通配符：`allowed_files` 精确路径命中，`allowed_dirs` 目录前缀匹配（必须 `/` 结尾）。无锚点通配符（如 `**/*.kt`）会放行整个仓库任意同类文件，使“防越界”门禁失效；强制 `/` 结尾则消除 `src` 误放行 `src_new` 这类兄弟目录的歧义。
 - **增量边界**：影响半径是“允许触达范围”，不是 AI 自动扩大范围的许可证。语义变化时只更新受影响义务、测试映射、实施计划和影响半径并重新确认；语义不变的实现完善只能在已确认半径内做最小改动。确需扩大范围时，先把新增影响写回需求/计划/影响半径并重新确认；无关改动应移除。
 - **拒绝**：不引入全仓精准依赖图服务、预测测试 SaaS 或复杂状态机；不因为增量而跳过最终兜底；不允许 AI 在最终报告中口头豁免越界 diff，也不把所有需求变化重跑成完整从头流程。
@@ -417,7 +416,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 10. 第二轮条件能力复用现有 Skill 和项目工具，不自动安装依赖或扩张为六个新 Skill。
 11. Kotlin/Java/Android 静态审查以六条不变量、语言边界和必要调用链为核心；机器结果逐项记录静态检查、工具覆盖、控制面变化和稳定问题编号，工具零告警不能改写成无泄漏或线程安全。
 12. 老项目历史债务与本次新增问题必须分离；不更新 baseline 造绿，也不扩大需求清理无关旧问题。
-13. 每个已确认 BDD 的必需原子 Then 必须有新鲜自动证据、实际人工证据或明确阻塞；任一工具的通过不得覆盖它没有断言的风险。
+13. 每个已确认 BDD 的必需原子 Then 必须有新鲜自动证据、实际人工证据或明确阻塞；任一工具的通过不得覆盖它没有断言的行为或能力。
 14. `init` 永不删除需求 Git 基线，重复 `check-env` 永不覆盖当前起点；中途需求变化保留未变化 ID，最终通过必须绑定当前需求、基线和工作树摘要。
 15. 新增 Kotlin/Java 核心代码必须落实职责分层、依赖方向、可测试构造和必要 KDoc/核心注释；代码质量专项不得用自然语言摘要省略这四项检查。
 16. 首次编码前完整准备一次，编码后普通变化走局部迭代，最终 route 和完整门禁只在明确交付意图下执行；局部结果不得冒充整体通过。
@@ -432,7 +431,6 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 25. `requirement_file` 始终是唯一需求事实；`docs/实施计划.md` 只说明如何实现，不得改写业务需求。需求、计划或影响半径变化后重新确认受影响计划和半径，旧 route 和证据不得复用。
 26. 编码中需求增删改必须走增量影响半径：只处理受影响义务、测试和代码；最终 diff 超出已确认半径时阻断通过，不能由 AI 口头豁免。
 27. 影响半径的允许范围只用精确路径和目录前缀两种确定性匹配，禁止通配符；无锚点通配（如 `**/*.kt`）放行整个仓库使门禁失效，目录前缀必须以 `/` 结尾避免兄弟目录歧义。
-28. Kotlin 项目变异测试必须排除 `kotlin.jvm.internal.Intrinsics` 等编译器注入的变异，否则正常交付永远 `survived > 0` 使 FULL_PASS 门禁失效；排除只针对编译器插桩，不排除业务代码变异。
 
 ## 维护规则
 

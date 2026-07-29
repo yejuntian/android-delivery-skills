@@ -49,7 +49,6 @@ from ..user_facing_labels import (  # noqa: E402
     JOURNEY_STATUS_LABELS,
     OBLIGATION_STATUS_LABELS,
     REMOVAL_DISPOSITION_LABELS,
-    RISK_LEVEL_LABELS,
     SEVERITY_LABELS,
     SNAPSHOT_STATUS_LABELS,
     WORKFLOW_STATE_LABELS,
@@ -79,7 +78,6 @@ class UserFacingLabelsTests(unittest.TestCase):
         self.assertTrue({"REQUIREMENT_BLOCKED", "ENVIRONMENT_FAILED", "TEST_FAILED",
                          "IMPLEMENTATION_FAILED", "UNKNOWN"} <= set(FAILURE_CLASS_LABELS))
         self.assertTrue({"FULL", "PARTIAL", "NONE"} <= set(JOURNEY_APPLICABILITY_LABELS))
-        self.assertTrue({"L1", "L2", "L3", "BLOCKED"} <= set(RISK_LEVEL_LABELS))
         self.assertTrue({"PASS", "APP_ASSERTION_FAILED", "HARNESS_FAILED",
                          "NO_JOURNEY_FOUND", "INITIALIZATION_REQUIRED"}
                         <= set(JOURNEY_STATUS_LABELS))
@@ -88,14 +86,14 @@ class UserFacingLabelsTests(unittest.TestCase):
         """验证状态转中文，但接口路径、类名和稳定验收编号保持原文。"""
         source = (
             "USER_INPUT_REQUIRED / BLOCKED / FULL_PASS / UNVERIFIED / "
-            "APP_ASSERTION_FAILED / L2；POST /jgp/videoPageV2；VideoViewModel；BDD-001"
+            "APP_ASSERTION_FAILED；POST /jgp/videoPageV2；VideoViewModel；BDD-001"
         )
 
         result = localize_machine_terms(source)
 
         for machine_term in (
             "USER_INPUT_REQUIRED", "BLOCKED", "FULL_PASS", "UNVERIFIED",
-            "APP_ASSERTION_FAILED", "L2",
+            "APP_ASSERTION_FAILED",
         ):
             self.assertNotIn(machine_term, result)
         self.assertIn("需要你补充信息或完成操作", result)

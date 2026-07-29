@@ -17,7 +17,6 @@ KNOWN_ORACLES = frozenset(
         "no_route_before_required_confirmations",
         "stale_mapping_blocks_final",
         "no_fake_green_from_zero_tests",
-        "mutation_survivor_blocks_pass",
         "ui_visual_report_required",
         "conditional_gate_union_is_complete",
         "delivery_documents_excluded_from_code_diff",

@@ -16,7 +16,6 @@
       "id": "BDD-001",
       "change_type": "ADDED",
       "reason": "说明该验收项为什么只影响这些文件或目录前缀。",
-      "risk_level": "L1",
       "expected_files": [
         "app/src/main/java/example/Feature.kt",
         "app/src/test/java/example/FeatureTest.kt"

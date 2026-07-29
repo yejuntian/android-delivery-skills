@@ -49,7 +49,6 @@
         "id",
         "change_type",
         "reason",
-        "risk_level",
         "expected_files",
         "expected_tests",
         "affected_modules"
@@ -60,7 +59,6 @@
           "enum": ["ADDED", "CHANGED", "REMOVED", "SUPERSEDED"]
         },
         "reason": { "type": "string", "minLength": 1 },
-        "risk_level": { "enum": ["L1", "L2", "L3", "BLOCKED"] },
         "expected_files": {
           "type": "array",
           "description": "该义务解释的预期文件；需要覆盖目录时可使用以 / 结尾的目录前缀。",

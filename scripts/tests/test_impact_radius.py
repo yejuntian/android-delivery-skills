@@ -67,7 +67,6 @@ def payload(snapshot_payload: dict, requirement: str) -> dict:
             "id": "BDD-001",
             "change_type": "CHANGED",
             "reason": "只调整登录失败提示和对应测试。",
-            "risk_level": "L1",
             "expected_files": [
                 "app/src/main/java/LoginViewModel.kt",
                 "app/src/test/java/LoginViewModelTest.kt",
@@ -95,6 +94,17 @@ class ImpactRadiusTests(unittest.TestCase):
                 "app/src/test/java/LoginViewModelTest.kt",
             ], radius),
         )
+
+    def test_risk_level_is_not_part_of_the_protocol(self) -> None:
+        """风险等级不再是影响半径协议字段。"""
+        requirement = "登录失败显示新的错误提示"
+        snap = snapshot()
+        radius = payload(snap, requirement)
+        radius["impacts"][0]["risk_level"] = "L1"
+
+        errors = validate_impact_radius(radius, snap, requirement)
+
+        self.assertTrue(any("未知字段" in error and "risk_level" in error for error in errors))
 
     def test_missing_changed_obligation_is_rejected(self) -> None:
         """验证本轮变更义务没有进入 impacts 时阻断确认。"""

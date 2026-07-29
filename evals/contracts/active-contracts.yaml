@@ -104,21 +104,6 @@ contracts:
       command:
         - command-003-zero-test-fake-green-blocked
 
-  - id: mutation-survivor-blocks-test-pass
-    status: active
-    title: 存活变异必须阻断测试专项通过
-    kind: anti_fake_green
-    oracle: mutation_survivor_blocks_pass
-    owner_files:
-      - android-test-and-fix/SKILL.md
-      - scripts/specialist_result.py
-      - android-implement-and-verify/references/specialist-result.schema.json
-    applies_to:
-      - final_delivery
-    covered_by:
-      artifact:
-        - 006-mutation-survived-blocks-pass
-
   - id: ui-visual-report-stays-independent
     status: active
     title: UI 视觉验收必须保持独立报告或明确豁免

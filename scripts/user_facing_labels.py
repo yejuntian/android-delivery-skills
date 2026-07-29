@@ -120,12 +120,6 @@ JOURNEY_APPLICABILITY_LABELS = {
     "PARTIAL": "部分界面步骤适用",
     "NONE": "不适用",
 }
-RISK_LEVEL_LABELS = {
-    "L1": "一级风险（局部低风险）",
-    "L2": "二级风险（标准业务变化）",
-    "L3": "三级风险（高风险边界）",
-    "BLOCKED": "关键信息不足，暂时无法安全实现",
-}
 SEVERITY_LABELS = {
     "P0": "最高严重级别",
     "P1": "高严重级别",
@@ -153,7 +147,6 @@ GATE_LABELS = {
     "android-security-privacy": "安全与隐私检查",
     "android-dynamic-leak": "动态内存泄漏检查",
     "android-performance": "性能检查",
-    "android-mutation": "变异测试（防假断言）",
     "behavior-journey": "界面流程自动化测试",
 }
 
@@ -184,7 +177,6 @@ MACHINE_TERM_LABELS = {
     **WORKFLOW_STATE_LABELS,
     **JOURNEY_STATUS_LABELS,
     **JOURNEY_APPLICABILITY_LABELS,
-    **RISK_LEVEL_LABELS,
     **SEVERITY_LABELS,
     **EVIDENCE_KIND_LABELS,
     "FULL_PASS": DELIVERY_CONCLUSION_LABELS["FULL_PASS"],

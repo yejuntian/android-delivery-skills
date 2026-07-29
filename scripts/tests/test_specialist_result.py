@@ -17,7 +17,6 @@ import sys
 import tempfile
 import unittest
 
-from jsonschema import Draft202012Validator
 from contextlib import redirect_stdout
 from unittest import mock
 
@@ -540,166 +539,14 @@ class SpecialistResultTests(unittest.TestCase):
         self.assertEqual("specialists", path.name)
         self.assertIn("-r1-", path.parent.name)
 
-    def _mutation_report(self, survived: int = 0, killed: int = 0) -> Path:
-        """写入绑定摘要的变异测试报告文件，计数与声明一致供交叉核对通过。"""
-        report = self.root / "mutations.xml"
-        lines = ["<mutations>"]
-        for _ in range(killed):
-            lines.append(
-                "<mutation detected='true' status='KILLED' numberOfTestsRun='1'>"
-                "<sourceFile>F.kt</sourceFile><mutatedClass>com.sample.Feature</mutatedClass>"
-                "<killingTest>t</killingTest></mutation>"
-            )
-        for _ in range(survived):
-            lines.append(
-                "<mutation detected='false' status='SURVIVED' numberOfTestsRun='1'>"
-                "<sourceFile>F.kt</sourceFile><mutatedClass>com.sample.Feature</mutatedClass>"
-                "<killingTest/></mutation>"
-            )
-        lines.append("</mutations>")
-        report.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return report
+    def test_unknown_extension_field_is_rejected(self) -> None:
+        """专项结果只接受统一协议字段，未知扩展不能绕过结构校验。"""
+        payload = dict(self.payload)
+        payload["legacy_extension"] = {}
 
-    def _test_and_fix_payload(self) -> dict:
-        """构造 android-test-and-fix 的最小有效专项结果。"""
-        self.payload["skill"] = "android-test-and-fix"
-        self.payload["provenance"] = {"skill": "android-test-and-fix"}
-        self.payload.pop("confirmed_impacts", None)
-        return self.payload
-
-    def test_routine_test_and_fix_does_not_require_mutation_summary(self) -> None:
-        """普通 L1/L2 测试专项不被 PIT 配置成本阻断。"""
-        payload = self._test_and_fix_payload()
-
-        self.assertEqual([], validate_specialist_result(payload, self.context))
-
-    def test_l3_test_and_fix_requires_mutation_summary(self) -> None:
-        """L3 影响半径缺少 PIT 摘要时必须失败。"""
-        payload = self._test_and_fix_payload()
-        context = {
-            **self.context,
-            "impact_radius": {"impacts": [{"risk_level": "L3"}]},
-        }
-
-        errors = validate_specialist_result(payload, context)
-
-        self.assertTrue(any("L3" in error and "mutation_testing" in error for error in errors))
-
-    def test_mutation_survived_blocks_pass(self) -> None:
-        """验证存活变异存在时测试与修复专项不能标记 PASS。"""
-        report = self._mutation_report(survived=1, killed=9)
-        payload = self._test_and_fix_payload()
-        payload["mutation_testing"] = {
-            "producer": "pitest",
-            "languages": ["KOTLIN"],
-            "target_classes": ["com.sample.Feature"],
-            "mutators": ["MATH"],
-            "generated_mutants": 10,
-            "killed": 9,
-            "survived": 1,
-            "killed_by_obligation": {"BDD-001": ["M1", "M2"]},
-            "survival_blocked": ["M3"],
-            "report_path": str(report),
-            "report_sha256": sha256_file(report),
-        }
         errors = validate_specialist_result(payload, self.context)
-        self.assertTrue(any("存活变异" in error for error in errors))
 
-    def test_mutation_all_killed_passes(self) -> None:
-        """验证全部变异被杀死且报告有效时测试与修复专项可 PASS。"""
-        report = self._mutation_report(survived=0, killed=8)
-        payload = self._test_and_fix_payload()
-        payload["mutation_testing"] = {
-            "producer": "pitest",
-            "languages": ["KOTLIN"],
-            "target_classes": ["com.sample.Feature"],
-            "mutators": ["MATH"],
-            "generated_mutants": 8,
-            "killed": 8,
-            "survived": 0,
-            "killed_by_obligation": {"BDD-001": ["M1"]},
-            "survival_blocked": [],
-            "report_path": str(report),
-            "report_sha256": sha256_file(report),
-        }
-        self.assertEqual([], validate_specialist_result(payload, self.context))
-
-    def test_no_code_mutation_scope_can_pass_with_zero_mutants(self) -> None:
-        """纯资源或配置范围可以诚实记录 NONE 和零变异。"""
-        report = self._mutation_report()
-        payload = self._test_and_fix_payload()
-        payload["mutation_testing"] = {
-            "producer": "pitest",
-            "languages": ["NONE"],
-            "target_classes": [],
-            "mutators": [],
-            "generated_mutants": 0,
-            "killed": 0,
-            "survived": 0,
-            "killed_by_obligation": {},
-            "survival_blocked": [],
-            "report_path": str(report),
-            "report_sha256": sha256_file(report),
-        }
-
-        self.assertEqual([], validate_specialist_result(payload, self.context))
-
-    def test_zero_mutants_unverified_matches_schema_but_cannot_pass(self) -> None:
-        """PIT 未配置时 0 mutants 可诚实 UNVERIFIED，但不能伪装成 PASS。"""
-        report = self._mutation_report()
-        payload = self._test_and_fix_payload()
-        payload["conclusion"] = "UNVERIFIED"
-        payload["mutation_testing"] = {
-            "producer": "pitest",
-            "languages": ["KOTLIN"],
-            "target_classes": ["com.sample.Feature"],
-            "mutators": ["MATH"],
-            "generated_mutants": 0,
-            "killed": 0,
-            "survived": 0,
-            "killed_by_obligation": {},
-            "survival_blocked": [],
-            "report_path": str(report),
-            "report_sha256": sha256_file(report),
-        }
-        schema_path = (
-            SCRIPTS_DIR.parent
-            / "android-implement-and-verify"
-            / "references"
-            / "specialist-result.schema.json"
-        )
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-
-        self.assertEqual([], validate_specialist_result(payload, self.context))
-        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
-
-        payload["conclusion"] = "PASS"
-        self.assertTrue(any(
-            "至少一个变异" in error
-            for error in validate_specialist_result(payload, self.context)
-        ))
-        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
-
-    def test_mutation_falsified_counts_blocked(self) -> None:
-        """验证造假把 survived 改 0 但报告实际有存活时被交叉核对拦截。"""
-        report = self._mutation_report(survived=4, killed=0)
-        payload = self._test_and_fix_payload()
-        payload["mutation_testing"] = {
-            "producer": "pitest",
-            "languages": ["KOTLIN"],
-            "target_classes": ["com.sample.Feature"],
-            "mutators": ["MATH"],
-            "generated_mutants": 4,
-            "killed": 4,
-            "survived": 0,
-            "killed_by_obligation": {"BDD-001": ["M1"]},
-            "survival_blocked": [],
-            "report_path": str(report),
-            "report_sha256": sha256_file(report),
-        }
-        errors = validate_specialist_result(payload, self.context)
-        self.assertTrue(any("survived" in e and "不一致" in e for e in errors))
-
+        self.assertTrue(any("未知字段" in error and "legacy_extension" in error for error in errors))
 
 if __name__ == "__main__":
     unittest.main()

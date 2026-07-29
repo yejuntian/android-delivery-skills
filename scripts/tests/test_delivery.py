@@ -1302,7 +1302,6 @@ class RequirementSnapshotTests(unittest.TestCase):
                     "id": "BDD-001",
                     "change_type": "ADDED",
                     "reason": "只修改登录错误提示。",
-                    "risk_level": "L1",
                     "expected_files": ["LoginViewModel.kt"],
                     "expected_tests": ["LoginViewModelTest#failure"],
                     "affected_modules": [":app"],

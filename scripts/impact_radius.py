@@ -27,7 +27,6 @@ from .requirement_snapshot import requirement_digest, requirement_summary_digest
 IMPACT_RADIUS_VERSION = 1
 IMPACT_RADIUS_RELATIVE_PATH = Path("test-cases") / "impact-radius.json"
 IMPACT_CHANGE_TYPES = {"ADDED", "CHANGED", "REMOVED", "SUPERSEDED"}
-RISK_LEVELS = {"L1", "L2", "L3", "BLOCKED"}
 
 
 class ImpactRadiusError(RuntimeError):
@@ -179,7 +178,6 @@ def _validate_impact_item(
         "id",
         "change_type",
         "reason",
-        "risk_level",
         "expected_files",
         "expected_tests",
         "affected_modules",
@@ -194,9 +192,6 @@ def _validate_impact_item(
         errors.append(f"{label}.change_type 必须是 {sorted(IMPACT_CHANGE_TYPES)}")
     elif identifier and expected_changes.get(identifier) != change_type:
         errors.append(f"{label} 与最近需求修订类型不一致: {identifier}")
-    risk_level = item.get("risk_level")
-    if risk_level not in RISK_LEVELS:
-        errors.append(f"{label}.risk_level 必须是 {sorted(RISK_LEVELS)}")
     _require_text(item.get("reason"), f"{label}.reason", errors)
     expected_files = _repo_path_list(item.get("expected_files"), f"{label}.expected_files", errors)
     _string_list(item.get("expected_tests"), f"{label}.expected_tests", errors)

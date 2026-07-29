@@ -498,14 +498,6 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("超出已确认影响半径" in error for error in errors))
 
-    def test_l3_radius_requires_mutation_specialist_evidence(self) -> None:
-        """L3 需求即使普通测试通过，也不能省略 PIT 专项证据。"""
-        self.context["impact_radius"]["impacts"][0]["risk_level"] = "L3"
-
-        errors = validate_delivery_result(self.payload, self.context)
-
-        self.assertTrue(any("缺少有效 PIT" in error for error in errors))
-
     def test_rename_old_path_is_checked_against_radius(self) -> None:
         """验证重命名同时检查旧路径，不能把越界文件搬进允许目录绕过门禁。"""
         paths = _changed_paths_for_radius(
@@ -1222,7 +1214,6 @@ class DeliveryGateTests(unittest.TestCase):
                     "id": "BDD-001",
                     "change_type": "ADDED",
                     "reason": "App 行为修改只影响 App.kt。",
-                    "risk_level": "L1",
                     "expected_files": ["App.kt"],
                     "expected_tests": ["AppTest#changed"],
                     "affected_modules": [":app"],

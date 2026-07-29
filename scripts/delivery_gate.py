@@ -73,7 +73,6 @@ from .specialist_result import (  # noqa: E402
     JOURNEY_AGENT_SKILL,
     TEST_AND_FIX_SKILL,
     conditional_gates_from_confirmed_impacts,
-    mutation_testing_required,
     validate_specialist_evidence,
 )
 from .user_facing_labels import (  # noqa: E402
@@ -326,10 +325,6 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         api_status.strip().lower() if isinstance(api_status, str) and api_status.strip() else "missing"
     )
     testing = config.get("testing")
-    mutation_config = testing.get("mutation_testing") if isinstance(testing, dict) else None
-    context["mutation_testing_required"] = bool(
-        isinstance(mutation_config, dict) and mutation_config.get("required") is True
-    )
     context["tdd_required"] = bool(
         not isinstance(testing, dict) or testing.get("tdd_required", True) is not False
     )
@@ -629,13 +624,6 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 errors.append(f"evidence {identifier} 绑定了非当前义务: {obligation_id}")
             elif digest != expected["sha256"]:
                 errors.append(f"evidence {identifier} 对 {obligation_id} 的需求证据已失效")
-
-    if mutation_testing_required(context) and not any(
-        result.get("skill") == TEST_AND_FIX_SKILL
-        and isinstance(result.get("mutation_testing"), dict)
-        for result in specialist_results.values()
-    ):
-        errors.append("当前影响半径含 L3 或已显式要求高风险测试，缺少有效 PIT 变异测试专项证据")
 
     def validate_refs(owner: str, item: dict[str, Any]) -> list[str]:
         """验证一个义务或门禁引用的证据都真实存在。"""

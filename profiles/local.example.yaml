@@ -107,10 +107,6 @@ testing:
   # 自动化 BDD 必须同时有结构化 Red/Green 周期证据；人工/UI 义务不走此门禁。
   tdd_required: true
 
-  # 常规 L1/L2 不强制 PIT；安全、支付等明确高风险逻辑可显式开启。
-  mutation_testing:
-    required: false
-
   journey_harness:
     # 当前需求的界面流程用例目录。null 时自动使用：
     # <requirement_dir>/test-cases/journeys/<需求作用域>，避免不同需求串用旧用例。

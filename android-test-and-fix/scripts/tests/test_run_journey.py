@@ -517,7 +517,6 @@ class RunJourneyTest(unittest.TestCase):
                 "id": "BDD-001",
                 "change_type": "ADDED",
                 "reason": "验证计划变化会使 Journey 上下文失效。",
-                "risk_level": "L1",
                 "expected_files": [],
                 "expected_tests": [],
                 "affected_modules": [],

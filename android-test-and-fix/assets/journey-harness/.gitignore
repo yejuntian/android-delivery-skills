@@ -2,6 +2,9 @@
 .gradle/
 .gradle-user-home/
 build/
+harness-app-build/
+project-cache/
+reports/
 local.properties
 *.apk
 captures/

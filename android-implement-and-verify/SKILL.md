@@ -152,7 +152,7 @@ description: |
 
 如果某一类影响面明确未涉及，编码后不得强行调用对应专项审查，只需在最终报告中说明“未涉及，已跳过”。
 
-编码后的 `route` 另行输出 UI、接口、数据、系统、构建、架构和测试七类工程候选。候选只提示需要复核的证据：API 候选增加 `android-verify-api-contract`；数据、系统、构建、架构和测试候选进入既有 diff、质量、稳定性和测试职责，不为它们新增万能 Skill，也不由脚本直接下业务结论。
+编码后的 `route` 另行输出 UI、接口、数据、系统、构建、架构和测试七类工程候选。候选只提示需要复核的证据：API 候选增加 `android-verify-api-contract`；数据、系统、构建、架构和测试候选进入既有 diff、质量、稳定性和测试职责，不为它们新增万能 Skill，也不由脚本直接下业务结论。文档和测试文本不作为生产 data/system 候选来源。
 
 第二轮条件能力继续由现有 Skill 承载：OpenAPI 归接口契约，动态泄漏/性能/运行时安全归稳定性，迁移和自动化 A11y 归测试，视觉与人工 A11y 归独立 UI 验收。每项记录触发依据、适用性、工具、执行证据、能力损失和结论；详细边界见 `references/conditional-capability-gates.md`。
 
@@ -166,7 +166,7 @@ description: |
 
 ### 轻量 diff 触发规则
 
-进入最终交付时基于实际 diff 快速复核影响面（`delivery.py route` 的 `classify_route_impacts` 已按路径+内容信号生成七类候选），不做全量矩阵分析，只判断是否触发专项审查。触发规则：UI 相关文件（res/Activity/Fragment/Adapter/Composable）有设计基准时提示用户单独运行 `android-verify-ui`，无基准时只在 diff/稳定性/质量审查中做 UI 基础检查；接口层（Api/Service/DTO/mapper/网络 Repository/缓存）触发 `android-verify-api-contract`；数据层（Entity/Dao/Database/DataStore/SharedPreferences）触发数据兼容；系统能力（Manifest/权限/通知/后台/WebView/DeepLink/文件）触发版本兼容；构建（Gradle/version catalog/R8/build-logic）触发依赖解析和模块方向，不自动升级版本；DI Module/模块 API 边界触发架构检查，测试文件复核断言有效性；纯 if/when/状态计算/排序/权限/开关逻辑按业务路径处理。脚本候选与 Diff Reviewer 的 `confirmed_impacts` 取并集，需求判断与实际 diff 不一致时重新标记并说明原因。详细路由顺序和条件能力映射见下方"路由规则"。
+进入最终交付时基于实际 diff 快速复核影响面（`delivery.py route` 的 `classify_route_impacts` 以路径候选为主，并保留必要的 UI/API/架构内容信号），不做全量矩阵分析，只判断是否触发专项审查。触发规则：UI 相关文件（res/Activity/Fragment/Adapter/Composable）有设计基准时提示用户单独运行 `android-verify-ui`，无基准时只在 diff/稳定性/质量审查中做 UI 基础检查；接口层（Api/Service/DTO/mapper/网络 Repository/缓存）触发 `android-verify-api-contract`；数据层（Entity/Dao/Database/DataStore/SharedPreferences）触发数据兼容；系统能力（Manifest/权限/通知/后台/WebView/DeepLink/文件）触发版本兼容；构建（Gradle/version catalog/R8/build-logic）触发依赖解析和模块方向，不自动升级版本；DI Module/模块 API 边界触发架构检查，测试文件复核断言有效性；纯 if/when/状态计算/排序/权限/开关逻辑按业务路径处理。脚本候选与 Diff Reviewer 的 `confirmed_impacts` 取并集，需求判断与实际 diff 不一致时重新标记并说明原因。详细路由顺序和条件能力映射见下方"路由规则"。
 
 ### 路由规则
 

@@ -599,7 +599,7 @@ def _read_route_signal(path):
 
 
 def classify_route_impacts(diff_files, project_root=None, route_signals=None):
-    """按路径和轻量内容信号生成影响候选；业务结论仍由 AI 结合 diff 复核。"""
+    """按路径和必要内容信号生成影响候选；业务结论仍由 AI 结合 diff 复核。"""
     ui_resource_dirs = {
         "layout", "drawable", "values", "navigation", "menu", "font", "color",
         "anim", "animator", "mipmap",
@@ -631,6 +631,11 @@ def classify_route_impacts(diff_files, project_root=None, route_signals=None):
         "gradle.properties", "libs.versions.toml", "proguard-rules.pro", "consumer-rules.pro",
     }
     test_name = re.compile(r"(?:Test|Tests|Spec)$", re.I)
+    document_suffixes = {".adoc", ".docx", ".markdown", ".md", ".pdf", ".rst", ".txt"}
+    document_roots = {
+        "audit", "audits", "doc", "docs", "document", "documents", "evidence",
+        "report", "reports",
+    }
     root = Path(project_root) if project_root is not None else Path.cwd()
     impacts = {
         "ui": [],
@@ -654,6 +659,21 @@ def classify_route_impacts(diff_files, project_root=None, route_signals=None):
         filename = parts[-1].lower()
         stem = Path(parts[-1]).stem
         suffix = Path(parts[-1]).suffix.lower()
+        is_document = suffix in document_suffixes or (
+            bool(parts) and parts[0].lower() in document_roots
+        )
+        is_test = (
+            bool(lowered_parts & {"test", "tests", "androidtest", "testfixtures"})
+            or bool(test_name.search(stem))
+        )
+
+        # 文档不参与业务影响分类；测试改动只保留测试候选，避免文本误触发生产专项。
+        if is_document:
+            continue
+        if is_test:
+            add("tests", path)
+            continue
+
         is_ui = any(
             parts[index - 1].lower() == "res" and part.lower() in ui_resource_dirs
             for index, part in enumerate(parts)
@@ -681,12 +701,8 @@ def classify_route_impacts(diff_files, project_root=None, route_signals=None):
             or bool(lowered_parts & {"di", "impl"})
             or bool(architecture_name.search(stem))
         )
-        is_test = (
-            bool(lowered_parts & {"test", "androidtest", "testfixtures"})
-            or bool(test_name.search(stem))
-        )
 
-        # 内容只补充候选，不覆盖路径判断，也不把注解本身解释成业务变化。
+        # 内容只补充 UI/API/架构等非标准文件候选；数据和系统只按路径识别。
         content = ""
         if route_signals is not None:
             content = route_signals.get(path, "")
@@ -697,15 +713,6 @@ def classify_route_impacts(diff_files, project_root=None, route_signals=None):
             is_api = is_api or bool(re.search(
                 r"@(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|HTTP)\b"
                 r"|\b(HttpURLConnection|OkHttpClient|Retrofit|Ktor|openConnection|baseUrl|API_BASE_URL)\b",
-                content,
-                re.I,
-            ))
-            is_data = is_data or bool(re.search(
-                r"@(Entity|Dao|Database|TypeConverter)\b|\bMigration\s*\(",
-                content,
-            ))
-            is_system = is_system or bool(re.search(
-                r"<uses-permission\b|<(service|receiver|provider)\b|\b(registerReceiver|PendingIntent|NotificationManager|WebView)\b",
                 content,
                 re.I,
             ))

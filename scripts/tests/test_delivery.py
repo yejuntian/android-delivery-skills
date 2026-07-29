@@ -1532,6 +1532,24 @@ class ClassificationTests(unittest.TestCase):
         self.assertTrue(all(path not in impacts["data"] for path in files))
         self.assertTrue(all(path not in impacts["architecture"] for path in files))
 
+    def test_ignores_document_and_test_text_for_production_impacts(self) -> None:
+        """验证审计文档和测试文本不触发 data/system 生产专项。"""
+        files = [
+            "document/audit/DatabaseMigration.md",
+            "app/src/test/java/example/DatabaseServiceTest.kt",
+        ]
+        impacts = classify_route_impacts(
+            files,
+            route_signals={
+                files[0]: "Migration( and NotificationManager are audit keywords",
+                files[1]: "// Migration( and NotificationManager are test text\n",
+            },
+        )
+
+        self.assertEqual([], impacts["data"])
+        self.assertEqual([], impacts["system"])
+        self.assertEqual([files[1]], impacts["tests"])
+
     def test_maps_engineering_impacts_to_conditional_gates(self) -> None:
         """验证第二轮只映射确定候选，泄漏和性能始终保留给 AI 语义终判。"""
         gates = classify_conditional_gate_candidates({

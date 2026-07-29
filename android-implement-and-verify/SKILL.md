@@ -60,7 +60,7 @@ description: |
 
 计划确认后按 BDD 场景执行测试先行，编码完成后不能直接跳 `route + gate`：
 
-1. **先建立测试清单**：执行 `init-test-mapping`，为每个 BDD 场景创建或更新真实测试代码、Journey XML 或人工验收记录并登记真实测试 ID；`docs/测试结果.md` 只记录执行摘要，不复制完整测试步骤。
+1. **先建立测试清单**：执行 `init-test-mapping`，为每个 BDD 场景创建或更新真实测试代码、Journey XML 或人工验收记录并登记真实测试 ID；`docs/测试结果.md` 只是可选人读执行摘要，不复制完整测试步骤，也不能替代执行收据和 `delivery-result.json`。
 2. **先写失败测试**：逐个 BDD 补业务断言并观察 Red；测试在实现前已通过时，先检查断言是否真正覆盖新行为。
 3. **再写最少实现**：只修改影响半径内代码使测试 Green，再做必要重构并重跑受影响测试。
 4. **自动保存 TDD 周期**：Red 和 Green 都通过 `execution_evidence.py` 收据后，分别执行

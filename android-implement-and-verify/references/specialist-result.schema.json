@@ -242,6 +242,36 @@
         "dynamic_notes": { "type": "string", "minLength": 1 }
       }
     },
+    "device_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["READY", "UNAVAILABLE", "BLOCKED"] },
+        "serial": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["PHYSICAL", "EMULATOR"] },
+        "screenshot_ok": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "READY" } },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["serial", "kind", "screenshot_ok"],
+            "properties": {
+              "kind": { "const": "PHYSICAL" },
+              "screenshot_ok": { "const": true }
+            }
+          },
+          "else": {
+            "required": ["reason"]
+          }
+        }
+      ]
+    },
     "executed_checks": { "type": "integer", "minimum": 0 },
     "executed_tests": { "type": ["integer", "null"], "minimum": 0 },
     "obligation_sha256s": {
@@ -434,10 +464,10 @@
           "properties": { "conclusion": { "const": "PASS" } },
           "required": ["conclusion"]
         },
-        "then": { "required": ["visual_review"] }
+        "then": { "required": ["visual_review", "device_check"] }
       },
       "else": {
-        "not": { "required": ["visual_review"] }
+        "not": { "anyOf": [{ "required": ["visual_review"] }, { "required": ["device_check"] }] }
       }
     }
   ]

@@ -714,6 +714,7 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 and gate_id in set(context.get("expected_conditional_gates", []))
                 and isinstance(gate.get("reason"), str)
                 and bool(gate["reason"].strip())
+                and gate_id != "android-ui-a11y"
             )
             pending_allowed = (
                 conclusion == "LOCAL_PASS_DEVICE_PENDING"
@@ -952,6 +953,8 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
                 and conditional_status == "UNVERIFIED"
                 and pending is not None
             )
+            if gate_id == "android-ui-a11y" and conditional_status == "SKIPPED":
+                errors.append("UI 视觉门禁不能跳过，必须提供真机截图对比结果或明确未验证/受阻结论")
             if conditional_status != "SKIPPED" and not allowed_pending:
                 errors.append(
                     f"条件交付门禁 {_gate_display(gate_id)} 非必需时只能标记为跳过，"

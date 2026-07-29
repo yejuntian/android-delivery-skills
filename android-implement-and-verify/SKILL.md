@@ -178,7 +178,8 @@ description: |
   - 除非业务逻辑改变了 UI 状态展示，否则不做 UI 还原验证。
   - 除非业务逻辑改变了接口字段、请求参数、DTO、mapper、Repository 网络行为或缓存结构，否则不做接口契约审查。
 - UI 变更：
-  - route 必须登记独立 `android-verify-ui` 任务；该任务由独立 Skill 执行，route 不直接调用。缺少设计基准时可以输出 `SKIPPED`，但最终门禁仍要求有中文原因和复核证据。
+  - route 必须登记独立 `android-verify-ui` 任务；该任务由独立 Skill 执行，route 不直接调用。缺少设计基准时只能输出 `UNVERIFIED/BLOCKED`，并附中文原因和复核证据，不得用静态 UI 检查替代真机截图对比。
+  - 有设计基准时，UI Skill 先执行共享设备预检；只有 `device_check.status=READY`、`kind=PHYSICAL` 且截图成功，才允许输出 UI `PASS`。无设备时继续其他自动化，但最终只能保留设备待验状态。
   - 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断 Journey 适用性，不向用户询问测试工具选择。只有布局、颜色、字号、间距或资源变化时标记 `SKIPPED_VISUAL_ONLY`；涉及点击、输入、导航、可见状态流转或系统交互时，按 BDD 场景聚合 `FULL/PARTIAL/NONE`，只为 Journey 可稳定覆盖的部分生成并执行用例。
   - 如果只是 UI 展示，不涉及接口字段或请求逻辑，跳过 `android-verify-api-contract`。
 - 接口 / 数据契约变更：
@@ -317,11 +318,11 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - `android-test-and-fix` 在此阶段根据最终 diff、影响类别和测试映射选择测试层，再按 BDD 场景聚合 Journey `FULL/PARTIAL/NONE`；Journey 通过也不能替代未分配给它的证据。
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
 - 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
-- `route` 或 Diff Reviewer 语义确认的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；对应 Skill 终判不适用时使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据，不能直接省略。
+- `route` 或 Diff Reviewer 语义确认的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；UI/A11y 触发后不能使用 `SKIPPED` 绕过真机截图对比，必须由 `android-verify-ui` 输出通过、失败、未验证或受阻结果。其他确实不适用的条件能力才使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据。
 - 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；每个 BDD 只关联其 CURRENT mapping 登记且本次真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
 - 命令或机器报告真实失败时，自动收据只能在 `INCOMPLETE/BLOCKED` 中绑定同一 `FAIL` gate；不得绑定 BDD 自动覆盖或 `PASS` gate。
 - 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须记录必需静态语义能力、七项静态检查，以及动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
-- 业务、迁移、安全等人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因；UI 视觉验收不走通用人工覆盖，只提交 `android-verify-ui` 的 Figma 链接、真机截图/差异图链接、动态区域说明和 PASS/FAIL。`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
+- 业务、迁移、安全等人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因；UI 视觉验收不走通用人工覆盖，只提交 `android-verify-ui` 的 `device_check`、Figma 链接、真机截图/差异图链接、动态区域说明和 PASS/FAIL。UI `PASS` 的 `device_check` 必须是物理设备且截图命令成功；`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
 - 最终中文摘要必须把 `【修改已上线业务】` 和 `【保护已上线业务】` 义务置顶分组展示；任一必需保护项缺少新鲜证据时，沿用现有义务门禁阻断完整通过。
 
 所有必需项完成后，获取当前确认修订、有效义务、Git 基线和最终代码摘要，生成 `<requirement_dir>/test-results/delivery-result.json`。**优先用 `assemble` 自动组装**（消除手填 sha/字段摩擦），只在 assemble 不适用时才手写：
@@ -335,7 +336,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
   --config <配置> --manifest <产物清单.yaml>
 ```
 
-`obligations` 的覆盖状态和证据映射是业务判断，必须由 agent 逐项提供；缺少覆盖状态时 assemble 保守标记为 `UNVERIFIED`，不得默认自动覆盖。UI 视觉专项使用 `specialists` 中的 `android-verify-ui` 结果，不再用通用 `MANUAL` 收据承载截图；`visual_review` 仅保留 Figma 链接、真机截图/差异图链接和动态区域说明。其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
+`obligations` 的覆盖状态和证据映射是业务判断，必须由 agent 逐项提供；缺少覆盖状态时 assemble 保守标记为 `UNVERIFIED`，不得默认自动覆盖。UI 视觉专项使用 `specialists` 中的 `android-verify-ui` 结果，不再用通用 `MANUAL` 收据承载截图；`device_check` 记录设备预检和截图成功状态，`visual_review` 仅保留 Figma 链接、真机截图/差异图链接和动态区域说明。两者都不绑定 APK、versionCode 或截图 SHA-256。其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
 
 **方式二（向后兼容）：手写后 validate**。若 assemble 不适用（如需特殊字段），按 `references/delivery-result.schema.json` 手写 `delivery-result.json`，再执行：
 

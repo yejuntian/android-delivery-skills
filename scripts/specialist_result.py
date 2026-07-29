@@ -61,6 +61,7 @@ SPECIALIST_FIELDS = {
     "checks",
     "artifacts",
     "visual_review",
+    "device_check",
     "executed_checks",
     "executed_tests",
     "obligation_sha256s",
@@ -176,6 +177,38 @@ def _validate_visual_review(value: Any, conclusion: Any) -> list[str]:
     notes = value.get("dynamic_notes")
     if notes is not None and (not isinstance(notes, str) or not notes.strip()):
         errors.append("visual_review.dynamic_notes 必须是非空字符串")
+    return errors
+
+
+def _validate_device_check(value: Any, conclusion: Any) -> list[str]:
+    """UI PASS 必须来自可用物理设备，并且真机截图命令已成功。"""
+    errors: list[str] = []
+    if value is None:
+        if conclusion == "PASS":
+            errors.append(f"android-verify-ui {conclusion} 必须提供 device_check")
+        return errors
+    if not isinstance(value, dict):
+        return ["device_check 必须是 object"]
+    allowed = {"status", "serial", "kind", "screenshot_ok", "reason"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        errors.append("device_check 包含未知字段: " + ", ".join(unknown))
+    status = value.get("status")
+    if status not in {"READY", "UNAVAILABLE", "BLOCKED"}:
+        errors.append("device_check.status 必须是 READY、UNAVAILABLE 或 BLOCKED")
+        return errors
+    if status == "READY":
+        if not isinstance(value.get("serial"), str) or not value["serial"].strip():
+            errors.append("device_check READY 必须提供 serial")
+        if value.get("kind") != "PHYSICAL":
+            errors.append("android-verify-ui READY 必须使用 PHYSICAL 设备")
+        if value.get("screenshot_ok") is not True:
+            errors.append("android-verify-ui READY 必须确认真机截图成功")
+    else:
+        if not isinstance(value.get("reason"), str) or not value["reason"].strip():
+            errors.append(f"device_check {status} 必须说明 reason")
+        if conclusion == "PASS":
+            errors.append("android-verify-ui PASS 不允许使用未就绪的 device_check")
     return errors
 
 
@@ -496,8 +529,12 @@ def validate_specialist_result(
         errors.append(f"专项结果 conclusion 必须是 {sorted(SPECIALIST_CONCLUSIONS)} 之一")
     if payload.get("skill") == UI_VERIFY_SKILL:
         errors.extend(_validate_visual_review(payload.get("visual_review"), conclusion))
-    elif payload.get("visual_review") is not None:
-        errors.append("只有 android-verify-ui 可以输出 visual_review")
+        errors.extend(_validate_device_check(payload.get("device_check"), conclusion))
+    else:
+        if payload.get("visual_review") is not None:
+            errors.append("只有 android-verify-ui 可以输出 visual_review")
+        if payload.get("device_check") is not None:
+            errors.append("只有 android-verify-ui 可以输出 device_check")
 
     findings = payload.get("findings")
     if not isinstance(findings, dict) or set(findings) != SEVERITIES or not all(

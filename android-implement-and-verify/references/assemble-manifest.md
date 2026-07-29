@@ -39,7 +39,7 @@ obligations:                     # 逐义务声明覆盖状态；未验证项不
     evidence: []
     reason: 尚未执行设备验证
 gates:                           # 可选：覆盖 gate 的 required/status/reason
-  android-ui-a11y: {required: false, reason: 无设计稿}
+  android-ui-a11y: {required: false, reason: 无 UI 影响}
 ```
 
 ## 字段职责分工（关键边界）
@@ -49,7 +49,7 @@ gates:                           # 可选：覆盖 gate 的 required/status/reas
 - `conclusion`：交付结论。
 - `evidence[].receipt`：AUTOMATED 证据的执行收据路径（脚本读它算 sha）。
 - `evidence[]`（MANUAL）：仅用于需要逐步人工执行的业务/迁移/安全等覆盖；UI 视觉验收使用 `specialists` 中的 `android-verify-ui` 结果。
-- `android-verify-ui` 专项：`visual_review` 只记录 Figma 设计链接、真机截图/差异图链接和动态区域说明，不填写 APK、versionCode、安装收据或截图 SHA-256。
+- `android-verify-ui` 专项：`device_check` 记录物理设备预检和截图命令结果，`visual_review` 只记录 Figma 设计链接、真机截图/差异图链接和动态区域说明；不填写 APK、versionCode、安装收据或截图 SHA-256。
 - `specialists[].path`：专项结果 JSON 路径。
 - `obligations`：逐义务填写 `status`、`evidence`，`UNVERIFIED/BLOCKED` 还要填写 `reason`；缺少 `status` 时保守组装为 `UNVERIFIED`。
 

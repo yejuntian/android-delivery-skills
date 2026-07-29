@@ -171,7 +171,7 @@ detekt、Semgrep、CodeQL 或其他已有工具能够输出 SARIF 时，使用 `
 - UI、交互控件、图标、可见状态、Compose semantics、焦点、字体或主题变化时检查 A11y 适用性；视觉设计验收仍由 `android-verify-ui` 手动独立执行。
 - 优先复用项目已有 Compose/Espresso semantics、AccessibilityChecks、截图矩阵或仪器测试，不自动新增依赖。
 - 测试语义标签、装饰元素排除、可点击区域、焦点顺序、状态描述、错误提示、字体缩放，以及不能只靠颜色表达状态。
-- 模拟器可执行的项目继续运行；没有设备时完成静态 XML/Compose/resource 检查，把 TalkBack、动态焦点和触摸体验标为未验证。
+- 模拟器可执行的项目继续运行；没有物理设备时继续非设备自动化测试，把 TalkBack、动态焦点、触摸体验和真机视觉对比标为未验证。
 
 ### 泄漏、性能与安全任务协作
 
@@ -236,7 +236,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 不得写死命令，也不要求用户先提供一份固定命令。AI 先识别本次修改对应的项目模块、测试类和已有测试方式，再直接选择最小验证：
 
 - 单测/编译：优先运行受影响模块已有的单元测试或最小构建命令；需要限定范围时追加真实测试类或方法筛选。
-- 环境/设备：只有 Journey 或设备验收适用时，才检查 `which adb`、`adb devices` 和 Android CLI 可用性。
+- 环境/设备：只有 Journey 或设备验收适用时，才检查 `which adb`、`adb devices` 和 Android CLI 可用性；UI 真机验收统一调用 `scripts/device_preflight.py`，Journey 与 UI 不各自维护设备选择逻辑。
 - Gradle 任务确实无法从项目资料和测试结构判断，且当前门禁必须确认能力时，才读取本模块的任务发现 reference；这不是普通单元测试前置步骤。
 - 构建：例如 `./gradlew :app:assembleDebug`。
 - 单测：例如 `./gradlew :app:testDebugUnitTest`。

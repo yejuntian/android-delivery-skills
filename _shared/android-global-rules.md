@@ -82,7 +82,7 @@
 - 外部资料读取优先级：用户本次明确文字/截图/文件 → 本地资料（`requirement_file`、`ui.screenshots`、`api.files` 等）→ 结构化工具（Figma MCP、OpenAPI/Apifox 导出）→ 浏览器可见页面 → 公开网页。能读到的立即纳入；读不到只记录"外部资料未读取"，不默认终止整个流程。
 - 当前需求或 diff 涉及接口契约且配置了 `api.links` 时，先复用本机 Chrome 登录状态；落到登录页、401/403 或权限提示时进入 `USER_INPUT_REQUIRED`，用中文请用户在 Chrome 登录后回复"已经登录"再重试，不得索要账号、密码、Cookie。登录后主动把契约固定到 `<requirement_dir>/api/` 并登记 `api.files` 绑定 SHA-256。
 - 链接不可读但本地资料足以理解需求时继续进入需求理解，在待确认问题和最终报告中标记未读取链接及剩余风险；用户说"跳过链接""用 mock/fake""先按现有资料做"时必须降级继续。
-- Figma 资料优先通过 MCP 读取结构化设计数据；需要本地视觉基准时可用 `figma_workflow.py fetch` 下载 PNG。UI 交付以 Figma 链接、真机截图/差异图链接和人工结论为主，不绑定 APK、versionCode 或截图 SHA-256。
+- Figma 资料优先通过 MCP 读取结构化设计数据；需要本地视觉基准时可用 `figma_workflow.py fetch` 下载 PNG。UI 交付先通过共享设备预检确认物理设备和截图成功，再以 Figma 链接、真机截图/差异图链接和人工结论为主，不绑定 APK、versionCode 或截图 SHA-256。
 - Token、Cookie、账号、密码不得写入 `local.yaml`、需求文档、Skill 或 Git；不得要求用户手动提供凭据；Personal Access Token 只能放环境变量、钥匙串或密钥管理器。
 
 ## 资料缺失降级

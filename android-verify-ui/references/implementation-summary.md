@@ -2,7 +2,7 @@
 
 ## 1. 适用性结论
 
-- 结论：`PASS` / `STATIC_ONLY` / `SKIPPED_NO_UI` / `BLOCKED`
+- 结论：`PASS` / `FAIL` / `UNVERIFIED` / `SKIPPED_NO_UI` / `BLOCKED`
 - 是否存在 UI 影响：是 / 否
 - 判断依据：需求、diff、目标页面或组件
 - UI 变更文件：
@@ -18,9 +18,10 @@
 
 ## 3. 验证环境
 
-- 引擎：已有截图证据对比 / Android CLI / 静态检查 / 人工
+- 引擎：真机截图对比 / Android CLI / TalkBack 或人工
 - 设备与分辨率（可选）：
-- 需要忽略的系统或动态区域：
+- `device_check`：READY / UNAVAILABLE / BLOCKED；serial；PHYSICAL / EMULATOR；screenshot_ok
+- 对比范围及动态条件：
 
 ## 4. 执行结果
 
@@ -34,7 +35,7 @@
 
 - 适用性：适用 / 不适用及原因
 - 自动测试报告：
-- 静态语义、装饰元素、可点击区域、状态描述和字体缩放：
+- 自动 A11y、布局树、装饰元素、可点击区域、状态描述和字体缩放：
 - 动态焦点、TalkBack 和触摸体验：通过 / 失败 / 未验证
 - 设备类型：模拟器 / 真机 / 无设备
 - 未验证能力及原因：
@@ -64,6 +65,8 @@
 ## 9. 最终结论
 
 - `PASS`：真机截图与 Figma/参考截图的视觉比对通过，且适用的必需 A11y 验收完成。
-- `STATIC_ONLY`：仅静态视觉或 A11y 检查完成，不得表述为实机、设计一致或动态无障碍通过。
+- `PASS` 还必须满足：`device_check.status=READY`、设备类型为 `PHYSICAL` 且 `screenshot_ok=true`。
+- `FAIL`：真机截图与 Figma/参考截图存在未接受的视觉差异，或必需的设备 A11y 验收失败。
+- `UNVERIFIED`：缺少真机、截图或设计基准，未完成视觉对比；不得表述为设计一致。
 - `SKIPPED_NO_UI`：需求与 diff 均无 UI 影响，UI Skill 不适用。
-- `BLOCKED`：存在 UI 影响但没有任何可执行验证路径。
+- `BLOCKED`：存在 UI 影响但缺少继续验收所需的设计基准、设备或可执行路径。

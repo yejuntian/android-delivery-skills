@@ -49,6 +49,7 @@ from scripts.config_paths import (  # noqa: E402
     requirement_snapshot_path_for_config,
     resolve_config_paths,
 )
+from scripts.device_preflight import choose_device, list_devices  # noqa: E402
 from scripts.delivery import DeliveryError, read_requirement  # noqa: E402
 from scripts.git_ignore import GitIgnoreError, ensure_requirement_state_ignored  # noqa: E402
 from scripts.git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
@@ -334,33 +335,6 @@ def load_config(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise RuntimeError("配置根节点必须是 YAML object")
     return data
-
-
-def list_devices() -> list[str]:
-    """只返回 adb 状态为 device 的在线设备，排除 offline/unauthorized。"""
-    result = run(["adb", "devices"], timeout=ADB_TIMEOUT_SECONDS)
-    if result.returncode != 0:
-        return []
-    devices = []
-    for line in result.output.splitlines()[1:]:
-        fields = line.strip().split("\t")
-        if len(fields) == 2 and fields[1] == "device":
-            devices.append(fields[0])
-    return devices
-
-
-def choose_device(explicit: str | None) -> tuple[str | None, str | None]:
-    """显式设备优先；多设备时拒绝猜测，要求调用方指定 serial。"""
-    devices = list_devices()
-    if explicit:
-        if explicit not in devices:
-            return None, f"指定设备不在线: {explicit}"
-        return explicit, None
-    if not devices:
-        return None, "adb devices 没有在线设备"
-    if len(devices) > 1:
-        return None, f"检测到多个设备，请用 --device 指定: {', '.join(devices)}"
-    return devices[0], None
 
 
 def validate_journeys(journeys_dir: Path) -> tuple[list[Path], int, str | None]:

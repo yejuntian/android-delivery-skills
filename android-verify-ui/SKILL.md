@@ -1,6 +1,6 @@
 ---
 name: android-verify-ui
-description: 手动独立执行的 Android UI 实机、设计与无障碍表现验收闭环。用于涉及 XML、Compose、Adapter、资源、主题、页面状态、交互控件、字体或 semantics 的改动，通过截图、Android CLI/adb、静态检查、TalkBack 或人工对比验证布局、设计还原和 A11y 表现。用户明确要求验收 UI、设计稿、视觉偏差或无障碍体验时使用；不得由交付 route 自动调用，Journey、截图和自动 A11y 测试归 android-test-and-fix。
+description: 手动独立执行的 Android UI 实机、设计与无障碍表现验收闭环。用于涉及 XML、Compose、Adapter、资源、主题、页面状态、交互控件、字体或 semantics 的改动，通过真机截图、Android CLI/adb、TalkBack 或人工对比验证布局、设计还原和 A11y 表现。用户明确要求验收 UI、设计稿、视觉偏差或无障碍体验时使用；不得由交付 route 自动调用，Journey、截图和自动 A11y 测试归 android-test-and-fix。
 ---
 
 # Android UI 实机与设计验收
@@ -14,7 +14,7 @@ description: 手动独立执行的 Android UI 实机、设计与无障碍表现�
 - **负责**：验证用户实际可见的布局、排版、间距、资源、页面状态、轻交互、设计还原和人工/设备 A11y 表现。
 - **执行方式**：用户手动单独调用；总交付流程只能提示，不得自动触发。
 - **不负责**：接口、Repository、数据存储、权限、支付、提交等不可由画面证明的业务正确性。
-- **验证底线**：没有真实截图或设备结果时，只能报告静态检查，不能声称完成截图级或实机验收。
+- **验证底线**：没有真实真机截图、设备结果或可对比设计基准时，只能报告 `UNVERIFIED/BLOCKED`，不能声称完成截图级、实机或设计一致性验收。
 - **相对独立**：不调用 `android-test-and-fix` 的执行脚本；只读取其报告或截图证据。以后新增的截图采集、布局检查或视觉对比脚本必须放在本 Skill 的 `scripts/` 下。
 - **A11y 边界**：本 Skill 检查截图、布局树、TalkBack 和人工体验；Compose/Espresso semantics、AccessibilityChecks 等自动测试仍由 `android-test-and-fix` 定义和执行。
 
@@ -58,18 +58,28 @@ python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" 
 ## 真机截图与 Figma 比对规则
 
 - Figma Frame 链接是视觉基准；真机截图是当前验收结果，必要时附差异图链接。
+- 真机验收开始前必须运行共享设备预检：`adb devices -l` 至少有一个状态为 `device` 的物理设备；多设备时必须指定 `serial`，模拟器不能作为真机视觉 `PASS`。
+- 推荐使用 `python3 ai-skills/android-delivery-skills/scripts/device_preflight.py --require-physical --device <serial> --screenshot <path>`，预检会继续校验 `adb get-state` 和 PNG 截图命令是否成功。
+- `device_check` 必须直接采用预检脚本输出，不得手工编造；设备连接语义以 [Google adb 设备状态](https://developer.android.com/tools/adb?hl=zh-cn#devicestatus) 和 [Google 硬件设备测试指南](https://developer.android.com/studio/run/device?hl=zh-cn) 为准。
 - 固定文案、颜色、图标、布局、间距、圆角和排版按严格视觉对比；默认不把所有动态内容放宽。
 - 动态业务内容优先使用固定测试数据；如果只验证布局，使用代表性长文本或空/错误状态。
-- 时间、电量、信号、倒计时、系统状态栏、随机图片和不可控网络内容可忽略或单独说明，不影响其他区域的比对。
+- 动态业务内容必须使用固定测试数据；系统状态栏、分辨率和方向必须与验收基准一致。无法控制或对齐的区域只能记录为未验证，不能直接忽略后写 `PASS`。
 - 动画等待稳定后截图；Figma Frame 与目标真机分辨率/方向不一致时先记录差异，不用跨尺寸截图做像素级结论。
 - 不要求 APK hash、versionCode、安装收据、执行人、带时区时间或逐步人工收据；这些不属于 UI 视觉验收的必要输入。
+
+## 设备前置条件
+
+- 设备预检是 UI 真机截图验收的第一步，不是 route、构建或普通单元测试的前置条件。
+- 预检结果为 `READY`、设备类型为 `PHYSICAL` 且截图命令成功后，才允许视觉结果写 `PASS`。
+- 没有设备、设备未授权、设备离线、多设备未指定或截图失败时，UI 结果写 `UNVERIFIED`/`BLOCKED`，并说明原因；最终交付沿用 `LOCAL_PASS_DEVICE_PENDING`，不伪造 `FULL_PASS`。
+- 预检只记录设备序列号、物理/模拟器类型和截图是否成功，不记录 APK hash、versionCode、安装收据或截图 SHA-256。
 
 ## 使用边界
 
 - 没有 UI 改动：跳过本 Skill。
-- 有 UI 改动但没有设计稿、截图或可对比基准：跳过设计稿一致性验证，只在其他后置审查中检查资源规范、明显布局风险和崩溃风险。
+- 有 UI 改动但没有设计稿、截图或可对比基准：不能执行设计一致性验收，输出 `UNVERIFIED/BLOCKED` 等待基准；不得用静态 UI 检查替代真机截图对比。
 - 有 UI 改动且存在可访问设计稿、截图或可对比基准：使用本 Skill 做 UI 还原验证。
-- A11y 候选不依赖设计稿；没有视觉基准时仍可执行静态语义检查，用户单独调用后可继续设备/TalkBack 验收。
+- A11y 自动测试归 `android-test-and-fix`；本 Skill 只在设备上补充布局树、TalkBack 或人工体验，不能用静态语义检查替代视觉验收。
 
 ## 项目 UI 事实识别
 
@@ -114,19 +124,19 @@ python3 ai-skills/figma-android-xml/scripts/figma_workflow.py fetch "FIGMA_URL" 
 
 ## A11y 表现验收
 
-UI 或交互候选存在时同步检查，不要求必须有设计稿：
+UI 或交互候选存在时同步检查；视觉结论必须有设计基准和真机画面：
 
 - 非装饰图标、图片、按钮和自定义控件是否有准确语义；装饰元素是否从无障碍树排除。
 - 可点击区域、焦点顺序、TalkBack 朗读、选中/禁用/错误/加载状态描述是否符合真实操作。
 - 字体缩放后是否截断、重叠或失去操作入口，颜色是否成为唯一状态表达。
 - Compose semantics 与 XML 属性是否和屏幕可见含义一致，不用技术类名代替用户语义。
-- 优先引用 `android-test-and-fix` 已执行的 A11y 自动测试；有设备时再补布局树、TalkBack 或人工路径。
+- 引用 `android-test-and-fix` 已执行的 A11y 自动测试；有物理设备时再补布局树、TalkBack 或人工路径。
 
-没有设备时继续静态 A11y 检查并输出 `STATIC_ONLY`，动态焦点、TalkBack 和触摸体验列为未验证；不得因此终止其他 UI 静态检查，也不得写 A11y 全面通过。
+没有物理设备或截图失败时，不做静态 UI 兜底，动态焦点、TalkBack、触摸体验和视觉一致性统一标为 `UNVERIFIED/BLOCKED`；不得写成设计一致或 A11y 全面通过。
 
 ## 资料缺失时
 
-- 没有设计稿但需求已明确：可以按项目现有组件完成主代码中的页面结构、交互和状态，并标记“根据需求推导，待设计资料对齐”；编码后不得输出“与设计稿一致”。当前范围明确要求像素级还原却没有可比基准时，暂停视觉实现/验收并请求资料。
+- 没有设计稿但需求已明确：可以继续实现业务和交互，但 UI 专项必须保持 `UNVERIFIED/BLOCKED`；当前范围要求像素级还原却没有可比基准时，暂停视觉验收并请求资料。
 - 没有正式接口但需求已明确：UI 依赖稳定领域模型，使用 Preview、Mock 或 debug Fake 展示需求中的正常、空、加载和失败状态；不得直接依赖猜测性正式 DTO 或把临时字段写成已确认接口事实。
 - 正式 Figma、截图、资源或接口到达后，优先只调整资源、布局、视觉参数和数据适配；只改变视觉或传输字段时按同一需求局部完善，改变交互或业务语义时才进入需求修订并更新相关测试。
 - 没有图片资源：使用占位资源或说明等待设计资源，不擅自从网络下载替代。
@@ -137,7 +147,7 @@ UI 或交互候选存在时同步检查，不要求必须有设计稿：
 
 ### Step 0:UI 适用性门禁
 
-先读取需求与实际 diff。满足以下任一条件才进入 L1-L4：修改 XML/Compose、Activity/Fragment 可见状态、Adapter/列表展示、drawable/color/dimen/string/theme、WindowInsets、动画或用户可见交互。
+先读取需求与实际 diff。满足以下任一条件才进入真机视觉验收：修改 XML/Compose、Activity/Fragment 可见状态、Adapter/列表展示、drawable/color/dimen/string/theme、WindowInsets、动画或用户可见交互。
 
 没有 UI 影响时：
 
@@ -145,23 +155,12 @@ UI 或交互候选存在时同步检查，不要求必须有设计稿：
 2. 输出 `SKIPPED_NO_UI`，列出判断依据和已检查的 diff。
 3. 将构建、业务逻辑、接口和稳定性验证交给对应 Skill。
 
-### 能力分层(自动嗅探,缺哪层降哪层)
+### 真机截图视觉验证
 
-| 层 | 能力 | 依赖 | 老项目可用 |
-|---|---|---|---|
-| L1 | 已有截图证据对比 | 测试报告、基准图和本次截图 | 视证据 |
-| L2 | **Android CLI 设备验收** | `android layout/screen` + adb + 视觉模型 | ✅ |
-| L3 | 静态 XML/Compose 检查 | 源码、设计基准 | ✅ 无设备兜底 |
-| L4 | 人工截图对比 | 设备截图 + 人工确认 | ✅ 最终兜底 |
-
-**固定顺序**：L1 → L2 → L3 → L4。环境失败时记录原因并降级，不得把工具或设备错误当成目标应用视觉缺陷。
-
-### L1-L4:视觉验证
-
-- L1：优先复用 `android-test-and-fix` 或项目已有流程产出的截图和基准图；不在本 Skill 中运行 Paparazzi、Roborazzi、Shot 或重新设计测试用例。
-- L2：使用 `android layout --device` 获取结构，使用 `android screen capture` 或 adb 截图，再对照设计稿、截图基准和可见的 BDD Then 判断视觉结果。
-- L3：无设备时执行 XML/Compose、资源、TextView、Insets 和状态覆盖静态检查，只能标记“静态通过”。
-- L4：自动能力不覆盖的复杂视觉或交互状态，输出人工步骤、设备条件和预期视觉结果。
+1. 执行设备预检，确认物理设备、`adb get-state` 和截图命令均成功。
+2. 使用真机截图与 Figma/参考截图对比布局、排版、间距、组件、图像和系统栏。
+3. 自动 A11y 测试由 `android-test-and-fix` 提供；需要设备体验时补充布局树、TalkBack 或人工路径。
+4. 无设备、截图失败或缺少设计基准时，记录 `UNVERIFIED/BLOCKED`，不得输出设计一致或真机通过结论。
 
 ```
 adb exec-out screencap -p > 当前页.png
@@ -173,9 +172,7 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 失败 → 先报告证据；用户明确要求修复后才改最小布局 → 重新截图 → 再验
 ```
 
-- L2/L4 对比时可在说明中写设备与分辨率，便于复看；这些信息不参与 APK/构建身份校验。
-- 如需静态复核,优先按 `references/xml-review-checklist.md` 逐项过一遍,再决定是否继续大改布局。
-  - XML 涉及文本时，按需列出本次改动的 TextView 文本来源；Compose 则检查 stringResource、运行时状态和 Preview 数据。只审查受影响节点，不要求输出全页面控件清单。
+- 对比时记录设备与分辨率，便于复看；这些信息不参与 APK/构建身份校验。
 - 编码完成后,如存在设计稿、截图或 UI 目录,必须对照设计资料说明 UI 是否已按参考还原。如果没有实际运行截图,只能说明未做截图级验证。
   - **截图核心比对维度(按优先级)**:1. 布局结构 (根内边距/偏移/滚动区);2. 排版 (字重/字号/行高/基线);3. 间距 (内外/图文);4. 组件 (圆角/描边/背景);5. 图像 (裁剪比例);6. 系统栏沉浸式留白。
 
@@ -186,6 +183,6 @@ AI 视觉模型 + BDD 的 Then(验收标准) 作为断言 prompt
 - 有 UI：包含 Figma/截图基准、真机截图或差异图链接、动态区域说明、偏差和结论；可引用 `android-test-and-fix` 的 Journey 报告作为功能辅助结果。
 - 有 A11y 影响：增加语义、触摸区域、焦点、TalkBack、字体缩放、自动测试证据和未验证项。
 - 无 UI：输出最小 `SKIPPED_NO_UI` 报告，不启动验证工具。
-- 结论只能是 `PASS`、`STATIC_ONLY`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有实机/截图证据不得写 `PASS`，适用且必需的动态 A11y 没有证据时也不得写 `PASS`。
+- 结论只能是 `PASS`、`FAIL`、`UNVERIFIED`、`SKIPPED_NO_UI` 或 `BLOCKED`；没有真机截图和可对比设计基准不得写 `PASS`，适用且必需的动态 A11y 没有证据时也不得写 `PASS`。
 
-输出被完整交付引用时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 写统一专项结果：`android-ui-a11y` capability 记录适用性和未验证原因，`visual_review` 记录 Figma 链接、真机截图/差异图链接和动态区域说明。UI 专项不使用通用 `MANUAL` 收据，也不绑定 APK、versionCode 或截图 SHA-256。人类报告的 `STATIC_ONLY` 映射为机器结果 `UNVERIFIED`，`SKIPPED_NO_UI` 映射为 `SKIPPED`；二者都不得冒充动态 UI `PASS`。
+输出被完整交付引用时，同时按 `../android-implement-and-verify/references/specialist-result.schema.json` 写统一专项结果：`android-ui-a11y` capability 记录适用性和未验证原因，`device_check` 记录设备预检和截图命令结果，`visual_review` 记录 Figma 链接、真机截图/差异图链接和动态区域说明。UI 专项不使用通用 `MANUAL` 收据，也不绑定 APK、versionCode 或截图 SHA-256。`UNVERIFIED`、`SKIPPED_NO_UI` 分别表示未完成验证、无 UI 影响；二者都不得冒充动态 UI `PASS`。

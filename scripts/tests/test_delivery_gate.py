@@ -854,8 +854,8 @@ class DeliveryGateTests(unittest.TestCase):
             for error in errors
         ))
 
-    def test_route_specialist_task_can_record_explicit_conditional_skip(self) -> None:
-        """验证条件专项不适用时可跳过，但必须有中文原因和复核证据。"""
+    def test_ui_specialist_task_cannot_skip_visual_acceptance(self) -> None:
+        """验证 UI 专项不能以无设计基准为由跳过真机视觉验收。"""
         self.context["required_specialist_tasks"] = [{
             "id": "TASK-android-verify-ui",
             "skill": "android-verify-ui",
@@ -873,7 +873,8 @@ class DeliveryGateTests(unittest.TestCase):
             "evidence_ids": ["E-DIFF"],
             "reason": "当前没有设计基准，仅保留基础 UI 复核证据。",
         })
-        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any("UI 视觉门禁不能跳过" in error for error in errors))
 
     def test_requires_diff_review_semantic_conditional_gates(self) -> None:
         """验证正则漏检时，Diff Reviewer 的语义影响仍能强制补齐条件门禁。"""
@@ -974,7 +975,7 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
         self.assertTrue(any("至少记录一个真实设备待验证项" in error for error in errors))
 
-        summary = "静态 UI 检查完成，当前没有设备执行 TalkBack 动态验收。"
+        summary = "UI 视觉验收未完成，当前没有设备执行真机截图和 TalkBack 动态验收。"
         specialist = {
             "version": SPECIALIST_RESULT_VERSION,
             "producer": SPECIALIST_PRODUCER,
@@ -997,6 +998,10 @@ class DeliveryGateTests(unittest.TestCase):
                 "status": "UNVERIFIED",
                 "reason": "当前没有可用设备。",
             }],
+            "device_check": {
+                "status": "UNAVAILABLE",
+                "reason": "当前没有可用设备。",
+            },
             "obligation_sha256s": {},
         }
         result_path = self.temp_root / "E-UI-PENDING.specialist.json"

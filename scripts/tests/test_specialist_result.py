@@ -173,8 +173,8 @@ class SpecialistResultTests(unittest.TestCase):
         """验证普通 Review 只填写公共阻断字段也能形成有效结果。"""
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
 
-    def test_ui_pass_uses_lightweight_visual_links(self) -> None:
-        """UI PASS 只要求设计、真机截图/差异图链接，不要求截图文件摘要。"""
+    def test_ui_pass_requires_ready_physical_device(self) -> None:
+        """UI PASS 只保留轻量视觉链接，但必须确认物理设备截图成功。"""
         self.payload["skill"] = UI_VERIFY_SKILL
         self.payload["provenance"] = {"skill": UI_VERIFY_SKILL}
         self.payload.pop("confirmed_impacts")
@@ -189,12 +189,53 @@ class SpecialistResultTests(unittest.TestCase):
             "diff_links": ["https://evidence.example/ui/login-diff.png"],
             "dynamic_notes": "状态栏时间忽略，用户名使用固定测试数据。",
         }
+        self.payload["device_check"] = {
+            "status": "READY",
+            "serial": "R5CT123456",
+            "kind": "PHYSICAL",
+            "screenshot_ok": True,
+        }
 
         self.assertEqual([], validate_specialist_result(self.payload, self.context))
+
+        self.payload["conclusion"] = "UNVERIFIED"
+        self.assertEqual([], validate_specialist_result(self.payload, self.context))
+        self.payload["conclusion"] = "PASS"
 
         self.payload.pop("visual_review")
         errors = validate_specialist_result(self.payload, self.context)
         self.assertTrue(any("visual_review" in error for error in errors))
+
+    def test_ui_pass_rejects_missing_device_check(self) -> None:
+        """UI PASS 不能只凭链接声称完成真机验收。"""
+        self.payload["skill"] = UI_VERIFY_SKILL
+        self.payload["provenance"] = {"skill": UI_VERIFY_SKILL}
+        self.payload.pop("confirmed_impacts")
+        self.payload["visual_review"] = {
+            "design_links": ["https://figma.example/file/design"],
+            "screenshot_links": ["https://evidence.example/ui/login.png"],
+        }
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("device_check" in error for error in errors))
+
+    def test_ui_pass_rejects_emulator_or_failed_screenshot(self) -> None:
+        """模拟器和失败截图都不能冒充真机视觉 PASS。"""
+        self.payload["skill"] = UI_VERIFY_SKILL
+        self.payload["provenance"] = {"skill": UI_VERIFY_SKILL}
+        self.payload.pop("confirmed_impacts")
+        self.payload["visual_review"] = {
+            "design_links": ["https://figma.example/file/design"],
+            "screenshot_links": ["https://evidence.example/ui/login.png"],
+        }
+        self.payload["device_check"] = {
+            "status": "READY",
+            "serial": "emulator-5554",
+            "kind": "EMULATOR",
+            "screenshot_ok": False,
+        }
+        errors = validate_specialist_result(self.payload, self.context)
+        self.assertTrue(any("PHYSICAL" in error for error in errors))
+        self.assertTrue(any("截图成功" in error for error in errors))
 
     def test_ui_result_rejects_file_artifact_hash_contract(self) -> None:
         """UI 专项不再把本地截图文件 SHA 当作视觉验收前置条件。"""

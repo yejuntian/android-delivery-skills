@@ -103,8 +103,8 @@
 - 视觉还原继续由 `android-verify-ui` 手动独立验收；自动化 A11y 与 UI 功能测试由 `android-test-and-fix` 执行。
 - 检查语义标签、装饰元素排除、可点击区域、焦点顺序、状态描述、错误提示、字体缩放以及不能只靠颜色表达状态。
 - 优先复用项目已有 Compose/Espresso semantics、AccessibilityChecks 或其他测试；Accessibility Scanner/TalkBack 可作为设备或人工证据。
-- 没有设备时继续静态资源与 semantics 检查；动态 TalkBack、焦点和触摸体验保持未验证。
-- 没有设计稿只影响视觉一致性，不自动阻断可访问性静态检查。
+- 没有物理设备或截图失败时，UI 视觉和设备 A11y 统一标记 `UNVERIFIED/BLOCKED`；自动化 A11y 测试仍由 `android-test-and-fix` 按项目能力执行。
+- 没有设计稿或参考截图时不能证明设计一致性；不得用静态 UI 检查替代真机截图对比。
 
 ## 安全隐私
 
@@ -124,7 +124,7 @@
 | 数据迁移 | `android-test-and-fix` | `android-review-diff` 复核范围和回滚风险 |
 | 动态泄漏 | `android-audit-stability` | `android-test-and-fix` 复现和重验 |
 | 性能 | `android-audit-stability` | `android-test-and-fix` 执行 Benchmark/Trace 流程 |
-| UI/A11y | `android-verify-ui` 负责 Figma 与真机截图视觉对比，`android-test-and-fix` 负责自动测试 | 总入口只提示独立视觉验收；结果使用链接和结论，不要求 APK/截图哈希链 |
+| UI/A11y | `android-verify-ui` 先执行物理设备预检，再负责 Figma 与真机截图视觉对比；`android-test-and-fix` 负责自动测试 | 总入口只提示独立视觉验收；结果记录 `device_check`、链接和结论，不要求 APK/截图哈希链 |
 | 安全隐私 | `android-audit-stability` 负责风险，`android-review-diff` 负责变更边界 | `android-test-and-fix` 执行已有安全任务 |
 
 ## 完成结论

@@ -201,7 +201,7 @@ Journey 属于已安装 APK 的关键用户旅程冒烟测试，由本 Skill 根
 - Journey 用例名、说明和 action 自然语言用中文，界面真实文案、资源标识、包名、类名和 XML schema 保持原值并在中文步骤中引用，不为翻译改变查找目标。
 - XML 和最终报告必须标明覆盖的 BDD；一个 BDD 需要多层证据时，Journey 通过不改变其他证据的状态。
 - Journey XML 作为当前需求测试用例，默认放 `<requirement_dir>/test-cases/journeys/<需求作用域>/[场景名].xml`；完整流程的作用域来自当前 Git 基线、确认修订和需求正文/UI/API 输入摘要，单独调用时来自当前完整输入摘要。默认 Agent 路线用 Android CLI Journey 约定的 `journey/actions/action`；可选壳路线必须用当前 Android Studio 官方模板生成的 schema，不得猜测预览 DSL。至少包含一个有效 action/step，拒绝零测试假绿。
-- 不把需求用例长期保存在共享壳源码中；正式来源是 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。共享 `assets/journey-harness` 只读，调用可选壳前复制到 `<requirement_dir>/.state/journey-runtime/<scope-key>/`，后续只在需求级副本中同步 XML、发现任务、构建和收集报告；全局 `~/.cache/android-delivery-skills/gradle/` 只保存可共享 Gradle 依赖缓存。
+- 不把需求用例长期保存在共享壳源码中；正式来源是 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。共享 `assets/journey-harness` 只读，调用可选壳前复制到 `<requirement_dir>/.state/journey-runtime/<scope-key>/`，后续只在需求级副本中同步 XML、发现任务、构建和收集报告；全局 `~/.cache/android-delivery-skills/gradle/` 只保存可共享 Gradle 依赖缓存。`check-env` 或直接执行 Journey 时，若需求目录在目标项目 worktree 内，自动把 `.state/` 登记到项目 Git 的 `<git-common-dir>/info/exclude`；不修改项目 `.gitignore`，也不忽略正式文档、测试用例和最终报告。
 
 ### 默认 Android CLI Agent 执行
 

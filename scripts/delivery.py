@@ -60,6 +60,10 @@ from .git_changes import (  # noqa: E402
     write_baseline,
     working_tree_status,
 )
+from .git_ignore import (  # noqa: E402
+    GitIgnoreError,
+    ensure_requirement_state_ignored,
+)
 from .implementation_plan import (  # noqa: E402
     ImplementationPlanError,
     confirm_implementation_plan,
@@ -1168,6 +1172,18 @@ def cmd_check_env(args):
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法保存已确认需求快照")
     requirement_content = read_requirement(requirement_path)
+    try:
+        ignore_registration = ensure_requirement_state_ignored(
+            project_path,
+            paths.requirement_dir,
+        )
+    except GitIgnoreError as exc:
+        raise DeliveryError(str(exc)) from exc
+    if ignore_registration.added:
+        print(
+            "✅ 项目 Git 本地忽略已登记："
+            f"{ignore_registration.pattern}（{ignore_registration.exclude_path}）"
+        )
 
     # chdir 前先把 config 解析成绝对路径，避免 os.chdir 后对相对 --config 路径重新
     # resolve 时算出不同的状态路径（cwd 漂移导致 init/check-env 状态分裂）。

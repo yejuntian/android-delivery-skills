@@ -535,6 +535,8 @@ harness-app/src/main/journeys/
 
 设置 `XDG_CACHE_HOME` 后使用 `$XDG_CACHE_HOME/android-delivery-skills/gradle/`。该目录不是测试用例来源，不保存需求 XML、壳构建产物或最终证据。
 
+当 `<requirement_dir>` 位于目标项目 worktree 内时，`check-env` 或直接执行 Journey 会自动把 `<requirement_dir>/.state/` 登记到项目 Git 的 `<git-common-dir>/info/exclude`。这是本机 Git 排除规则，不修改项目 `.gitignore`，不会制造业务代码 diff；`docs/`、`test-cases/`、`test-results/` 和正式 Journey XML 不受影响。需求目录在项目外时不登记规则，因为运行状态也不属于该项目 Git。
+
 ## 配置与执行
 
 默认读取 `profiles/local.yaml`：

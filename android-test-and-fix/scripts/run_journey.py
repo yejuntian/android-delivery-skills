@@ -50,6 +50,7 @@ from scripts.config_paths import (  # noqa: E402
     resolve_config_paths,
 )
 from scripts.delivery import DeliveryError, read_requirement  # noqa: E402
+from scripts.git_ignore import GitIgnoreError, ensure_requirement_state_ignored  # noqa: E402
 from scripts.git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
 from scripts.implementation_plan import (  # noqa: E402
     ImplementationPlanError,
@@ -1242,7 +1243,8 @@ def main(argv: list[str] | None = None) -> int:
             JourneyResult(HARNESS_UNAVAILABLE, "testing.journey_harness 必须是 YAML object", 1),
             result_path,
         )
-    project = resolve_config_paths(config, config_path).project_path
+    paths = resolve_config_paths(config, config_path)
+    project = paths.project_path
     module = args.module or settings.get("module", "app")
     variant = args.variant or settings.get("variant", "debug")
     try:
@@ -1264,6 +1266,23 @@ def main(argv: list[str] | None = None) -> int:
         if status == NO_JOURNEY_FOUND:
             message += "\n应由测试流程根据已确认需求和验收场景自动生成，不要求用户编写 XML"
         return complete(JourneyResult(status, message, 1, journey_files=[str(p) for p in files]), result_path)
+
+    if project and project.is_dir():
+        try:
+            ignore_registration = ensure_requirement_state_ignored(
+                project,
+                paths.requirement_dir,
+            )
+        except GitIgnoreError as exc:
+            return complete(
+                JourneyResult(HARNESS_UNAVAILABLE, f"登记项目 Git 本地忽略失败: {exc}", 1),
+                result_path,
+            )
+        if ignore_registration.added:
+            print(
+                "✅ 项目 Git 本地忽略已登记："
+                f"{ignore_registration.pattern}（{ignore_registration.exclude_path}）"
+            )
 
     # 用例就绪后再复制壳；后续所有任务发现、暂存和执行都只写需求级副本。
     try:

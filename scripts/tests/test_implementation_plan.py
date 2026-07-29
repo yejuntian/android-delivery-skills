@@ -133,6 +133,7 @@ class ImplementationPlanTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.requirement = "登录失败时显示错误"
         self.snapshot = confirmed_snapshot(self.requirement)
+        implementation_plan_path(self.root).parent.mkdir(parents=True, exist_ok=True)
         implementation_plan_path(self.root).write_text(valid_plan(), encoding="utf-8")
         write_valid_impact_radius(self.root, self.snapshot, self.requirement)
 

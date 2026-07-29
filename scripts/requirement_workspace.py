@@ -29,7 +29,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 
-from .config_paths import resolve_config_paths  # noqa: E402
+from .config_paths import _md_filename_for_dir, resolve_config_paths  # noqa: E402
 from .delivery import DEFAULT_CONFIG_PATH, DeliveryError, load_config  # noqa: E402
 from .git_changes import GitInspectionError, working_tree_status  # noqa: E402
 from .user_facing_labels import ChineseArgumentParser  # noqa: E402
@@ -43,13 +43,10 @@ OUTCOME_ALIASES = {
     "已取消": "cancelled",
 }
 WORKSPACE_STATE_FILE = "requirement-workspace.json"
-WORKSPACE_SUMMARY_FILE = "需求说明.md"
-REQUIRED_SUBDIRECTORIES = ("api", "ui", "test-cases", "test-results", "config", "issues")
-# 人读产物子目录：轮换时自动创建，与 test-cases/test-results 不冲突。
-HUMAN_SUBDIRECTORIES = ("plan", "review", "decisions")
-# 归档保留的人读 md 关键子集（机器 JSON 随源清理，不长期堆积）。
-ARCHIVE_FILES = ("需求说明.md", "续接指南.md", "交付结论.md", "协作待办.md")
-ARCHIVE_DIRS = ("decisions",)
+WORKSPACE_SUMMARY_FILE = Path("docs") / "需求说明.md"
+# 只预创建流程始终需要的目录；接口、UI、配置和问题资料按需落盘。
+REQUIRED_SUBDIRECTORIES = ("test-cases", "test-results", ".state")
+OPTIONAL_SUBDIRECTORIES = ("api", "ui", "config", "issues")
 ARCHIVE_ROOT_NAME = "archive"
 WORKSPACE_INDEX_FILE = "需求总览.md"
 INTEGRATION_REPORT_PREFIX = "integration-"
@@ -429,11 +426,7 @@ def _remove_reclaim_target(path: Path, allowed_root: Path) -> None:
 
 
 def archive_before_reclaim(directory: Path, workspace_root: Path) -> Path | None:
-    """回收前把已完成需求的关键人读 md 拷到 archive/，保留可追溯证据。
-
-    只拷人读 md 子集（需求说明/续接指南/交付结论/协作待办/decisions）；机器 JSON、
-    截图、收据等随源目录清理，不长期堆积。归档失败时返回 None，调用方决定是否继续。
-    """
+    """回收前完整归档 docs/，机器 JSON 和原始证据随源目录清理。"""
     archive_root = (workspace_root / ARCHIVE_ROOT_NAME).resolve()
     requirement_id = directory.name
     try:
@@ -441,14 +434,9 @@ def archive_before_reclaim(directory: Path, workspace_root: Path) -> Path | None
         if dest.exists():
             shutil.rmtree(dest)
         dest.mkdir(parents=True, exist_ok=True)
-        for name in ARCHIVE_FILES:
-            source_file = directory / name
-            if source_file.is_file():
-                shutil.copy2(source_file, dest / name)
-        for name in ARCHIVE_DIRS:
-            source_dir = directory / name
-            if source_dir.is_dir():
-                shutil.copytree(source_dir, dest / name)
+        source_dir = directory / "docs"
+        if source_dir.is_dir():
+            shutil.copytree(source_dir, dest / "docs")
         return dest
     except OSError:
         return None
@@ -517,7 +505,7 @@ def render_workspace_index(workspace_root: Path) -> str:
         )
     lines.extend([
         "",
-        "- 续做某个需求时，先读对应目录的 `续接指南.md`。",
+        "- 续做某个需求时，先读对应目录的 `docs/续接指南.md`。",
         "- 代码在对应分支的 worktree 里（`MyApp-<英文名>/`）。",
         "- 集成批次详情见同目录 `integration-<日期>-<批次>.md`。",
         "- 已完成需求超保留数量与天数时回收前归档到 `archive/`；并行合并的需求原地保留。",
@@ -528,7 +516,7 @@ def render_workspace_index(workspace_root: Path) -> str:
 
 
 def execute_reclaim_plan(policy: WorkspacePolicy, plan: ReclaimPlan) -> None:
-    """执行已经通过保留策略筛选的回收计划；回收前先归档关键人读 md。"""
+    """执行已经通过保留策略筛选的回收计划；回收前先归档完整 docs/。"""
     for directory in plan.workspaces:
         archive_before_reclaim(directory, policy.root)
         _remove_reclaim_target(directory, policy.root)
@@ -708,14 +696,17 @@ def _prepare_new_workspace(
     branch: Any,
     now: datetime,
 ) -> str:
-    """在新目录中复制需求正文、创建固定子目录并写入双语义状态。"""
+    """在新目录中复制需求正文、创建核心目录并写入双语义状态。"""
     if not directory.is_dir() or any(directory.iterdir()):
         raise RequirementWorkspaceError(f"新需求暂存目录必须存在且为空: {directory}")
-    requirement_name = f"requirement{source.suffix.lower()}"
+    final_name = Path(f"{requirement_id}-{_sanitize_title(title)}")
+    if source.suffix.lower() in {".md", ".markdown"}:
+        requirement_name = Path("docs") / _md_filename_for_dir(final_name)
+    else:
+        requirement_name = Path("docs") / f"requirement{source.suffix.lower()}"
+    (directory / "docs").mkdir()
     shutil.copy2(source, directory / requirement_name)
     for name in REQUIRED_SUBDIRECTORIES:
-        (directory / name).mkdir()
-    for name in HUMAN_SUBDIRECTORIES:
         (directory / name).mkdir()
     state = {
         "schema_version": STATE_VERSION,
@@ -726,11 +717,11 @@ def _prepare_new_workspace(
         "completed_at": None,
         "project_path": str(project_path) if project_path else None,
         "branch": branch,
-        "requirement_file": requirement_name,
+        "requirement_file": requirement_name.as_posix(),
     }
     _write_state(directory, state)
     _write_summary(directory, state)
-    return requirement_name
+    return requirement_name.as_posix()
 
 
 def _ensure_project_clean(project_path: Path | None) -> None:

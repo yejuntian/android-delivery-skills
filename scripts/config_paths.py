@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -39,29 +40,19 @@ class ConfigPaths:
         return (self.requirement_dir / "test-cases" / "impact-radius.json").resolve()
 
     @property
-    def plan_dir(self) -> Path:
-        """返回计划补充/影响预览目录，AI 手写产物，轮换时自动创建。"""
-        return (self.requirement_dir / "plan").resolve()
-
-    @property
-    def review_dir(self) -> Path:
-        """返回变更审查目录，AI 手写 Diff+Context 双表。"""
-        return (self.requirement_dir / "review").resolve()
-
-    @property
-    def decisions_dir(self) -> Path:
-        """返回决策留痕目录，重大取舍按 MADR 轻量版记录，推翻用 superseded。"""
-        return (self.requirement_dir / "decisions").resolve()
+    def docs_dir(self) -> Path:
+        """返回当前需求的人读 Markdown 根目录。"""
+        return (self.requirement_dir / "docs").resolve()
 
     @property
     def resume_guide_path(self) -> Path:
         """返回续接指南路径，脚本渲染当前状态快照，是 AI 续做的第一入口。"""
-        return (self.requirement_dir / "续接指南.md").resolve()
+        return (self.docs_dir / "续接指南.md").resolve()
 
     @property
     def communications_path(self) -> Path:
         """返回协作待办路径，AI 手写 blocker/待确认/已发送/低风险直回。"""
-        return (self.requirement_dir / "协作待办.md").resolve()
+        return (self.docs_dir / "协作待办.md").resolve()
 
     @property
     def state_dir(self) -> Path:
@@ -88,23 +79,22 @@ def _resolve(value: Any, base: Path) -> Path | None:
 
 
 def _md_filename_for_dir(requirement_dir: Path) -> str:
-    """从 requirement_dir 目录名提取需求名，生成 <需求名>.md（如 ig-video-feed.md）。
-
-    目录名格式为 <日期>-<英文名>（如 2026-07-25-ig-video-feed），
-    取第一个 - 之后的部分作为需求名；无日期前缀时用整个目录名。
-    """
+    """根据需求目录名生成稳定的 ``<需求名>.md`` 事实源文件名。"""
     name = requirement_dir.name
-    parts = name.split("-", 3)
-    # 格式 YYYY-MM-DD-<slug>：取第 4 段；否则用整个目录名。
-    slug = parts[3] if len(parts) >= 4 and len(parts[0]) == 4 and parts[0].isdigit() else name
+    req_match = re.match(r"^REQ-\d{8}-\d{3}-(?P<slug>.+)$", name)
+    if req_match:
+        slug = req_match.group("slug")
+    else:
+        date_match = re.match(r"^\d{4}-\d{2}-\d{2}-(?P<slug>.+)$", name)
+        slug = date_match.group("slug") if date_match else name
     return f"{slug}.md"
 
 
 def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> ConfigPaths:
     """按 config目录 -> workspace -> requirement_dir 的固定层级解析配置。
 
-    事实源优先 md：如果 requirement_file 指向 docx，但同目录已有转写的 <需求名>.md，
-    自动切换到该 md（init 转写后的后续命令全部读 md，不再绑 docx）。
+    事实源优先 md：如果 requirement_file 指向 docx，但 ``docs/<需求名>.md``
+    已存在，自动切换到该 md（init 转写后的后续命令全部读 md，不再绑 docx）。
     """
     resolved_config = Path(config_path).expanduser().resolve()
     config_dir = resolved_config.parent
@@ -114,9 +104,9 @@ def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> Con
     # 事实源优先 md：docx 已转写 md 后，所有命令统一读 md。
     if isinstance(requirement_file_value, str) and requirement_file_value.lower().endswith(".docx"):
         md_name = _md_filename_for_dir(requirement_dir)
-        md_candidate = requirement_dir / md_name
+        md_candidate = requirement_dir / "docs" / md_name
         if md_candidate.is_file():
-            config = {**config, "requirement_file": md_name}
+            config = {**config, "requirement_file": (Path("docs") / md_name).as_posix()}
     return ConfigPaths(
         config_path=resolved_config,
         workspace_root=workspace,
@@ -247,7 +237,7 @@ def delivery_snapshot_exclusions(project_path: str | Path, requirement_dir: str 
     excluded: set[str] = set()
     for generated_path in (
         requirement_resolved / "test-results" / "delivery-result.json",
-        requirement_resolved / "test-results" / "delivery-summary.md",
+        requirement_resolved / "docs" / "交付结论.md",
     ):
         try:
             excluded.add(generated_path.resolve().relative_to(project_resolved).as_posix())

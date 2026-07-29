@@ -142,6 +142,26 @@ class RequirementPathTests(unittest.TestCase):
             requirement, (workspace / "current-requirement" / "requirement.md").resolve()
         )
 
+    def test_docx_prefers_named_docs_markdown(self) -> None:
+        """验证 docx 初始输入会切换到 docs/<需求名>.md。"""
+        workspace = self.root / "workspace"
+        requirement_dir = workspace / "REQ-20260729-001-登录拦截"
+        (requirement_dir / "docs").mkdir(parents=True)
+        (requirement_dir / "docs" / "登录拦截.md").write_text(
+            "# 已转写需求\n", encoding="utf-8"
+        )
+        config = {
+            "workspace_root": str(workspace),
+            "requirement_dir": "REQ-20260729-001-登录拦截",
+            "requirement_file": "docs/requirement.docx",
+        }
+
+        _, requirement = resolve_config_paths(config, self.config_path)
+
+        self.assertEqual(
+            requirement, (requirement_dir / "docs" / "登录拦截.md").resolve()
+        )
+
     def test_delivery_snapshot_exclusions_are_shared(self) -> None:
         """验证 route 和 final 共用同一组交付文档排除路径。"""
         project = self.root / "project"
@@ -152,7 +172,7 @@ class RequirementPathTests(unittest.TestCase):
 
         self.assertIn("document", excluded)
         self.assertIn("document/2026-07-27-login/test-results/delivery-result.json", excluded)
-        self.assertIn("document/2026-07-27-login/test-results/delivery-summary.md", excluded)
+        self.assertIn("document/2026-07-27-login/docs/交付结论.md", excluded)
 
     def test_absolute_paths_are_not_rebased(self) -> None:
         """验证绝对路径保持原意，不被配置文件或工作区目录重复拼接。"""
@@ -1213,7 +1233,7 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("需求修订清单:", text)
         self.assertIn("requirement-revision.json", text)
         self.assertIn("机器生成追溯视图（只读辅助）:", text)
-        self.assertIn("traceability.md", text)
+        self.assertIn("需求测试追溯.md", text)
         self.assertIn("进入计划阶段", text)
         self.assertIn("实施计划.md", text)
         self.assertIn("等待确认", text)
@@ -1222,8 +1242,8 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertNotIn("内容摘要", text)
         self.assertIn("确认前旧聊天理解、旧总结或旧方案不得作为执行依据", text)
         # 补丁A：确认需求修订后应自动刷新续接指南等 人读 md。
-        self.assertTrue((self.requirement.parent / "续接指南.md").is_file())
-        resume = (self.requirement.parent / "续接指南.md").read_text(encoding="utf-8")
+        self.assertTrue((self.requirement.parent / "docs" / "续接指南.md").is_file())
+        resume = (self.requirement.parent / "docs" / "续接指南.md").read_text(encoding="utf-8")
         self.assertIn("续接指南", resume)
         # 补丁B：本轮 manifest 的波及清单应写进续接指南。
         self.assertIn("波及清单", resume)
@@ -1247,6 +1267,7 @@ class RequirementSnapshotTests(unittest.TestCase):
             content,
             manifest,
         )
+        implementation_plan_path(self.requirement_dir).parent.mkdir(parents=True, exist_ok=True)
         implementation_plan_path(self.requirement_dir).write_text(
             """# 实施计划
 
@@ -1313,12 +1334,12 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertIn("影响半径已确认", text)
         self.assertIn("先建立测试映射并用业务断言得到 Red", text)
         self.assertIn("已确认实施计划", text)
-        traceability = self.requirement_dir / "test-cases" / "traceability.md"
+        traceability = self.requirement_dir / "docs" / "需求测试追溯.md"
         self.assertTrue(traceability.is_file())
         traceability_text = traceability.read_text(encoding="utf-8")
         self.assertIn("需求与实施计划确认", traceability_text)
         self.assertIn("实施计划状态：已确认", traceability_text)
-        resume = self.requirement_dir / "续接指南.md"
+        resume = self.requirement_dir / "docs" / "续接指南.md"
         self.assertTrue(resume.is_file())
         self.assertIn("实施计划：已确认", resume.read_text(encoding="utf-8"))
 
@@ -2174,7 +2195,7 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("route、专项审查和最终报告前必须重新读取", text)
         self.assertIn("AI 执行前必须读取（只展示路径，不展示正文）", text)
         self.assertIn("requirement-revision.json", text)
-        self.assertIn("traceability.md", text)
+        self.assertIn("需求测试追溯.md", text)
         self.assertIn("实施计划.md", text)
         self.assertIn("android-verify-api-contract", text)
         self.assertIn("[建议单独执行] android-verify-ui", text)

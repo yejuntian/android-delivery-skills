@@ -250,7 +250,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 - 已上线业务：全部 `【修改已上线业务】` 和 `【保护已上线业务】` 必需 BDD 均有最终代码上的真实 testcase 或已执行人工证据。
 - 条件必需：按业务影响选择仪器或截图测试；Journey 只执行 `FULL` 或 `PARTIAL` 中实际分配给它的验证义务。
 - 每个 BDD 使用 `COVERED_AUTOMATED`、`COVERED_MANUAL`、`UNVERIFIED`、`BLOCKED` 或 `NOT_APPLICABLE`；`COVERED_MANUAL` 必须已经实际执行并有证据。
-- 全部已确认 BDD 都必须进入 `test-mapping.json`；`traceability.md` 由机器自动渲染。
+- 全部已确认 BDD 都必须进入 `test-mapping.json`；`docs/需求测试追溯.md` 由机器自动渲染。
 - 测试映射：`COVERED_AUTOMATED` 义务必须在 `<requirement_dir>/test-cases/test-mapping.json` 中登记，`mapping_status=CURRENT`，且登记的 `test_ids` 出现在执行收据里；STALE 映射表示需求已增量但测试未同步，直接阻断。
 - 所有必需 BDD 均为 `COVERED_AUTOMATED` 或有证据的 `COVERED_MANUAL`；任何工具不得越过自身证据边界。
 - 失败数为 0，P0/P1 测试缺口为 0。未执行项不得计为通过。

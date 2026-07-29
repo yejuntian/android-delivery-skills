@@ -47,7 +47,9 @@ class ImplementationPlanError(RuntimeError):
 
 def implementation_plan_path(requirement_dir: str | Path) -> Path:
     """返回用户查看的固定实施计划路径，避免同一需求产生多份方案。"""
-    return (Path(requirement_dir).expanduser().resolve() / PLAN_FILE_NAME).resolve()
+    return (
+        Path(requirement_dir).expanduser().resolve() / "docs" / PLAN_FILE_NAME
+    ).resolve()
 
 
 def plan_confirmation_receipt_path(requirement_dir: str | Path) -> Path:

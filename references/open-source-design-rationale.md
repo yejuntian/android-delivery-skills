@@ -283,7 +283,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **问题**：长期复用一个 `current-requirement` 会让上一需求的正文、截图、接口证据、测试用例和报告与下一需求混放；每次开始需求就清空目录又会在误判完成状态、需要追溯或回看失败证据时造成不可逆丢失。纯机器编号可以隔离，但用户无法快速识别内容。
 - **来源**：[XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/latest/) 区分持久状态与可再生成缓存；[Bazel Sandboxing](https://bazel.build/docs/sandboxing) 为动作建立隔离执行根，避免未声明的旧输入影响结果；[Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html#dir:gradle_user_home) 对缓存采用周期清理和不同保留期，而不是每次构建后全部删除。
-- **决策**：采用这些原则而不照搬工具实现。每个新串行需求创建 `REQ-日期-序号-中文名称` 独立目录；JSON 保存稳定机器状态，`需求说明.md` 提供中文入口。只有用户明确结束/取消上一需求并开始下一需求时才轮换；默认先预览，确认后执行。上一需求和新需求不共享正文、UI/API 固定证据、测试用例、报告或 Git 基线。
+- **决策**：采用这些原则而不照搬工具实现。每个新串行需求创建 `REQ-日期-序号-中文名称` 独立目录；JSON 保存稳定机器状态，`docs/需求说明.md` 提供中文入口。只有用户明确结束/取消上一需求并开始下一需求时才轮换；默认先预览，确认后执行。上一需求和新需求不共享正文、UI/API 固定证据、测试用例、报告或 Git 基线。
 - **回收边界**：已完成或取消的需求必须同时超出最近保留数量和最短保留天数才可回收；活动、未完成、近期、状态缺失或损坏的目录保留。可再生成的 `tempfile` 使用相同时间门槛，但仍只删除允许根目录的直接子项。轮换和回收不嵌入 `init`、测试或交付命令，避免隐式破坏。
 - **职责边界**：`requirement_workspace.py` 只管理项目外目录和 `local.yaml` 的两个活动指针；它不理解需求、不修改 Android 源码、不执行测试、不提交或清理 Git。确认写操作使用单写锁和唯一暂存目录，失败回滚只处理本轮拥有的对象并恢复旧状态，避免多个窗口互相覆盖。轮换后仍必须按 `init → 用户确认 → check-env --new-requirement` 建立新需求事实和基线。
 - **拒绝**：不按每次交付无条件删除 `current-requirement` 或整个 `tempfile`，不以同一目录加前缀模拟隔离，不让 AI 根据聊天内容猜测上一需求是否完成，也不把工作区目录纳入 Skill 源码提交。
@@ -294,7 +294,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **采用依据**：延续 M02 的需求追溯、M03 的语义影响路由、M05/M06 的行为级测试、M08 的新鲜证据和 M21 的三阶段反馈；不引入新的发布平台或第二套状态机。
 - **决策**：最终需求确认前允许 AI 先只读核对项目身份和目标分支，再定向检查相关实现、调用方和已有测试，并把结果置顶分为“本次明确修改、必须保持不变、暂时无法确认、明确不修改范围”。前两类分别使用 `【修改已上线业务】`、`【保护已上线业务】` 原子 Then，强制作为必需项直接复用现有测试、追溯和最终证据门禁。最终 diff 新发现计划外影响时回到需求修订并复用原 Git 基线，不重复 `check-env`，也不允许只在报告补写。
 - **证据边界**：只有有代码、测试、契约或用户确认支持的可观察行为才能成为保护义务；疑似旧 Bug 或业务含义不明时保持待确认。保护项必须绑定真实 testcase 或已经执行的完整人工证据，未验证或失败时不能完整通过。
-- **报告边界**：中文 `delivery-summary.md` 从已经确认的义务文本中识别两个固定标记并置顶展示，不修改 `delivery-result.json`、需求快照或 Schema。详细实现、调用方和测试仍由追溯表承担，避免报告脚本理解 Android 业务。
+- **报告边界**：中文 `docs/交付结论.md` 从已经确认的义务文本中识别两个固定标记并置顶展示，不修改 `delivery-result.json`、需求快照或 Schema。详细实现、调用方和测试仍由追溯表承担，避免报告脚本理解 Android 业务。
 - **拒绝**：不扫描并固化全仓库历史行为，不要求每个需求全量回归，不新增旧业务 Skill、配置或机器状态，也不把功能开关、影子运行和灰度设为普通本地需求的固定步骤。
 
 ### M25 首次确认草稿收敛
@@ -334,9 +334,9 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **问题**：多轮需求虽已落到 `requirement_file`，但需求确认后直接编码时，用户看不到实现范围、旧业务影响、预计文件、测试和不修改边界；聊天中的计划也会随上下文丢失，需求或计划变化后无法机器阻止复用旧理解。
 - **采用依据**：Spec Kit 的 spec/plan 分离和跨产物一致性、Superpowers 的编码前计划确认与小步执行，以及本流程 M01 单一事实、M02 追溯、M08 新鲜证据、M21 局部反馈和 M26 规则去重。
-- **决策**：`requirement_file` 仍是唯一需求事实；每个接受答案先写回并重新读取。R1/R2 确认后只新增一份用户可读 `<requirement_dir>/实施计划.md`，固定展示五类边界；用户确认后由单一职责 `implementation_plan.py` 生成绑定需求修订、有效义务摘要、计划摘要和影响半径摘要的收据。`route` 与完整输入摘要复核收据，需求、计划或影响半径变化后旧 route、测试收据和专项证据失效。
+- **决策**：`requirement_file` 仍是唯一需求事实；每个接受答案先写回并重新读取。R1/R2 确认后只新增一份用户可读 `<requirement_dir>/docs/实施计划.md`，固定展示五类边界；用户确认后由单一职责 `implementation_plan.py` 生成绑定需求修订、有效义务摘要、计划摘要和影响半径摘要的收据。`route` 与完整输入摘要复核收据，需求、计划或影响半径变化后旧 route、测试收据和专项证据失效。
 - **增量边界**：验收语义变化只更新受影响需求、测试、同一计划和影响半径，再确认后继续局部迭代；没有改变五类计划内容和影响半径的实现完善不重复确认。聊天只给摘要与 Markdown 链接，机器收据不要求用户阅读。
-- **拒绝**：不复制 Spec Kit 的 spec/plan/tasks/checklists 文件树，不把 `需求说明.md` 改成业务事实，不新增通用 phase 状态机，也不让脚本生成业务计划或替用户确认。
+- **拒绝**：不复制 Spec Kit 的 spec/plan/tasks/checklists 文件树，不把 `docs/需求说明.md` 改成业务事实，不新增通用 phase 状态机，也不让脚本生成业务计划或替用户确认。
 
 ### M30 Karpathy 编程降错准则适配
 
@@ -350,9 +350,9 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **问题**：现有交付产物（requirement-revision/test-mapping/route-impact/receipt）全是 JSON，机器能校验但用户打开看不懂、无法自检"这步对不对"；半个月后接旧需求 AI 需重新翻聊天才懂原状；多需求并存后无法一眼全局；旧需求删除后证据全丢。对标 shareit/shell 的 `docs/` 产物体系后发现差距。
 - **来源**：shareit/shell `docs/`（阶段目录 + 每产物人读 md + task 串联 + verify 脚本断言化）；[GitHub Spec Kit](https://github.com/github/spec-kit) 的 spec continuity 与稳定 ID；[XDG Base Directory](https://specifications.freedesktop.org/basedir/latest/) 与 [Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html) 的延迟回收（已落地为 M23）；[MADR](https://github.com/adr/madr) 的决策记录轻量化。
 - **决策**：
-  - md 是主产物（人读/自检/AI 执行依据），JSON 是门禁附件（SHA 链/变异测试/哈希校验全读 JSON 不动）。`render_artifacts.py` 从 JSON 渲染同名 md 影子：`续接指南.md`（每次 init、confirm-plan 和最终报告刷新，聚合需求快照/映射/计划收据/最终结论，是续做旧需求的第一入口）、`需求修订说明.md`、`测试映射说明.md`、`traceability.md`、`交付结论.md`（强制未验证项与残留风险独立段）。需求语义必须先写回 requirement_file，计划确认成功后同步相关人读 md；JSON 不能成为唯一追溯记录。
-  - 阶段子目录 `plan/ review/ decisions/`（与既有 `test-cases/ test-results/` 不冲突）；协作待办、变更审查（Diff+Context 双表）、决策记录由 AI 手写并填 `android-implement-and-verify/templates/` 骨架（plan/review/test/result/decision/communications）。
-  - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前 `archive_before_reclaim` 把关键人读 md 归档到 `archive/<requirement_id>/`，机器 JSON 随源清理不堆积；双门槛（keep_completed + retention_days）不变。
+  - md 是主产物（人读/自检/AI 执行依据），JSON 是门禁附件（SHA 链/变异测试/哈希校验全读 JSON 不动）。人工 Markdown 统一放在 `docs/`，`render_artifacts.py` 从 JSON 渲染 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`、`docs/需求测试追溯.md` 和 `docs/交付结论.md`。需求语义必须先写回 requirement_file，计划确认成功后同步相关人读 md；JSON 不能成为唯一追溯记录。
+  - `docs/` 默认保持扁平：协作待办、变更审查、决策和问题分别使用 `协作待办.md`、`审查-<主题>.md`、`决策-<主题>.md`、`问题-<主题>.md`；`api/`、`ui/`、`config/`、`issues/` 只在有对应资料时创建。所有 AI 手写文档仍填 `android-implement-and-verify/templates/` 骨架（plan/review/test/result/decision/communications）。
+  - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前 `archive_before_reclaim` 完整归档 `docs/` 到 `archive/<requirement_id>/`，机器 JSON 和原始证据随源清理不堆积；双门槛（keep_completed + retention_days）不变。
 - **边界**：续接指南是从事实源渲染的状态快照，不是第二事实源（不变量 #25 不变）；md 与 JSON 一致性靠脚本渲染（零漂移），手写 md 由 SKILL 要求填模板；JSON 路径全部原位不迁移，零破坏在途需求。
 - **拒绝**：不迁移 JSON 路径（破坏在途需求风险）；不新建 test/ result/ 子目录（与 test-cases/test-results 混淆）；不复制 Spec Kit/Matt Pocock 完整文件树或 Handoff 体系（M01/M27 已拒绝）；本轮不加并行冲突检测（目录已为多 requirement_dir 预留，用户明确后续补）；不做需求级度量或架构图（超范围）。
 - **落点**：新增 `scripts/atomic_write.py`（公共原子写，渐进收敛 5+ 处重复）、`scripts/render_artifacts.py`；规则落 `_shared/android-global-rules.md`（产物体系一条）、`android-implement-and-verify/SKILL.md`（续接入口）；本文保存来源与取舍，评测场景防回归。
@@ -364,7 +364,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 以各自 `requirement_dir/.state` 隔离 baseline/snapshot/route/evidence/capabilities；同文件同行冲突 git merge 自然检出；改不同文件无冲突；`git worktree remove/prune` 可回收；同 config 并发第二写窗口被 O_EXCL 锁拒。
 - **决策**：
   - 业界标准 = 纯 git worktree，零自研并行 wrapper 脚本。一个需求 = 一个 worktree + 独立分支 + 独立 profile + 独立 requirement_dir。
-  - 文档落地：`requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），目录名英文 slug（kebab-case），中文名存 `需求说明.md` 首行 + workspace state 的 title，只在总览/集成报告显示。
+  - 文档落地：`requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），目录名英文 slug（kebab-case），中文名存 `docs/需求说明.md` 首行 + workspace state 的 title，只在总览/集成报告显示。
   - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 断证据链）、不用 cherry-pick（丢追溯链）。
   - `requirement_workspace.py` 新增 `integrate`（汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md` + 各通道标 MERGED+批次号）、扩展 `index --main-worktree`（刷新全局 `<主工作树>/document/需求总览.md`，六列含分支和集成批次，分支自动从 workspace state 填）。
   - 不污染门禁：document/ 随 Android 项目代码提交；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。
@@ -429,7 +429,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 22. 共享不变量、总入口编排和专项细节各自只有一个运行时规则来源；其他文档只解释或导航，不复制第二套可执行规则。
 23. 测试预期必须有独立事实来源，疑难问题先建立可靠复现；领域资料只在目标项目已存在时按需读取，纵向切片只服务大型需求，不能把这些增强扩张为普通小需求的固定仪式。
 24. 用户只看到确认需求、拆分测试与确认计划、实现验证、变更后增量循环和最终交付五步；内部三阶段、Git 基线、追溯、路由、专项和机器证据保持不变，默认不向用户展开。
-25. `requirement_file` 始终是唯一需求事实；`实施计划.md` 只说明如何实现，不得改写业务需求。需求、计划或影响半径变化后重新确认受影响计划和半径，旧 route 和证据不得复用。
+25. `requirement_file` 始终是唯一需求事实；`docs/实施计划.md` 只说明如何实现，不得改写业务需求。需求、计划或影响半径变化后重新确认受影响计划和半径，旧 route 和证据不得复用。
 26. 编码中需求增删改必须走增量影响半径：只处理受影响义务、测试和代码；最终 diff 超出已确认半径时阻断通过，不能由 AI 口头豁免。
 27. 影响半径的允许范围只用精确路径和目录前缀两种确定性匹配，禁止通配符；无锚点通配（如 `**/*.kt`）放行整个仓库使门禁失效，目录前缀必须以 `/` 结尾避免兄弟目录歧义。
 28. Kotlin 项目变异测试必须排除 `kotlin.jvm.internal.Intrinsics` 等编译器注入的变异，否则正常交付永远 `survived > 0` 使 FULL_PASS 门禁失效；排除只针对编译器插桩，不排除业务代码变异。

@@ -207,20 +207,22 @@ class RequirementWorkspaceTests(unittest.TestCase):
                 (archived / "requirement-workspace.json").read_text(encoding="utf-8")
             )["status"],
         )
-        self.assertTrue((new_dir / "requirement.md").is_file())
-        self.assertTrue((new_dir / "需求说明.md").is_file())
-        for name in ("api", "ui", "test-cases", "test-results", "config", "issues"):
+        self.assertTrue((new_dir / "docs" / "视频下载页登录拦截.md").is_file())
+        self.assertTrue((new_dir / "docs" / "需求说明.md").is_file())
+        for name in ("test-cases", "test-results", ".state"):
             self.assertTrue((new_dir / name).is_dir())
-        # 人读产物子目录必须随新需求一起创建，否则 AI 手写产物无处落盘。
+        # 专项资料和扩展 Markdown 目录按需创建，避免每个需求留下空目录。
+        for name in ("api", "ui", "config", "issues"):
+            self.assertFalse((new_dir / name).exists(), f"不应默认创建按需目录: {name}")
         for name in ("plan", "review", "decisions"):
-            self.assertTrue((new_dir / name).is_dir(), f"缺少人读产物子目录: {name}")
+            self.assertFalse((new_dir / "docs" / name).exists(), f"不应默认创建扩展目录: {name}")
         updated = self.config_path.read_text(encoding="utf-8")
         self.assertIn("# 必须保留的中文配置注释", updated)
         self.assertIn(
             'requirement_dir: "requirements-runtime/REQ-20260721-002-视频下载页登录拦截"',
             updated,
         )
-        self.assertIn('requirement_file: "requirement.md"', updated)
+        self.assertIn('requirement_file: "docs/视频下载页登录拦截.md"', updated)
         self.assertEqual((), plan.workspaces)
         self.assertFalse(self.current.exists())
 
@@ -260,7 +262,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertEqual(config_before, self.config_path.read_text(encoding="utf-8"))
         self.assertTrue((self.current / "requirement.docx").is_file())
         self.assertFalse((self.current / "requirement-workspace.json").exists())
-        self.assertFalse((self.current / "需求说明.md").exists())
+        self.assertFalse((self.current / "docs" / "需求说明.md").exists())
         self.assertFalse(any(item.name.startswith("REQ-") for item in policy.root.iterdir()))
 
     def test_reclaim_requires_count_and_age_and_never_deletes_active(self) -> None:
@@ -315,7 +317,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertTrue(damaged.is_dir())
 
     def test_reclaim_archives_human_md_before_delete(self) -> None:
-        """回收前把关键人读 md 归档到 archive/，源目录删除后证据仍可查。"""
+        """回收前把完整 docs/ 归档到 archive/，源目录删除后人读记录仍可查。"""
         from ..requirement_workspace import (
             archive_before_reclaim,
             render_workspace_index,
@@ -331,10 +333,10 @@ class RequirementWorkspaceTests(unittest.TestCase):
         now = datetime(2026, 7, 21, tzinfo=timezone.utc)
         done = policy.root / "REQ-20260701-001-已完成需求"
         done.mkdir()
-        (done / "需求说明.md").write_text("# 需求正文", encoding="utf-8")
-        (done / "续接指南.md").write_text("# 续接", encoding="utf-8")
-        (done / "decisions").mkdir()
-        (done / "decisions" / "2026-07-01-不引库.md").write_text("# 决策", encoding="utf-8")
+        (done / "docs").mkdir()
+        (done / "docs" / "需求说明.md").write_text("# 需求正文", encoding="utf-8")
+        (done / "docs" / "续接指南.md").write_text("# 续接", encoding="utf-8")
+        (done / "docs" / "决策-2026-07-01-不引库.md").write_text("# 决策", encoding="utf-8")
         (done / "test-cases").mkdir()
         (done / "test-cases" / "requirement-revision.json").write_text("{}", encoding="utf-8")
         _write_state(done, {
@@ -345,9 +347,9 @@ class RequirementWorkspaceTests(unittest.TestCase):
 
         archive = archive_before_reclaim(done, policy.root)
         self.assertIsNotNone(archive)
-        self.assertTrue((archive / "需求说明.md").is_file())
-        self.assertTrue((archive / "续接指南.md").is_file())
-        self.assertTrue((archive / "decisions" / "2026-07-01-不引库.md").is_file())
+        self.assertTrue((archive / "docs" / "需求说明.md").is_file())
+        self.assertTrue((archive / "docs" / "续接指南.md").is_file())
+        self.assertTrue((archive / "docs" / "决策-2026-07-01-不引库.md").is_file())
         self.assertFalse((archive / "test-cases").exists())
 
         index = render_workspace_index(policy.root)

@@ -35,9 +35,9 @@ requirement_dir: "ai-skills/current-requirement"
 
 # 必填：需求正文文件，可以是绝对路径，也可以相对于 requirement_dir。
 # 支持 .docx、.md、.markdown 和 .txt。
-# 推荐 .md：docx 仅作初始输入，首次 init 时自动读取 docx 并转写成 requirement.md。
-# 以后所有增量、修订和门禁都以 requirement.md 为准（docx 是 OOXML，无法可靠增量编辑）。
-requirement_file: "requirement.docx"
+# 推荐 .md：docx 仅作初始输入，首次 init 时自动读取 docx 并转写成 docs/<需求名>.md。
+# 以后所有增量、修订和门禁都以 docs/<需求名>.md 为准（docx 是 OOXML，无法可靠增量编辑）。
+requirement_file: "docs/requirement.docx"
 
 # 串行需求工作区管理策略。
 # 只有用户明确说“开始下一个需求”时才执行轮换；同一需求的补充、修改和重测不触发。

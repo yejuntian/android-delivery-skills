@@ -351,6 +351,7 @@ class RunJourneyTest(unittest.TestCase):
             encoding="utf-8",
         )
         plan = implementation_plan_path(requirement.parent)
+        plan.parent.mkdir(parents=True, exist_ok=True)
         plan.write_text(self.valid_plan("错误提示"), encoding="utf-8")
         first_scope = run_journey.requirement_scope_id(config_path, config)
 
@@ -498,6 +499,7 @@ class RunJourneyTest(unittest.TestCase):
             },
         )
         plan = implementation_plan_path(requirement.parent)
+        plan.parent.mkdir(parents=True, exist_ok=True)
         plan.write_text(self.valid_plan("错误提示"), encoding="utf-8")
         radius = requirement.parent / "test-cases" / "impact-radius.json"
         radius.parent.mkdir(parents=True, exist_ok=True)

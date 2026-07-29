@@ -34,11 +34,11 @@ description: |
 
 ## 人读产物与续接
 
-- 机器 JSON 是门禁附件；脚本从 JSON 渲染同名 md 影子供用户自检：`续接指南.md`（每次 `init`、`confirm-plan` 和最终报告刷新，聚合需求快照/映射/计划收据/最终结论）、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`、`test-cases/traceability.md`、`test-results/交付结论.md`（强制未验证项与残留风险段）。需求语义先写入配置的 `requirement_file`，确认后必须同步相关人读 Markdown；JSON 只做机器校验，不能替代需求追溯。
-- 续做旧需求时，先读 `<requirement_dir>/续接指南.md`，秒懂当前修订、义务状态（CURRENT/STALE）、计划是否确认、最终结论和下一步，不翻聊天。
-- 协作待办、`review/变更审查.md`（Diff 发现 + Context 发现双表）、`decisions/<日期>-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 手写，必须填 `android-implement-and-verify/templates/` 骨架（plan/review/decision 等）。
-- 补充文档目录：`config/` 只记非密配置元数据（key 名/环境/owner/来源，绝不存 token/私钥/凭据）；`issues/` 每个问题一个 md（bug/数据偏差/QA反馈/Journey 失败，含现象/根因/处置/证据）；`ui/design-notes.md` 记设计说明文字（页面状态/交互/资源对照/与实现差异）。均填对应模板骨架。
-- 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前先归档关键人读 md 到 `archive/<requirement_id>/`，机器 JSON 随源清理。维护或扩展流程前先读 `decisions/`，避免重复推翻已确认取舍。
+- 机器 JSON 是门禁附件；所有人工 Markdown 统一放在 `<requirement_dir>/docs/`，脚本从 JSON 渲染 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`、`docs/需求测试追溯.md` 和 `docs/交付结论.md`。需求语义先写入配置的 `requirement_file`，确认后必须同步相关人读 Markdown；JSON 只做机器校验，不能替代需求追溯。
+- 续做旧需求时，先读 `<requirement_dir>/docs/续接指南.md`，秒懂当前修订、义务状态（CURRENT/STALE）、计划是否确认、最终结论和下一步，不翻聊天。
+- 协作待办、`docs/审查-<主题>.md`（Diff 发现 + Context 发现双表）、`docs/决策-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 按需手写，必须填 `android-implement-and-verify/templates/` 骨架（plan/review/decision 等）。
+- 补充资料按需创建：`api/` 保存接口原始资料，`ui/` 保存截图和设计证据，`config/` 只记非密配置元数据（key 名/环境/owner/来源，绝不存 token/私钥/凭据），`issues/` 只保存问题附件或机器记录；问题说明统一写 `docs/问题-<主题>.md`，设计说明统一写 `docs/design-note.md`。简单需求不创建这些目录。
+- 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前完整归档 `docs/` 到 `archive/<requirement_id>/`，机器 JSON 和原始证据随源清理。维护或扩展流程前先读 `docs/决策-*.md`，避免重复推翻已确认取舍。
 
 ## 增量闭环铁律（任何阶段需求变更都触发，AI 必须自动完成，不等用户指示）
 
@@ -46,7 +46,7 @@ description: |
 
 `confirm-requirement-update` 成功后，如果续接指南有 STALE 或新增场景，AI 必须继续完成受影响闭环，但计划或影响半径变化时仍要等待用户重新确认：
 
-1. **更新计划边界**：先同步 `<requirement_dir>/实施计划.md` 和 `test-cases/impact-radius.json`，登记场景变化、允许文件/目录前缀、受影响模块和测试。
+1. **更新计划边界**：先同步 `<requirement_dir>/docs/实施计划.md` 和 `test-cases/impact-radius.json`，登记场景变化、允许文件/目录前缀、受影响模块和测试。
 2. **重新确认计划**：需求、计划或影响半径任一变化都会使旧确认失效；展示更新内容并等待确认，`confirm-plan` 成功前不得修改代码。
 3. **重建测试映射**：执行 `init-test-mapping`，为 STALE/新增场景登记真实测试 ID；先补业务断言并确认 Red。
 4. **最小实现**：只改当前影响半径内的生产代码，使受影响场景 Green；不碰未变化场景和无关已交付逻辑。
@@ -60,7 +60,7 @@ description: |
 
 计划确认后按 BDD 场景执行测试先行，编码完成后不能直接跳 `route + gate`：
 
-1. **先建立测试清单**：执行 `init-test-mapping`，在 `test-results/测试结果.md` 记录每个 BDD 场景的预期、测试层、真实测试 ID 和执行方式。
+1. **先建立测试清单**：执行 `init-test-mapping`，在 `docs/测试结果.md` 记录每个 BDD 场景的预期、测试层、真实测试 ID 和执行方式。
 2. **先写失败测试**：逐个 BDD 补业务断言并观察 Red；测试在实现前已通过时，先检查断言是否真正覆盖新行为。
 3. **再写最少实现**：只修改影响半径内代码使测试 Green，再做必要重构并重跑受影响测试。
 4. **自动保存 TDD 周期**：Red 和 Green 都通过 `execution_evidence.py` 收据后，分别执行
@@ -74,7 +74,7 @@ description: |
 ## 并行需求通道（多窗口同时推进）
 
 - 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。机器状态位于各自 `requirement_dir/.state`；隔离边界是需求目录，不是 profile 名称。
-- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交）；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`check-env` 只把当前 `<requirement_dir>` 下的文档排除出“代码脏工作区”，`route`、执行收据和最终门禁排除 `document/` 作为交付证据目录，文档变化不触发代码影响面、不污染 `snapshot_sha256`，但可以 `git add`/提交以保留需求证据链。
+- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交），人工 Markdown 统一放在该需求目录的 `docs/`，机器 JSON 继续放在 `.state/`、`test-cases/` 和 `test-results/`；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `docs/需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`check-env` 只把当前 `<requirement_dir>` 下的文档排除出“代码脏工作区”，`route`、执行收据和最终门禁排除 `document/` 作为交付证据目录，文档变化不触发代码影响面、不污染 `snapshot_sha256`，但可以 `git add`/提交以保留需求证据链。
 - 不冲突的需求（改不同文件）各窗口独立闭环，从 `init`/`check-env` 到 `route`/`delivery_gate` 全套自带 `--config`。改同一文件时 git 合入自然报冲突，不做预检。
 - 合并用 `git merge --no-ff`（线性主干 + merge commit 标记需求边界 + 提交 hash 保留，证据链不断）；不用 rebase（改写 hash 使 worktree 证据失效）、不用 cherry-pick（丢追溯链）。合入后在最终代码上重跑受影响门禁。
 - 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md`，各通道标 `MERGED`+批次号；`index --main-worktree <主工作树>` 刷新全局总览到 `<主工作树>/document/需求总览.md`（六列含分支和集成批次）。
@@ -84,8 +84,8 @@ description: |
 
 ### 需求拆细铁律
 
-- `requirement.md`（或 docx 转写的 md）使用场景级 BDD：每个 `### BDD-### 场景名称` 必须包含 Given/When/Then。独立触发、异常和边界拆成独立场景；同一触发下多个验收结果使用结构化 `Then:` 列表表达，例如 `- visible_state: 显示失败状态`，不得用自由文本或 `And` 隐藏多个结果。
-- 信息不足的字段、文案、接口、数据来源必须进 requirement.md 的"待确认"段追问，不得脑补后写进需求说明。
+- `<需求名>.md`（或 docx 转写的 md）使用场景级 BDD：每个 `### BDD-### 场景名称` 必须包含 Given/When/Then。独立触发、异常和边界拆成独立场景；同一触发下多个验收结果使用结构化 `Then:` 列表表达，例如 `- visible_state: 显示失败状态`，不得用自由文本或 `And` 隐藏多个结果。
+- 信息不足的字段、文案、接口、数据来源必须进 `<需求名>.md` 的"待确认"段追问，不得脑补后写进需求说明。
 - 模板在 `android-implement-and-verify/templates/requirement.md`。`## 待确认` 必须存在，确认前只能写 `- 无`；否则后续命令阻断。
 
 ### 稳定 ID 与场景门禁
@@ -106,9 +106,9 @@ description: |
 
 ### 人工事实源与机器产物
 
-- 人主要维护 `需求说明.md`、`实施计划.md`、业务代码和测试代码；不要要求用户手填修订号、摘要、route、证据引用或最终报告字段。
+- 人主要维护 `requirement_file` 和 `docs/实施计划.md`、业务代码和测试代码；不要要求用户手填修订号、摘要、route、证据引用或最终报告字段。
 - 脚本维护 `requirement-snapshot.json`、`requirement-revision.json`、`test-mapping.json`、`impact-radius.json`、确认收据、route、证据和最终结果。
-- `test-cases/traceability.md` 由脚本从当前需求快照、测试映射和交付结果自动渲染，仅供阅读，不是第二事实源或独立 gate。
+- `docs/需求测试追溯.md` 由脚本从当前需求快照、测试映射和交付结果自动渲染，仅供阅读，不是第二事实源或独立 gate。
 - 每个已确认 BDD 必须映射到测试或可复现人工验收；这是需求覆盖，不等于代码行覆盖率。
 
 ### 中途需求修订
@@ -207,7 +207,7 @@ python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py next 
   --previous-outcome 已完成
 ```
 
-用户确认预览后，使用完全相同的命令追加 `--confirm`。脚本要求 Android 项目工作区干净，保留上一需求，创建 `REQ-日期-序号-中文名称` 目录及中文 `需求说明.md`，并只更新本机配置中的活动需求路径；不操作 Android 源码或 Git。轮换完成后继续执行下方阶段 1，确认新需求理解后，阶段 2 使用 `check-env --new-requirement` 建立新基线。不得直接跳到 `check-env --new-requirement`。
+用户确认预览后，使用完全相同的命令追加 `--confirm`。脚本要求 Android 项目工作区干净，保留上一需求，创建 `REQ-日期-序号-中文名称` 目录及 `docs/需求说明.md`，并只更新本机配置中的活动需求路径；不操作 Android 源码或 Git。轮换完成后继续执行下方阶段 1，确认新需求理解后，阶段 2 使用 `check-env --new-requirement` 建立新基线。不得直接跳到 `check-env --new-requirement`。
 
 查看当前目录和回收候选使用 `requirement_workspace.py status`。历史需求和 `tempfile` 只有状态明确、不是活动需求且同时超过最近保留数量和保留天数时才成为候选；`next` 预览会明确列出候选，同一命令追加 `--confirm` 后才随轮换回收。也可以单独执行 `prune` 预览，再用 `prune --confirm` 回收。确认写操作使用单写锁；另一个窗口正在轮换或回收时停止，绝不覆盖其配置、锁或目录。轮换成功但回收失败时，新需求目录和配置仍然有效；明确告诉用户只需修复权限或路径后单独重试 `prune`，不得再次执行 `next` 制造重复需求。
 
@@ -262,7 +262,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
 ```
 
-退出码 `0` 只表示最新版需求已确认，不表示允许编码；删除、替代或冲突时提供显式 `--revision-file`。确认后把全部 BDD 映射为测试清单，将唯一实施计划写到 `<requirement_dir>/实施计划.md`，并生成 `<requirement_dir>/test-cases/impact-radius.json`。影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED；计划必须包含“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”。此时保持只读，展示计划后等待用户确认。
+退出码 `0` 只表示最新版需求已确认，不表示允许编码；删除、替代或冲突时提供显式 `--revision-file`。确认后把全部 BDD 映射为测试清单，将唯一实施计划写到 `<requirement_dir>/docs/实施计划.md`，并生成 `<requirement_dir>/test-cases/impact-radius.json`。影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED；计划必须包含“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”。此时保持只读，展示计划后等待用户确认。
 
 用户明确确认已经展示的计划后运行：
 
@@ -270,7 +270,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 ```
 
-退出码 `0` 才允许编码。该命令生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，并同步刷新 `续接指南.md`、`test-cases/需求修订说明.md`、`test-cases/测试映射说明.md`（存在时）和 `test-cases/traceability.md`；不修改业务文件或 Git。需求语义必须先写入 `requirement_file`，计划变化必须先写入同一份 `实施计划.md`，相关人读 Markdown 同步成功后才允许进入编码。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划五类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
+退出码 `0` 才允许编码。该命令生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，并同步刷新 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`（存在时）和 `docs/需求测试追溯.md`；不修改业务文件或 Git。需求语义必须先写入 `requirement_file`，计划变化必须先写入同一份 `docs/实施计划.md`，相关人读 Markdown 同步成功后才允许进入编码。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `docs/实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划五类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
 1. **BDD + TDD**：先把全部已确认 BDD 映射到真实测试，再逐场景执行 `Red -> Green -> Refactor`。Red 必须由业务断言失败证明，并由自动生成的 `.state/tdd-cycle.json` 保存 Red receipt、Green receipt、代码快照、测试源码快照和 BDD/testcase 关系；Green 后再重构并重跑受影响测试。一个 BDD 可以由 Unit、集成、UI 或人工证据共同覆盖，但任何工具不得越过自己的断言边界。
 2. **主动检索与共享边界保护**：动笔前，主动寻找同类组件、Base 类和测试范式，并复核拟修改共享边界的每个已上线业务调用方已归入“明确修改、必须保护、暂时无法确认”。新发现项按中途需求修订同步确认；未明确授权且旧行为有可靠依据时默认保护，依据不足或与新需求冲突时暂停。按上一条先运行或补齐保护测试，闭环前不得修改共享边界；能够局部实现时优先新增语义明确的入口、overload 或策略，保持旧入口默认语义不变。
 3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。
@@ -286,7 +286,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 - **验收语义不变**：不执行 `init`、`confirm-requirement-update`、`route`、全部专项 Reviewer 或最终报告。只检查本轮修改落点和调用方，确认仍落在已确认 `impact-radius.json` 内，做最小代码修改，更新对应测试，并调用 `android-test-and-fix` 的局部迭代模式运行受影响测试；生产代码变化时追加能够发现引用或签名错误的最小编译，删除代码时必须先检查调用方。
 - **验收语义变化**：把用户确认的变化同步到 `requirement_file`；如果补充内容改变已有业务的“修改/保护”处置，同时更新置顶影响说明和对应 BDD 场景。只对受影响场景执行需求修订与确认，同步同一份实施计划和 `impact-radius.json` 并重新获得确认，再按上一条进入局部迭代；未变化的 BDD 场景、代码和测试不得重做。
 - **风险直接扩大**：如果本轮修改触及数据库迁移、公共 API、支付、鉴权、安全、权限、生命周期或其他 L3 边界，只追加能够验证该风险的最小专项，不机械运行全部专项。
-- **局部结果边界**：只向用户报告本轮修改、执行的测试/最小编译、结果和剩余风险；不得生成新的整体通过结论，也不得把旧 `delivery-summary.md` 当成当前代码的最终报告。
+- **局部结果边界**：只向用户报告本轮修改、执行的测试/最小编译、结果和剩余风险；不得生成新的整体通过结论，也不得把旧 `docs/交付结论.md` 当成当前代码的最终报告。
 
 局部迭代可以重复多次。仅因代码写完不得自动进入阶段 3；用户当前或最初请求明确包含“最终检查、完整交付、准备提交”等意图时，才进入最终交付。如果之前已经生成过最终结果，任何后续代码、测试、资源或构建配置变化都会使其失效，但不要求在每次局部迭代后立刻重跑完整门禁。
 
@@ -342,7 +342,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
 python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 ```
 
-校验命令在机器结果结构可信后同步生成 `<requirement_dir>/test-results/delivery-summary.md`；无论结论是通过、未完成还是受阻，最终回复都必须优先展示并链接这份中文摘要，`delivery-result.json` 只作为机器附件。只有退出码为 0 才允许使用通过结论。`INCOMPLETE/BLOCKED` 可以诚实保存并生成摘要，但不会被当成交付通过。机器文件是一次性交付结果，不是 phase/state 状态机。
+校验命令在机器结果结构可信后同步生成 `<requirement_dir>/docs/交付结论.md`；无论结论是通过、未完成还是受阻，最终回复都必须优先展示并链接这份中文摘要，`delivery-result.json` 只作为机器附件。只有退出码为 0 才允许使用通过结论。`INCOMPLETE/BLOCKED` 可以诚实保存并生成摘要，但不会被当成交付通过。机器文件是一次性交付结果，不是 phase/state 状态机。
 
 ### Definition of Done
 
@@ -350,7 +350,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 
 - 每个 BDD 场景均映射到实现及 JUnit 中真实通过的 testcase、Agent Journey 中实际执行的 action/check，或结构完整的实际人工收据；计划人工执行但尚未执行时不得写成已覆盖。
 - 需求修订状态为 `CONFIRMED`，不存在 `PENDING/CONFLICT`；最终报告的 obligation ID、必需性和语义摘要与当前有效 Then 集合完全一致。
-- 当前 `实施计划.md` 和 `test-cases/impact-radius.json` 已由用户确认，计划收据仍与需求修订、需求摘要、计划摘要和影响半径摘要一致；需求、计划或影响半径变化后没有复用旧确认或旧证据。
+- 当前 `docs/实施计划.md` 和 `test-cases/impact-radius.json` 已由用户确认，计划收据仍与需求修订、需求摘要、计划摘要和影响半径摘要一致；需求、计划或影响半径变化后没有复用旧确认或旧证据。
 - 当前需求快照、测试映射和最终结果绑定同一修订，覆盖全部必需 BDD 场景；机器生成追溯视图显示每个场景的测试、实际人工验收和证据状态。
 - 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
 - 必需命令在最后一次代码或测试修复后重新执行，最终报告记录命令、退出码、测试数、关键输出和报告/产物路径。
@@ -363,7 +363,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
 - 最终报告包含变更、测试命令与结果、自修复记录、失败分类、专项能力/工具降级、AI 替代、能力损失、所需用户输入、未验证项和剩余风险。
 - 所有用户可见结论均使用自然中文；英文机器枚举只保留在 JSON、Schema 和原始证据中，并通过统一呈现模块转换为包含原因和下一步的中文说明。
 - 没有真机但不涉及真机必需验收时，结论只能是“代码与本地门禁完成，真机专项待验证”；真机是明确验收条件时保持“未完成/受阻”，但不否定其他已完成范围。
-- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、已确认计划、已确认影响半径、UI/API 输入摘要、Git 基线、最终代码摘要和所有引用证据仍一致；同时已生成并向用户展示中文 `delivery-summary.md`。
+- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、已确认计划、已确认影响半径、UI/API 输入摘要、Git 基线、最终代码摘要和所有引用证据仍一致；同时已生成并向用户展示 `docs/交付结论.md`。
 
 任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
 

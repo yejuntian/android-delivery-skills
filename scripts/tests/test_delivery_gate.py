@@ -1315,7 +1315,7 @@ class DeliveryGateTests(unittest.TestCase):
                     "--config", str(Path(raw_root) / "local.yaml"),
                     "--result", str(result),
                 ])
-            summary = result.with_name("delivery-summary.md").read_text(encoding="utf-8")
+            summary = (result.parent.parent / "docs" / "交付结论.md").read_text(encoding="utf-8")
 
         self.assertEqual(0, exit_code)
         self.assertIn("全部验证通过", summary)
@@ -1346,7 +1346,7 @@ class DeliveryGateTests(unittest.TestCase):
                     "--config", str(Path(raw_root) / "local.yaml"),
                     "--result", str(result),
                 ])
-            summary = result.with_name("delivery-summary.md").read_text(encoding="utf-8")
+            summary = (result.parent.parent / "docs" / "交付结论.md").read_text(encoding="utf-8")
 
         self.assertEqual(2, exit_code)
         self.assertIn("尚未完成", summary)

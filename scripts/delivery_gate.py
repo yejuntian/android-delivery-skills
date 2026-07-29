@@ -53,6 +53,7 @@ from .impact_radius import (  # noqa: E402
 from .implementation_plan import (  # noqa: E402
     ImplementationPlanError,
     implementation_plan_path,
+    plan_confirmation_receipt_path,
     validate_plan_confirmation,
 )
 from .requirement_snapshot import (  # noqa: E402
@@ -270,7 +271,8 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
     if not expected_obligations:
         raise DeliveryGateError("当前确认修订没有 BDD 场景")
     result_path = (paths.requirement_dir / "test-results" / "delivery-result.json").resolve()
-    summary_path = result_path.with_name("delivery-summary.md")
+    docs_dir = paths.docs_dir
+    summary_path = (docs_dir / "交付结论.md").resolve()
     excluded = delivery_snapshot_exclusions(paths.project_path, paths.requirement_dir)
     try:
         snapshot = current_delivery_snapshot(
@@ -300,9 +302,10 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         "result_path": str(result_path),
         "summary_path": str(summary_path),
         "traceability_path": str(
-            (paths.requirement_dir / "test-cases" / "traceability.md").resolve()
+            (docs_dir / "需求测试追溯.md").resolve()
         ),
         "implementation_plan_path": str(implementation_plan_path(paths.requirement_dir)),
+        "plan_receipt_path": str(plan_confirmation_receipt_path(paths.requirement_dir)),
         "impact_radius_path": str(paths.impact_radius_path),
         "impact_radius_sha256": plan_context["impact_radius_sha256"],
         "impact_radius": radius_payload,
@@ -982,7 +985,7 @@ def _render_business_impact_summary(
     lines.extend([
         f"- 已登记旧业务保护项：{len(protected)} 项；已验证 {verified} 项；"
         f"尚未验证或受阻 {len(protected) - verified} 项。",
-        "- 详细实现、调用方和测试映射请查看当前需求的 `test-cases/traceability.md`。",
+        "- 详细实现、调用方和测试映射请查看当前需求的 `docs/需求测试追溯.md`。",
         "",
     ])
     return lines
@@ -1158,13 +1161,18 @@ def write_generated_traceability(
         "mappings": list(mapping_index.values())
     } if isinstance(mapping_index, dict) else None
     plan_receipt = None
+    receipt_path_value = context.get("plan_receipt_path")
     plan_path = context.get("implementation_plan_path")
-    if isinstance(plan_path, str):
-        receipt_path = (
-            Path(plan_path).resolve().parent
-            / "test-cases"
-            / "implementation-plan-receipt.json"
-        )
+    if isinstance(receipt_path_value, str):
+        receipt_path = Path(receipt_path_value).resolve()
+    elif isinstance(plan_path, str):
+        plan_root = Path(plan_path).resolve().parent
+        if plan_root.name == "docs":
+            plan_root = plan_root.parent
+        receipt_path = plan_root / "test-cases" / "implementation-plan-receipt.json"
+    else:
+        receipt_path = None
+    if receipt_path is not None:
         try:
             payload_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
@@ -1178,6 +1186,15 @@ def write_generated_traceability(
         )
     except OSError as exc:
         raise DeliveryGateError(f"需求测试追溯表无法写入: {path}: {exc}") from exc
+
+
+def _summary_path_from_context(context: dict[str, Any], result_path: Path) -> Path:
+    """Return the human-readable final report path with compatibility fallback."""
+    configured = context.get("summary_path")
+    if isinstance(configured, str) and configured.strip():
+        return Path(configured).expanduser().resolve()
+    requirement_dir = result_path.resolve().parent.parent
+    return (requirement_dir / "docs" / "交付结论.md").resolve()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1212,7 +1229,7 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(f"- {localize_machine_terms(error)}", file=sys.stderr)
         return 1
-    summary_path = result_path.with_name("delivery-summary.md")
+    summary_path = _summary_path_from_context(context, result_path)
     try:
         write_delivery_summary(summary_path, payload, context, result_path.name)
         write_generated_traceability(context["traceability_path"], payload, context)
@@ -1248,7 +1265,7 @@ def _cmd_assemble(args: argparse.Namespace, config_path: Path, context: dict[str
         for error in errors:
             print(f"- {localize_machine_terms(error)}", file=sys.stderr)
         return 1
-    summary_path = result_path.with_name("delivery-summary.md")
+    summary_path = _summary_path_from_context(context, result_path)
     try:
         write_delivery_summary(summary_path, payload, context, result_path.name)
         write_generated_traceability(context["traceability_path"], payload, context)

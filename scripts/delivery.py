@@ -789,18 +789,21 @@ def cmd_init(args):
     if not requirement_path:
         raise DeliveryError("未配置 requirement_file，无法读取需求正文")
 
-    # 事实源优先用 md：docx 仅作初始输入，init 自动读取 docx 并转写成 <需求名>.md。
+    # 事实源优先用 md：docx 仅作初始输入，init 自动读取 docx 并转写到 docs/<需求名>.md。
     # 以后所有增量、修订、门禁都以 md 为准，不碰 docx（docx 是 OOXML，AI 无法可靠增量编辑）。
     requirement_dir = paths.requirement_dir
     md_name = _md_filename_for_dir(requirement_dir)
-    md_path = requirement_dir / md_name
+    md_path = requirement_dir / "docs" / md_name
     if requirement_path.suffix.lower() == ".docx" and md_path.is_file():
         print(f"\n💡 检测到 {md_name} 已存在，优先以它为事实源（不再读 docx）。")
         requirement_path = md_path
-        paths = resolve_paths({**config, "requirement_file": md_name}, args.config)
+        paths = resolve_paths(
+            {**config, "requirement_file": (Path("docs") / md_name).as_posix()},
+            args.config,
+        )
         requirement_path = paths.requirement_path
     elif requirement_path.suffix.lower() == ".docx" and not md_path.is_file():
-        # 首次：AI 自动读取 docx 正文并转写成 <需求名>.md（事实源切换）。
+        # 首次：AI 自动读取 docx 正文并转写成 docs/<需求名>.md（事实源切换）。
         docx_content = read_requirement(requirement_path)
         md_path.parent.mkdir(parents=True, exist_ok=True)
         if not docx_content.strip():
@@ -812,14 +815,17 @@ def cmd_init(args):
             else:
                 md_path.write_text("# <需求标题>\n\n> 来源：图片型 docx，无文本正文，待 AI 后续填充\n\n## 需求说明\n\n（待填充）\n", encoding="utf-8")
             print(f"\n⚠️ 该 docx 是图片型，无法提取正文文字。")
-            print(f"⚠️ 已用模板骨架创建 {md_name}，AI 将在后续沟通中根据截图/Figma/用户补充逐步填充。")
-            print(f"⚠️ 填充后再次执行 init，流程会读取已填充的 {md_name}。")
+            print(f"⚠️ 已用模板骨架创建 docs/{md_name}，AI 将在后续沟通中根据截图/Figma/用户补充逐步填充。")
+            print(f"⚠️ 填充后再次执行 init，流程会读取已填充的 docs/{md_name}。")
         else:
             md_path.write_text(docx_content, encoding="utf-8")
-            print(f"\n💡 已自动读取 docx 并转写为 {md_name}（事实源）。")
-            print(f"💡 以后所有增量、修订和门禁都以 {md_name} 为准，原 docx 仅作初始记录保留。")
+            print(f"\n💡 已自动读取 docx 并转写为 docs/{md_name}（事实源）。")
+            print(f"💡 以后所有增量、修订和门禁都以 docs/{md_name} 为准，原 docx 仅作初始记录保留。")
         requirement_path = md_path
-        paths = resolve_paths({**config, "requirement_file": md_name}, args.config)
+        paths = resolve_paths(
+            {**config, "requirement_file": (Path("docs") / md_name).as_posix()},
+            args.config,
+        )
         requirement_path = paths.requirement_path
 
     content = read_requirement(requirement_path)
@@ -946,6 +952,14 @@ def _requirement_matches_snapshot(paths, snapshot) -> bool:
         return False
 
 
+def _docs_dir(paths) -> Path:
+    """返回人工 Markdown 目录；测试夹具仅提供 requirement_dir 时按当前结构派生。"""
+    docs_dir = getattr(paths, "docs_dir", None)
+    if docs_dir is not None:
+        return Path(docs_dir).resolve()
+    return (Path(paths.requirement_dir) / "docs").resolve()
+
+
 def _validated_plan_receipt(paths, snapshot, receipt, requirement_current: bool):
     """Return the receipt only when current requirement, plan, and radius still match it."""
     if not requirement_current or snapshot is None or not isinstance(receipt, dict):
@@ -1032,6 +1046,8 @@ def _render_resume_guide(
     if requirement_dir is None:
         return
     requirement_dir = Path(requirement_dir)
+    docs_dir = _docs_dir(paths)
+    docs_dir.mkdir(parents=True, exist_ok=True)
     if requirement_current is None:
         requirement_current = _requirement_matches_snapshot(paths, snapshot)
     # 路径优先用 ConfigPaths 属性；测试或旧调用方用 SimpleNamespace 时按 requirement_dir 派生。
@@ -1042,9 +1058,7 @@ def _render_resume_guide(
     receipt = _read_json(requirement_dir / "test-cases" / "implementation-plan-receipt.json")
     receipt = _validated_plan_receipt(paths, snapshot, receipt, requirement_current)
     delivery_result = _read_json(requirement_dir / "test-results" / "delivery-result.json")
-    resume_path = getattr(paths, "resume_guide_path", None) or (
-        requirement_dir / "续接指南.md"
-    )
+    resume_path = getattr(paths, "resume_guide_path", docs_dir / "续接指南.md")
     title = Path(requirement_dir).name
     try:
         guide = render_resume_guide(
@@ -1059,17 +1073,17 @@ def _render_resume_guide(
         write_resume_guide(Path(resume_path), guide)
         if snapshot is not None:
             write_text_atomic(
-                requirement_dir / "test-cases" / "需求修订说明.md",
+                docs_dir / "需求修订说明.md",
                 render_revision_md(snapshot),
             )
         if mapping is not None and snapshot is not None:
             write_text_atomic(
-                requirement_dir / "test-cases" / "测试映射说明.md",
+                docs_dir / "测试映射说明.md",
                 render_test_mapping_md(mapping, snapshot),
             )
         if snapshot is not None:
             write_text_atomic(
-                requirement_dir / "test-cases" / "traceability.md",
+                docs_dir / "需求测试追溯.md",
                 render_traceability_md(snapshot, mapping, delivery_result, receipt),
             )
         print(f"📄 续接指南已刷新: {resume_path}")
@@ -1274,7 +1288,7 @@ def cmd_confirm_requirement_update(args):
     print_confirmed_fact_sources(
         requirement_path,
         revision_file,
-        (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
+        (_docs_dir(paths) / "需求测试追溯.md").resolve(),
         action="拆分测试并生成实施计划和影响半径",
     )
     return 0
@@ -1301,14 +1315,14 @@ def cmd_confirm_plan(args):
     print(f"✅ 计划确认收据: {receipt_path}")
     print("✅ 收据已绑定当前需求修订、需求摘要、计划摘要和影响半径；任一内容变化后自动失效。")
     _render_resume_guide(paths, requirement_current=True, strict=True)
-    print("✅ 需求追溯 Markdown 已同步: 续接指南.md、需求修订说明.md、traceability.md")
+    print(f"✅ 需求追溯 Markdown 已同步: {_docs_dir(paths)}")
     mapping_path = getattr(paths, "test_mapping_path", None)
     if mapping_path is not None and Path(mapping_path).is_file():
         print("✅ 测试映射 Markdown 已同步: 测试映射说明.md")
     print_confirmed_fact_sources(
         requirement_path.resolve(),
         (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),
-        (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
+        (_docs_dir(paths) / "需求测试追溯.md").resolve(),
         action="编码、测试、route 和最终报告",
         plan_path=plan_path,
     )
@@ -1419,7 +1433,7 @@ def cmd_route(args):
     print_confirmed_fact_sources(
         paths.requirement_path.resolve(),
         (paths.requirement_dir / "test-cases" / "requirement-revision.json").resolve(),
-        (paths.requirement_dir / "test-cases" / "traceability.md").resolve(),
+        (_docs_dir(paths) / "需求测试追溯.md").resolve(),
         action="route、专项审查和最终报告",
         plan_path=implementation_plan_path(paths.requirement_dir),
     )

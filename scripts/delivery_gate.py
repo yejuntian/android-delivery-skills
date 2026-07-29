@@ -138,6 +138,11 @@ MANUAL_GATE_PROOFS = {
     "android-dynamic-leak",
     "android-performance",
 }
+
+
+def _gate_display(gate_id: object) -> str:
+    """显示交付门禁的中文语义，并保留机器 ID 便于定位。"""
+    return f"{gate_label(gate_id)}（{gate_id}）"
 BUSINESS_CHANGE_PREFIX = "【修改已上线业务】"
 BUSINESS_PROTECTION_PREFIX = "【保护已上线业务】"
 
@@ -344,6 +349,7 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
                 f"路由影响快照的 {field} 已失效，请在最终代码上重新执行 delivery.py route"
             )
     context["route_impact_path"] = str(route_path)
+    context["required_specialist_tasks"] = route_impact["specialist_tasks"]
     context["expected_conditional_gates"] = sorted(
         candidate["id"] for candidate in route_impact["conditional_gates"]
     )
@@ -688,6 +694,50 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             )
         return specialist_supports_gate(specialist_results.get(ref, {}), gate_id)
 
+    # route 只登记必需专项；最终门禁逐项核对对应 gate 是否已有当前版本结果。
+    # 这一步不执行 Skill，只防止漏跑专项后仍生成整体通过结论。
+    for task in context.get("required_specialist_tasks", []):
+        if not isinstance(task, dict):
+            continue
+        task_id = task.get("id", "未知任务")
+        gate_id = task.get("gate_id")
+        skill = task.get("skill", "未知专项")
+        name = gate_label(gate_id)
+        gate = gates.get(gate_id) if isinstance(gate_id, str) else None
+        if not isinstance(gate, dict):
+            errors.append(
+                f"专项任务 {name}（{skill}，{task_id}）未登记对应的交付门禁"
+            )
+            continue
+        refs = gate.get("evidence_ids")
+        if not isinstance(refs, list) or not refs:
+            errors.append(
+                f"专项任务 {name}（{skill}，{task_id}）缺少执行结果"
+            )
+            continue
+        if passing:
+            has_current_pass = any(
+                evidence_supports_gate(ref, gate_id)
+                for ref in refs
+                if isinstance(ref, str)
+            )
+            explicit_skip = (
+                gate.get("status") == "SKIPPED"
+                and gate.get("required") is False
+                and gate_id in set(context.get("expected_conditional_gates", []))
+                and isinstance(gate.get("reason"), str)
+                and bool(gate["reason"].strip())
+            )
+            pending_allowed = (
+                conclusion == "LOCAL_PASS_DEVICE_PENDING"
+                and gate.get("status") == "UNVERIFIED"
+                and gate_id in pending_capabilities
+            )
+            if not has_current_pass and not explicit_skip and not pending_allowed:
+                errors.append(
+                    f"专项任务 {name}（{skill}，{task_id}）没有当前代码对应的有效通过结果"
+                )
+
     unresolved_specialist_capabilities: dict[str, set[str]] = {}
     for ref, result in specialist_results.items():
         for capability in result.get("capabilities", []):
@@ -836,20 +886,22 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
 
     for identifier, item in gates.items():
         if not isinstance(item.get("required"), bool):
-            errors.append(f"gate {identifier}.required 必须是 boolean")
+            errors.append(f"交付门禁 {_gate_display(identifier)}.required 必须是 boolean")
         status = item.get("status")
         if status not in GATE_STATUSES:
-            errors.append(f"gate {identifier} 的 status 无效")
-        refs = validate_refs(f"gate {identifier}", item)
+            errors.append(f"交付门禁 {_gate_display(identifier)} 的状态无效")
+        refs = validate_refs(f"交付门禁 {_gate_display(identifier)}", item)
         if passing and item.get("required") is True and status != "PASS":
-            errors.append(f"必需 gate {identifier} 未通过")
+            errors.append(f"必需交付门禁 {_gate_display(identifier)} 未通过")
         if status == "PASS" and not refs:
-            errors.append(f"gate {identifier} 标记 PASS 但没有证据")
+            errors.append(f"交付门禁 {_gate_display(identifier)} 标记通过但没有证据")
         if status == "PASS" and refs and not any(
             evidence_supports_gate(ref, identifier)
             for ref in refs
         ):
-            errors.append(f"gate {identifier} 没有专属于本 gate 的有效通过证据")
+            errors.append(
+                f"交付门禁 {_gate_display(identifier)} 没有专属于本门禁的有效通过证据"
+            )
 
     if passing and not obligations:
         errors.append("通过结论至少需要一个 BDD 场景 obligation")
@@ -886,17 +938,23 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
         for gate_id in sorted(CORE_REQUIRED_GATES):
             gate = gates.get(gate_id)
             if not gate:
-                errors.append(f"通过结论缺少核心 gate: {gate_id}")
+                errors.append(f"通过结论缺少核心交付门禁：{_gate_display(gate_id)}")
             elif gate.get("required") is not True or gate.get("status") != "PASS":
-                errors.append(f"核心 gate {gate_id} 必须 required=true 且状态为 PASS")
+                errors.append(
+                    f"核心交付门禁 {_gate_display(gate_id)} 必须 required=true 且状态为通过"
+                )
         for gate_id in sorted(expected_conditional_gates):
             gate = gates.get(gate_id)
             if not gate:
-                errors.append(f"通过结论缺少路由或语义触发的条件 gate: {gate_id}")
+                errors.append(
+                    f"通过结论缺少路由或语义触发的条件交付门禁：{_gate_display(gate_id)}"
+                )
                 continue
             if gate.get("required") is True:
                 if gate.get("status") != "PASS":
-                    errors.append(f"适用的条件 gate {gate_id} 必须状态为 PASS")
+                    errors.append(
+                        f"适用的条件交付门禁 {_gate_display(gate_id)} 必须状态为通过"
+                    )
                 continue
             reason = gate.get("reason")
             refs = gate.get("evidence_ids", [])
@@ -909,12 +967,13 @@ def validate_delivery_result(payload: Any, context: dict[str, Any]) -> list[str]
             )
             if conditional_status != "SKIPPED" and not allowed_pending:
                 errors.append(
-                    f"条件 gate {gate_id} 非必需时只能 SKIPPED，设备待验时使用 UNVERIFIED 并登记 pending"
+                    f"条件交付门禁 {_gate_display(gate_id)} 非必需时只能标记为跳过，"
+                    "设备待验时使用尚未验证并登记待验项"
                 )
             if not isinstance(reason, str) or not reason.strip():
-                errors.append(f"条件 gate {gate_id} 跳过时必须说明需求与 diff 依据")
+                errors.append(f"条件交付门禁 {_gate_display(gate_id)} 跳过时必须说明需求与 diff 依据")
             if not isinstance(refs, list) or not refs:
-                errors.append(f"条件 gate {gate_id} 跳过时必须引用实际复核证据")
+                errors.append(f"条件交付门禁 {_gate_display(gate_id)} 跳过时必须引用实际复核证据")
     return errors
 
 

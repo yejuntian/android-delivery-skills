@@ -3,8 +3,8 @@
 
 用途：保存和校验最近一次 ``delivery.py route`` 产生的最小条件门禁快照。
 
-核心流程：只保存四类条件门禁及直接依据文件，并绑定当前需求修订、实施计划、
-影响半径、UI/API 输入、Git 基线和代码摘要；七类完整影响继续用于当次终端路由，不重复持久化。
+核心流程：保存专项任务清单、四类条件门禁及直接依据文件，并绑定当前需求修订、
+影响半径、Git 基线和代码摘要；本模块只登记任务，不执行专项 Skill。
 
 职责边界：不读取 Git、不判断业务是否真的适用、不执行 Skill 或测试，也不修改项目。
 """
@@ -30,18 +30,101 @@ CONDITIONAL_GATE_BASIS = {
     "ui_a11y": ("ui",),
     "security_privacy": ("api", "data", "system"),
 }
+ROUTE_IMPACT_VERSION = 5
+ROUTE_TASK_STATUSES = {"PENDING"}
+ROUTE_SPECIALIST_TASKS = {
+    "android-review-diff": "android-review-diff",
+    "android-review-code-quality": "android-review-code-quality",
+    "android-audit-stability": "android-audit-stability",
+    "android-test-and-fix": "android-test-and-fix",
+    "android-verify-api-contract": "android-verify-api-contract",
+    "android-verify-ui": "android-ui-a11y",
+}
 
 
 class RouteImpactError(RuntimeError):
     """表示路由影响快照缺失、损坏或已不属于当前交付上下文。"""
 
 
+def build_specialist_tasks(
+    impacts: dict[str, list[str]],
+    diff_files: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """根据 route 候选登记必需专项；只生成任务，不执行任何专项。"""
+    if diff_files is not None and not diff_files:
+        return []
+    all_files = sorted({
+        path
+        for category_files in impacts.values()
+        for path in category_files
+    })
+    if diff_files:
+        all_files = sorted(set(diff_files))
+    if not all_files:
+        return []
+
+    tasks: list[dict[str, Any]] = []
+
+    def add_task(
+        skill: str,
+        gate_id: str,
+        reason: str,
+        basis_files: list[str] | None = None,
+    ) -> None:
+        tasks.append({
+            "id": f"TASK-{skill}",
+            "skill": skill,
+            "gate_id": gate_id,
+            "required": True,
+            "status": "PENDING",
+            "basis_files": sorted(set(basis_files or all_files)),
+            "reason": reason,
+        })
+
+    add_task(
+        "android-review-diff",
+        "android-review-diff",
+        "默认审查实际 diff、需求边界和回归范围。",
+    )
+    add_task(
+        "android-review-code-quality",
+        "android-review-code-quality",
+        "默认审查代码职责、架构边界和可维护性。",
+    )
+    add_task(
+        "android-audit-stability",
+        "android-audit-stability",
+        "默认审查稳定性、生命周期、并发和兼容性风险。",
+    )
+    add_task(
+        "android-test-and-fix",
+        "android-test-and-fix",
+        "默认执行受影响测试、证据收集和失败修复闭环。",
+    )
+    if impacts.get("api"):
+        add_task(
+            "android-verify-api-contract",
+            "android-verify-api-contract",
+            "检测到接口候选，必须完成接口契约审查。",
+            impacts["api"],
+        )
+    if impacts.get("ui"):
+        add_task(
+            "android-verify-ui",
+            "android-ui-a11y",
+            "检测到 UI 候选，必须完成独立界面与无障碍验收。",
+            impacts["ui"],
+        )
+    return tasks
+
+
 def build_route_impact(
     context: dict[str, Any],
     impacts: dict[str, list[str]],
     conditional_candidates: dict[str, bool | None],
+    diff_files: list[str] | None = None,
 ) -> dict[str, Any]:
-    """构造稳定快照；只保存候选事实，不把路径命中写成最终业务结论。"""
+    """构造稳定快照；候选只形成待执行任务，不直接视为专项结论。"""
     conditional_gates = []
     for candidate_id, gate_id in CONDITIONAL_GATE_IDS.items():
         if not conditional_candidates.get(candidate_id):
@@ -56,7 +139,7 @@ def build_route_impact(
             "basis_files": basis_files,
         })
     return {
-        "version": 4,
+        "version": ROUTE_IMPACT_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "requirement_id": context["requirement_id"],
         "requirement_revision": context["requirement_revision"],
@@ -67,6 +150,7 @@ def build_route_impact(
         "plan_confirmation_receipt_sha256": context["plan_confirmation_receipt_sha256"],
         "baseline_id": context["baseline_id"],
         "snapshot_sha256": context["snapshot_sha256"],
+        "specialist_tasks": build_specialist_tasks(impacts, diff_files),
         "conditional_gates": conditional_gates,
     }
 
@@ -76,8 +160,8 @@ def validate_route_impact(payload: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["路由影响快照根节点必须是 object"]
-    if payload.get("version") != 4:
-        errors.append("路由影响快照 version 必须为 4")
+    if payload.get("version") != ROUTE_IMPACT_VERSION:
+        errors.append(f"路由影响快照 version 必须为 {ROUTE_IMPACT_VERSION}")
     for field in (
         "requirement_id",
         "requirement_file_sha256",
@@ -104,6 +188,47 @@ def validate_route_impact(payload: Any) -> list[str]:
             errors.append(f"路由影响快照 {field} 必须是 SHA-256")
     if not isinstance(payload.get("requirement_revision"), int) or payload["requirement_revision"] < 1:
         errors.append("路由影响快照 requirement_revision 必须是正整数")
+
+    tasks = payload.get("specialist_tasks")
+    if not isinstance(tasks, list):
+        errors.append("路由影响快照 specialist_tasks 必须是数组")
+    else:
+        seen_task_ids: set[str] = set()
+        for index, task in enumerate(tasks):
+            if not isinstance(task, dict) or set(task) != {
+                "id", "skill", "gate_id", "required", "status", "basis_files", "reason"
+            }:
+                errors.append(
+                    f"specialist_tasks[{index}] 必须只包含 id、skill、gate_id、required、status、basis_files、reason"
+                )
+                continue
+            task_id = task.get("id")
+            if not isinstance(task_id, str) or not task_id.startswith("TASK-"):
+                errors.append(f"specialist_tasks[{index}].id 必须以 TASK- 开头")
+            elif task_id in seen_task_ids:
+                errors.append(f"specialist_tasks 存在重复 id: {task_id}")
+            else:
+                seen_task_ids.add(task_id)
+            skill = task.get("skill")
+            if skill not in ROUTE_SPECIALIST_TASKS:
+                errors.append(f"specialist_tasks[{index}].skill 不是允许的专项 Skill")
+            elif task.get("gate_id") != ROUTE_SPECIALIST_TASKS[skill]:
+                errors.append(f"specialist_tasks[{index}].gate_id 与 skill 不匹配")
+            if task.get("required") is not True:
+                errors.append(f"specialist_tasks[{index}].required 必须为 true")
+            if task.get("status") not in ROUTE_TASK_STATUSES:
+                errors.append(f"specialist_tasks[{index}].status 必须为 PENDING")
+            basis_files = task.get("basis_files")
+            if (
+                not isinstance(basis_files, list)
+                or not basis_files
+                or not all(isinstance(path, str) and path for path in basis_files)
+            ):
+                errors.append(f"specialist_tasks[{index}].basis_files 必须是非空字符串数组")
+            elif len(basis_files) != len(set(basis_files)):
+                errors.append(f"specialist_tasks[{index}].basis_files 不得重复")
+            if not isinstance(task.get("reason"), str) or not task["reason"].strip():
+                errors.append(f"specialist_tasks[{index}].reason 必须说明触发依据")
 
     gates = payload.get("conditional_gates")
     if not isinstance(gates, list):

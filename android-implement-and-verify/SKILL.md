@@ -152,7 +152,7 @@ description: |
 
 如果某一类影响面明确未涉及，编码后不得强行调用对应专项审查，只需在最终报告中说明“未涉及，已跳过”。
 
-编码后的 `route` 另行输出 UI、接口、数据、系统、构建、架构和测试七类工程候选。候选只提示需要复核的证据：API 候选增加 `android-verify-api-contract`；数据、系统、构建、架构和测试候选进入既有 diff、质量、稳定性和测试职责，不为它们新增万能 Skill，也不由脚本直接下业务结论。文档和测试文本不作为生产 data/system 候选来源。
+编码后的 `route` 另行输出 UI、接口、数据、系统、构建、架构和测试七类工程候选，并在 `.state/route-impact.json` 写入 `specialist_tasks`。任务清单只登记待执行专项，不直接调用 Skill；专项执行者完成后必须把结果绑定到对应 gate，最终交付门禁逐项检查清单中的任务是否有当前版本结果。API 候选增加 `android-verify-api-contract`；数据、系统、构建、架构和测试候选进入既有 diff、质量、稳定性和测试职责，不为它们新增万能 Skill，也不由脚本直接下业务结论。文档和测试文本不作为生产 data/system 候选来源。
 
 第二轮条件能力继续由现有 Skill 承载：OpenAPI 归接口契约，动态泄漏/性能/运行时安全归稳定性，迁移和自动化 A11y 归测试，视觉与人工 A11y 归独立 UI 验收。每项记录触发依据、适用性、工具、执行证据、能力损失和结论；详细边界见 `references/conditional-capability-gates.md`。
 
@@ -160,13 +160,13 @@ description: |
 
 - 需求确认后初判 `L1/L2/L3/BLOCKED`：`L1` 为局部单影响面且无高风险边界；`L2` 为可观察业务变化或两个以上影响面协作；`L3` 由支付/金额、鉴权/隐私、迁移、并发、生命周期、权限/后台/硬件、公共 API、R8/反射或核心跨模块链路触发；缺少继续当前范围必需的业务预期，或明确要求正式联调/像素级还原却缺少不可替代的契约/基准时为 `BLOCKED`，仅资料晚到且需求足以支撑临时实现时不阻断。
 - 风险根据业务后果、边界和调用链判断，不按代码行数判断。初判只决定测试准备，不得因此提前运行设备或 Journey。
-- **UI 验收前置预警**：需求理解或计划确认阶段若识别出本次涉及 UI 变更（页面/布局/资源/文案/交互），且 `android-verify-ui` profile 配置了设计稿或截图基准，必须在该阶段就告知用户“最终交付前需要运行 `android-verify-ui`，建议提前准备截图基准/设计稿”，而不是等到 route 阶段才提示。无设计基准时仍按既有规则在 route 阶段做 UI 基础检查，不阻塞最终结论。
+- **UI 验收前置预警**：需求理解或计划确认阶段若识别出本次涉及 UI 变更（页面/布局/资源/文案/交互），且 `android-verify-ui` profile 配置了设计稿或截图基准，必须在该阶段就告知用户“最终交付前需要运行 `android-verify-ui`，建议提前准备截图基准/设计稿”，而不是等到 route 阶段才提示。无设计基准时 route 仍登记 UI 专项任务，但允许最终结果明确为 `SKIPPED`，必须附中文原因和复核证据，不得静默省略。
 - 编码后根据最终 diff、调用链、variant 和可执行前置条件终判。发现额外影响时自动升级；只有证据证明影响收敛时才降级，并在实施计划和最终报告中说明原因。
 - 选择能够证明每个 BDD 场景的最低且足够测试层；UI 与业务混合需求必须拆层，任何单一工具通过都不能覆盖它没有断言的结果。
 
 ### 轻量 diff 触发规则
 
-进入最终交付时基于实际 diff 快速复核影响面（`delivery.py route` 的 `classify_route_impacts` 以路径候选为主，并保留必要的 UI/API/架构内容信号），不做全量矩阵分析，只判断是否触发专项审查。触发规则：UI 相关文件（res/Activity/Fragment/Adapter/Composable）有设计基准时提示用户单独运行 `android-verify-ui`，无基准时只在 diff/稳定性/质量审查中做 UI 基础检查；接口层（Api/Service/DTO/mapper/网络 Repository/缓存）触发 `android-verify-api-contract`；数据层（Entity/Dao/Database/DataStore/SharedPreferences）触发数据兼容；系统能力（Manifest/权限/通知/后台/WebView/DeepLink/文件）触发版本兼容；构建（Gradle/version catalog/R8/build-logic）触发依赖解析和模块方向，不自动升级版本；DI Module/模块 API 边界触发架构检查，测试文件复核断言有效性；纯 if/when/状态计算/排序/权限/开关逻辑按业务路径处理。脚本候选与 Diff Reviewer 的 `confirmed_impacts` 取并集，需求判断与实际 diff 不一致时重新标记并说明原因。详细路由顺序和条件能力映射见下方"路由规则"。
+进入最终交付时基于实际 diff 快速复核影响面（`delivery.py route` 的 `classify_route_impacts` 以路径候选为主，并保留必要的 UI/API/架构内容信号），不做全量矩阵分析，只判断是否触发专项审查。触发规则：UI 相关文件（res/Activity/Fragment/Adapter/Composable）登记 `android-verify-ui` 任务；有设计基准时必须完成独立 UI 验收，无基准时必须留下 `SKIPPED` 中文原因和复核证据；接口层（Api/Service/DTO/mapper/网络 Repository/缓存）触发 `android-verify-api-contract`；数据层（Entity/Dao/Database/DataStore/SharedPreferences）触发数据兼容；系统能力（Manifest/权限/通知/后台/WebView/DeepLink/文件）触发版本兼容；构建（Gradle/version catalog/R8/build-logic）触发依赖解析和模块方向，不自动升级版本；DI Module/模块 API 边界触发架构检查，测试文件复核断言有效性；纯 if/when/状态计算/排序/权限/开关逻辑按业务路径处理。脚本候选与 Diff Reviewer 的 `confirmed_impacts` 取并集，需求判断与实际 diff 不一致时重新标记并说明原因。详细路由顺序和条件能力映射见下方"路由规则"。
 
 ### 路由规则
 
@@ -176,7 +176,7 @@ description: |
   - 除非业务逻辑改变了 UI 状态展示，否则不做 UI 还原验证。
   - 除非业务逻辑改变了接口字段、请求参数、DTO、mapper、Repository 网络行为或缓存结构，否则不做接口契约审查。
 - UI 变更：
-  - 按上方轻量 diff 触发规则决定提示独立 UI 验收或记录设计资料缺口，不重复建立第二套路由判断。
+  - route 必须登记独立 `android-verify-ui` 任务；该任务由独立 Skill 执行，route 不直接调用。缺少设计基准时可以输出 `SKIPPED`，但最终门禁仍要求有中文原因和复核证据。
   - 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断 Journey 适用性，不向用户询问测试工具选择。只有布局、颜色、字号、间距或资源变化时标记 `SKIPPED_VISUAL_ONLY`；涉及点击、输入、导航、可见状态流转或系统交互时，按 BDD 场景聚合 `FULL/PARTIAL/NONE`，只为 Journey 可稳定覆盖的部分生成并执行用例。
   - 如果只是 UI 展示，不涉及接口字段或请求逻辑，跳过 `android-verify-api-contract`。
 - 接口 / 数据契约变更：
@@ -311,7 +311,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 - 最终 diff 中出现不在已确认 `impact-radius.json` 的代码文件时，完整通过必须阻断；只能把新增影响写回需求/计划/影响半径并重新确认，或移除无关改动，不能由 AI 在最终报告中口头豁免。
 - 已确认需求范围内的 P0/P1 技术问题发现后立即修复，并从受影响的最小测试集开始重跑；计划外已上线业务影响、需求冲突或业务预期不明确即使评为 P0/P1 也必须先重新确认。低风险 P2/P3 可修复时一并关闭。
 - 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
-- 最后执行 `android-test-and-fix` 的完整回归门禁；UI 变更时在报告中提示用户另行调用 `android-verify-ui`，不得在自动 route 中执行。
+- 最后按 `.state/route-impact.json` 的 `specialist_tasks` 逐项执行；`android-test-and-fix` 负责完整回归门禁，UI 变更时由独立 `android-verify-ui` 任务负责视觉与人工验收。route 不直接调用任何 Skill，最终门禁检查每项任务的当前结果。
 - `android-test-and-fix` 在此阶段先根据最终 diff 终判风险和测试层，再按 BDD 场景聚合 Journey `FULL/PARTIAL/NONE`；需求阶段的候选结论不能直接触发 Journey 执行，Journey 通过也不能替代未分配给它的证据。
 - PIT 只在当前影响半径含 `L3` 或 profile 的 `testing.mutation_testing.required=true` 时成为必需专项；L1/L2 不机械增加 PIT。
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。

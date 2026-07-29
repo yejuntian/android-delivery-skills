@@ -94,6 +94,7 @@ from .user_facing_labels import (  # noqa: E402
     REMOVAL_DISPOSITION_LABELS,
     SNAPSHOT_STATUS_LABELS,
     ChineseArgumentParser,
+    gate_label,
     localize_machine_terms,
     revision_label,
 )
@@ -757,18 +758,25 @@ def classify_conditional_gate_candidates(impacts):
     }
 
 
-def print_route_instructions(skills_to_run):
-    """打印路由审查指令，提示 AI 根据实际改动逐个触发对应 Skill。"""
+def print_route_instructions(skills_to_run, specialist_tasks=None):
+    """打印路由审查指令；route 登记任务，专项执行者负责产出结果。"""
     print("\n---")
-    print("👉 AI 指令：逐个调用以下 Skill。已确认范围内的 P0/P1 技术问题或测试失败必须修复并重跑：")
-    for skill in skills_to_run:
-        print(f"  - {skill}")
+    print("👉 AI 指令：按专项任务清单逐项执行并回填结果。已确认范围内的 P0/P1 技术问题或测试失败必须修复并重跑：")
+    if specialist_tasks:
+        for task in specialist_tasks:
+            print(
+                f"  - {gate_label(task['gate_id'])}（{task['skill']}）"
+                f" | 必需 | 待执行 | 任务 {task['id']}"
+            )
+    else:
+        for skill in skills_to_run:
+            print(f"  - {skill}")
     print("计划外旧业务影响、需求冲突或业务预期不明确即使是 P0/P1 也必须先询问用户，不得自动修复。")
     print("注意：一次只调用一个。修复导致 diff 变化时重新执行 route，直到路由稳定。")
     print("候选分类必须结合已确认需求和真实 diff 复核，不得凭文件名脑补业务变化。")
     print("第二轮条件能力只在候选适用时执行；无真机继续其他门禁，动态能力未验证不得写成通过。")
     print("最终必须执行 android-test-and-fix 全绿门禁；未执行项不得计为通过。")
-    print("UI 校验(android-verify-ui)不进自动队列；检测到 UI 变更时提示用户单独执行。")
+    print("UI 校验由 android-verify-ui 独立执行；route 不直接调用 Skill，最终交付门禁逐项检查结果。")
 
 
 def cmd_init(args):
@@ -1455,6 +1463,7 @@ def cmd_route(args):
             },
             impacts,
             conditional_gates,
+            diff_files=diff_files,
         )
         route_path = route_impact_path_for_config(resolved_config)
         write_route_impact(route_path, route_payload)
@@ -1520,32 +1529,19 @@ def cmd_route(args):
     print("  - 性能: 由 android-audit-stability 结合验收指标和性能敏感路径语义终判")
     print("  - 设备降级: 无真机时继续其他门禁；真机专项标未验证，不得冒充通过")
 
-    print("\n🚀 触发的专项审查(按执行顺序):")
-    print("\n【核心·业务逻辑层(必须先过,逐个执行)】")
-    skills_to_run = ["android-review-diff"]
-    print("  1. android-review-diff (默认:审查实际 diff 和影响范围)")
-
-    # 接口候选拥有独立契约 Skill；其他候选进入既有 diff/质量/稳定性/测试职责。
-    if api_files:
-        skills_to_run.append("android-verify-api-contract")
-        print("  2. android-verify-api-contract (检测到接口契约候选)")
+    specialist_tasks = route_payload["specialist_tasks"]
+    print("\n📋 专项任务清单（已写入路由影响快照；route 只登记，不执行）:")
+    if specialist_tasks:
+        for index, task in enumerate(specialist_tasks, start=1):
+            print(
+                f"  {index}. {gate_label(task['gate_id'])}（{task['skill']}）"
+                f" | 必需 | 待执行 | 任务 {task['id']}"
+            )
     else:
-        print("  2. android-verify-api-contract (跳过:无接口契约候选)")
-
-    skills_to_run.extend(["android-review-code-quality", "android-audit-stability", "android-test-and-fix"])
-    print("  3. android-review-code-quality (默认:代码质量和架构一致性)")
-    print("  4. android-audit-stability (默认:稳定性和兼容性风险)")
-    print("  5. android-test-and-fix (必跑:测试、自修复和全绿门禁；界面流程自动化测试仅适用时执行)")
-
-    # UI 验收依赖设备和设计基准，保持为独立手动闭环。
-    print("\n【独立·UI 验收(不进自动队列)】")
-    if ui_files:
-        print("  6. [建议单独执行] android-verify-ui (检测到 UI 候选，需结合 diff 复核)")
-        print("     └─ 只做截图与设计还原；界面流程功能测试由 android-test-and-fix 负责。")
-    else:
-        print("  6. android-verify-ui (跳过:无 UI 候选)")
-
-    print_route_instructions(skills_to_run)
+        print("  - 当前没有需要执行的专项任务")
+    print("  - UI 验收由独立 Skill 执行；界面流程功能测试由自动化测试 Skill 负责。")
+    skills_to_run = [task["skill"] for task in specialist_tasks]
+    print_route_instructions(skills_to_run, specialist_tasks)
 
 
 def _sync_test_mapping_after_revision(paths, snapshot) -> None:

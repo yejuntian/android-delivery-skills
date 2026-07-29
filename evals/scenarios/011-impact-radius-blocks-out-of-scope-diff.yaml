@@ -36,4 +36,4 @@ checks:
       - "android-implement-and-verify/references/route-impact.schema.json"
     contains:
       - "impact_radius_sha256"
-      - '"const": 4'
+      - '"const": 5'

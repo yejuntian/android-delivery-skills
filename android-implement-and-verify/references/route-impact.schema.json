@@ -16,10 +16,11 @@
     "plan_confirmation_receipt_sha256",
     "baseline_id",
     "snapshot_sha256",
+    "specialist_tasks",
     "conditional_gates"
   ],
   "properties": {
-    "version": { "const": 4 },
+    "version": { "const": 5 },
     "generated_at": { "type": "string", "format": "date-time" },
     "requirement_id": { "type": "string", "minLength": 1 },
     "requirement_revision": { "type": "integer", "minimum": 1 },
@@ -30,12 +31,53 @@
     "plan_confirmation_receipt_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "baseline_id": { "type": "string", "minLength": 1 },
     "snapshot_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "specialist_tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/specialist_task" }
+    },
     "conditional_gates": {
       "type": "array",
       "items": { "$ref": "#/$defs/gate" }
     }
   },
   "$defs": {
+    "specialist_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "skill", "gate_id", "required", "status", "basis_files", "reason"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^TASK-.+" },
+        "skill": {
+          "enum": [
+            "android-review-diff",
+            "android-review-code-quality",
+            "android-audit-stability",
+            "android-test-and-fix",
+            "android-verify-api-contract",
+            "android-verify-ui"
+          ]
+        },
+        "gate_id": {
+          "enum": [
+            "android-review-diff",
+            "android-review-code-quality",
+            "android-audit-stability",
+            "android-test-and-fix",
+            "android-verify-api-contract",
+            "android-ui-a11y"
+          ]
+        },
+        "required": { "const": true },
+        "status": { "const": "PENDING" },
+        "basis_files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
     "gate": {
       "type": "object",
       "additionalProperties": false,

@@ -644,7 +644,7 @@ class DeliveryGateTests(unittest.TestCase):
         ]
         errors = validate_delivery_result(self.payload, self.context)
 
-        self.assertTrue(any("缺少核心 gate: android-review-code-quality" in error for error in errors))
+        self.assertTrue(any("缺少核心交付门禁" in error and "代码质量与架构审查" in error for error in errors))
 
     def test_build_and_lint_require_execution_receipts(self) -> None:
         """验证专项审查或人工摘要不能冒充真实构建和 lint 命令。"""
@@ -654,8 +654,8 @@ class DeliveryGateTests(unittest.TestCase):
 
         errors = validate_delivery_result(self.payload, self.context)
 
-        self.assertTrue(any("gate android-build 没有专属于本 gate" in error for error in errors))
-        self.assertTrue(any("gate android-lint 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("项目构建" in error and "专属于本门禁" in error for error in errors))
+        self.assertTrue(any("Android 静态检查（Lint）" in error and "专属于本门禁" in error for error in errors))
 
     def test_automated_evidence_cannot_cross_gate_boundaries(self) -> None:
         """验证测试收据不能冒充构建、Lint 或迁移专项证据。"""
@@ -671,8 +671,8 @@ class DeliveryGateTests(unittest.TestCase):
         })
 
         errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("gate android-build 没有专属于本 gate" in error for error in errors))
-        self.assertTrue(any("gate android-data-migration 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("项目构建" in error and "专属于本门禁" in error for error in errors))
+        self.assertTrue(any("数据迁移检查" in error and "专属于本门禁" in error for error in errors))
 
     def test_empty_test_receipt_cannot_prove_test_gate(self) -> None:
         """验证 gate 标签正确也不能让零报告、零测试命令证明测试门禁。"""
@@ -710,7 +710,7 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("缺少实际执行大于零的 JUnit 报告" in error for error in errors))
-        self.assertTrue(any("gate android-test-and-fix 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("自动化测试与修复" in error and "专属于本门禁" in error for error in errors))
 
     def test_generic_automated_receipt_cannot_prove_specialist_gate(self) -> None:
         """验证 UI/安全等专项 gate 不能仅凭 AI 填写同名 gate_id 判绿。"""
@@ -739,7 +739,7 @@ class DeliveryGateTests(unittest.TestCase):
 
         errors = validate_delivery_result(self.payload, self.context)
 
-        self.assertTrue(any("gate android-ui-a11y 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("界面与无障碍检查" in error and "专属于本门禁" in error for error in errors))
 
     def test_api_contract_gate_rejects_specialist_pass_without_contract_evidence(self) -> None:
         """验证最终门禁不能接受 API 专项空 PASS 冒充契约核验。"""
@@ -786,7 +786,7 @@ class DeliveryGateTests(unittest.TestCase):
 
         self.assertTrue(any("API 契约专项" in error for error in errors))
         self.assertTrue(any(
-            "gate android-verify-api-contract 没有专属于本 gate" in error
+            "接口契约检查" in error and "专属于本门禁" in error
             for error in errors
         ))
 
@@ -794,7 +794,7 @@ class DeliveryGateTests(unittest.TestCase):
         """验证 route 检出的条件能力不能被最终报告直接省略。"""
         self.context["expected_conditional_gates"] = ["android-data-migration"]
         errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("缺少路由或语义触发的条件 gate" in error for error in errors))
+        self.assertTrue(any("缺少路由或语义触发的条件交付门禁" in error for error in errors))
 
         self.payload["gates"].append({
             "id": "android-data-migration",
@@ -802,6 +802,50 @@ class DeliveryGateTests(unittest.TestCase):
             "status": "SKIPPED",
             "evidence_ids": ["E-DIFF"],
             "reason": "实际仅修改内存缓存，没有持久化格式或旧数据迁移。",
+        })
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+    def test_requires_every_route_specialist_task_to_have_a_gate_result(self) -> None:
+        """验证 route 必需专项缺结果时，最终门禁用中文专项名称阻断。"""
+        self.context["required_specialist_tasks"] = [{
+            "id": "TASK-android-review-code-quality",
+            "skill": "android-review-code-quality",
+            "gate_id": "android-review-code-quality",
+            "required": True,
+            "status": "PENDING",
+            "basis_files": ["app/src/main/java/sample/Feature.kt"],
+            "reason": "代码质量专项为默认必需任务。",
+        }]
+        self.assertEqual([], validate_delivery_result(self.payload, self.context))
+
+        self.payload["gates"] = [
+            gate for gate in self.payload["gates"]
+            if gate["id"] != "android-review-code-quality"
+        ]
+        errors = validate_delivery_result(self.payload, self.context)
+        self.assertTrue(any(
+            "代码质量与架构审查" in error and "未登记" in error
+            for error in errors
+        ))
+
+    def test_route_specialist_task_can_record_explicit_conditional_skip(self) -> None:
+        """验证条件专项不适用时可跳过，但必须有中文原因和复核证据。"""
+        self.context["required_specialist_tasks"] = [{
+            "id": "TASK-android-verify-ui",
+            "skill": "android-verify-ui",
+            "gate_id": "android-ui-a11y",
+            "required": True,
+            "status": "PENDING",
+            "basis_files": ["app/src/main/java/sample/Feature.kt"],
+            "reason": "UI 候选已登记，等待适用性终判。",
+        }]
+        self.context["expected_conditional_gates"] = ["android-ui-a11y"]
+        self.payload["gates"].append({
+            "id": "android-ui-a11y",
+            "required": False,
+            "status": "SKIPPED",
+            "evidence_ids": ["E-DIFF"],
+            "reason": "当前没有设计基准，仅保留基础 UI 复核证据。",
         })
         self.assertEqual([], validate_delivery_result(self.payload, self.context))
 
@@ -863,7 +907,7 @@ class DeliveryGateTests(unittest.TestCase):
         errors = validate_delivery_result(self.payload, self.context)
 
         self.assertTrue(any("缺少 TDD 周期记录" in error for error in errors))
-        self.assertTrue(any("android-test-and-fix 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("自动化测试与修复" in error and "没有专属于本门禁" in error for error in errors))
 
     def test_manual_coverage_requires_complete_receipt(self) -> None:
         """验证一句人工通过不能覆盖 Then，完整步骤和环境记录才可使用。"""
@@ -997,7 +1041,7 @@ class DeliveryGateTests(unittest.TestCase):
             "evidence_ids": ["E-STABILITY"],
         })
         errors = validate_delivery_result(self.payload, self.context)
-        self.assertTrue(any("gate android-security-privacy 没有专属于本 gate" in error for error in errors))
+        self.assertTrue(any("安全与隐私检查" in error and "专属于本门禁" in error for error in errors))
 
         evidence = next(item for item in self.payload["evidence"] if item["id"] == "E-STABILITY")
         result_path = Path(evidence["specialist_result_path"])

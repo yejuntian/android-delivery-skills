@@ -1,13 +1,15 @@
 id: 007-ui-independent-report-required
-title: UI 视觉验收保持独立报告，不被 Journey 或自动队列吞掉
+title: UI 视觉验收保持独立任务，不被 Journey 或 route 执行遗漏
 rubric: artifact-integrity-v1
 checks:
-  - name: route 输出中 UI 验收独立于自动队列
+  - name: route 输出中 UI 验收登记为独立必需任务
     path: "scripts/delivery.py"
     contains:
-      - "【独立·UI 验收(不进自动队列)】"
-      - "[建议单独执行] android-verify-ui"
-      - "只做截图与设计还原；界面流程功能测试由 android-test-and-fix 负责。"
+      - "专项任务清单（已写入路由影响快照；route 只登记，不执行）"
+      - "specialist_tasks = route_payload[\"specialist_tasks\"]"
+      - "gate_label(task['gate_id'])"
+      - "必需 | 待执行"
+      - "UI 验收由独立 Skill 执行；界面流程功能测试由自动化测试 Skill 负责。"
   - name: 总入口最终门禁要求独立 UI 报告或豁免
     path: "android-implement-and-verify/SKILL.md"
     contains:

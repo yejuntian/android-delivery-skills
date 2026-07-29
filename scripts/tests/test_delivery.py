@@ -2179,8 +2179,8 @@ class RouteCommandTests(unittest.TestCase):
 
         return output.getvalue(), json.loads(route_path.read_text(encoding="utf-8"))
 
-    def test_route_prints_api_and_manual_ui_selection(self) -> None:
-        """验证 API 自动入队、UI 保持手动，并输出其他工程影响关注点。"""
+    def test_route_writes_required_specialist_task_manifest(self) -> None:
+        """验证 route 登记 API/UI 专项任务，且只登记不直接执行。"""
         files = [
             "app/src/main/java/example/HomeScreen.kt",
             "app/src/main/java/example/UserMapper.kt",
@@ -2198,7 +2198,8 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("需求测试追溯.md", text)
         self.assertIn("实施计划.md", text)
         self.assertIn("android-verify-api-contract", text)
-        self.assertIn("[建议单独执行] android-verify-ui", text)
+        self.assertIn("界面与无障碍检查（android-verify-ui） | 必需 | 待执行", text)
+        self.assertIn("专项任务清单（已写入路由影响快照；route 只登记，不执行）", text)
         self.assertIn("数据存储 | 检测到", text)
         self.assertIn("构建配置 | 检测到", text)
         self.assertIn("架构依赖 | 检测到", text)
@@ -2220,6 +2221,12 @@ class RouteCommandTests(unittest.TestCase):
             "app/src/main/java/example/UserMapper.kt",
             route_gates["android-verify-api-contract"]["basis_files"],
         )
+        route_tasks = {
+            item["skill"]: item for item in route_payload["specialist_tasks"]
+        }
+        self.assertEqual("PENDING", route_tasks["android-verify-ui"]["status"])
+        self.assertEqual("android-ui-a11y", route_tasks["android-verify-ui"]["gate_id"])
+        self.assertTrue(route_tasks["android-verify-api-contract"]["required"])
 
     def test_route_ignores_document_only_changes(self) -> None:
         """验证交付文档变化不会触发代码影响面或专项 gate。"""

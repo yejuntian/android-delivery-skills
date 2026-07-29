@@ -1,6 +1,5 @@
 # 问题：<标题>
 
-- 日期：
 - 类型：bug / 数据偏差 / QA 反馈 / Journey 失败 / Firebase 崩溃 / 资料缺口
 - 严重度：P0 / P1 / P2 / P3
 - 状态：open / fixing / resolved / wontfix

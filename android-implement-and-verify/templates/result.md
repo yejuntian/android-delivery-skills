@@ -1,7 +1,5 @@
 # 交付结论
 
-- 任务：
-- 日期：
 - 分支：
 - 需求修订：第 N 版
 - 最终结论：FULL_PASS / LOCAL_PASS_DEVICE_PENDING / INCOMPLETE / BLOCKED

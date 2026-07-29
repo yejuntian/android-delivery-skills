@@ -1,6 +1,5 @@
 # 决策记录
 
-- 日期：
 - 状态：proposed / accepted / superseded
 - 相关需求：
 - 被替代（superseded by）：

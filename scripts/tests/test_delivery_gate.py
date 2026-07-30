@@ -1317,6 +1317,15 @@ class DeliveryGateTests(unittest.TestCase):
                     current_context(root / "local.yaml", config)
                 resolve_fact(fact_inbox, fact["id"], "DISCUSSION")
                 context = current_context(root / "local.yaml", config)
+                blocked_route = json.loads(route_path.read_text(encoding="utf-8"))
+                blocked_route["convergence_status"] = "BLOCKED"
+                blocked_route["route_round"] = blocked_route["max_route_rounds"] + 1
+                write_route_impact(route_path, blocked_route)
+                with self.assertRaisesRegex(DeliveryGateError, "路由收敛已阻断"):
+                    current_context(root / "local.yaml", config)
+                blocked_route["convergence_status"] = "INITIAL"
+                blocked_route["route_round"] = 1
+                write_route_impact(route_path, blocked_route)
                 (repo / "App.kt").write_text("class AppChangedAgain\n", encoding="utf-8")
                 with self.assertRaisesRegex(DeliveryGateError, "路由影响快照.*已失效"):
                     current_context(root / "local.yaml", config)

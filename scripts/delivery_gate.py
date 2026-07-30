@@ -237,6 +237,10 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
         route_impact = load_route_impact(route_path)
     except RouteImpactError as exc:
         raise DeliveryGateError(str(exc)) from exc
+    if route_impact.get("convergence_status") == "BLOCKED":
+        raise DeliveryGateError(
+            "路由收敛已阻断，请先人工确认并开启新的 route 会话"
+        )
     try:
         plan_context = validate_plan_confirmation(
             requirement_snapshot,

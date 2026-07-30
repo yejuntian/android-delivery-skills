@@ -99,6 +99,7 @@ from ..requirement_snapshot import (  # noqa: E402
     render_requirement_diff,
     write_requirement_snapshot,
 )
+from ..route_impact import validate_route_impact  # noqa: E402
 
 
 def bdd_requirement(
@@ -2100,9 +2101,14 @@ class RouteCommandTests(unittest.TestCase):
         requirement_dir: Path | None = None,
         config: dict | None = None,
         allowed_files: list[str] | None = None,
+        snapshot_sha: str = "a" * 64,
+        new_session: bool = False,
     ) -> tuple[str, dict]:
         """执行一次隔离 route，返回终端输出和写出的 route-impact。"""
-        args = SimpleNamespace(config=str(self.root / "local.yaml"))
+        args = SimpleNamespace(
+            config=str(self.root / "local.yaml"),
+            new_session=new_session,
+        )
         output = io.StringIO()
         paths = SimpleNamespace(
             project_path=self.root,
@@ -2144,7 +2150,7 @@ class RouteCommandTests(unittest.TestCase):
                         "baseline_id": "requirement-1",
                         "baseline_head": "head-1",
                         "head": "head-2",
-                        "snapshot_sha256": "a" * 64,
+                        "snapshot_sha256": snapshot_sha,
                     },
                 ),
                 mock.patch(
@@ -2210,6 +2216,17 @@ class RouteCommandTests(unittest.TestCase):
         self.assertIn("无真机时继续其他门禁", text)
         self.assertIn("动态能力未验证不得写成通过", text)
         self.assertNotIn("impacts", route_payload)
+        self.assertEqual(6, route_payload["version"])
+        self.assertEqual("INITIAL", route_payload["convergence_status"])
+        self.assertEqual(1, route_payload["route_round"])
+        self.assertEqual(3, route_payload["max_route_rounds"])
+        self.assertEqual(
+            files,
+            route_payload["impact_candidates"]["ui"]
+            + route_payload["impact_candidates"]["api"]
+            + route_payload["impact_candidates"]["data"]
+            + route_payload["impact_candidates"]["build"],
+        )
         self.assertEqual("d" * 64, route_payload["implementation_plan_sha256"])
         self.assertEqual("f" * 64, route_payload["impact_radius_sha256"])
         route_gates = {
@@ -2227,6 +2244,85 @@ class RouteCommandTests(unittest.TestCase):
         self.assertEqual("PENDING", route_tasks["android-verify-ui"]["status"])
         self.assertEqual("android-ui-a11y", route_tasks["android-verify-ui"]["gate_id"])
         self.assertTrue(route_tasks["android-verify-api-contract"]["required"])
+
+    def test_route_reuses_unchanged_input_as_stable(self) -> None:
+        """相同代码、上下文和候选重复 route 时不增加轮次。"""
+        files = ["app/src/main/java/example/HomeScreen.kt"]
+        _, first = self._run_route_with_changes(
+            [GitChange("M", files[0])],
+            snapshot_sha="a" * 64,
+        )
+        text, second = self._run_route_with_changes(
+            [GitChange("M", files[0])],
+            snapshot_sha="a" * 64,
+        )
+
+        self.assertIn("复用上一轮候选和专项任务", text)
+        self.assertEqual("STABLE", second["convergence_status"])
+        self.assertEqual(1, second["route_round"])
+        self.assertEqual(first["route_input_sha256"], second["previous_route_input_sha256"])
+
+    def test_route_blocks_after_three_changed_rounds(self) -> None:
+        """连续变化超过默认三轮时写入 BLOCKED 并阻止继续交付。"""
+        self._run_route_with_changes(
+            [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+            snapshot_sha="a" * 64,
+        )
+        self._run_route_with_changes(
+            [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+            snapshot_sha="b" * 64,
+        )
+        self._run_route_with_changes(
+            [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+            snapshot_sha="c" * 64,
+        )
+
+        with self.assertRaisesRegex(DeliveryError, "route 收敛已阻断"):
+            self._run_route_with_changes(
+                [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+                snapshot_sha="d" * 64,
+            )
+
+        blocked = json.loads(
+            (self.root / "route-impact.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("BLOCKED", blocked["convergence_status"])
+        self.assertEqual(4, blocked["route_round"])
+        self.assertEqual(3, blocked["max_route_rounds"])
+
+    def test_route_new_session_resets_after_block(self) -> None:
+        """人工确认后显式开启新会话，允许从第一轮重新收敛。"""
+        for snapshot_sha in ("a" * 64, "b" * 64, "c" * 64):
+            self._run_route_with_changes(
+                [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+                snapshot_sha=snapshot_sha,
+            )
+        with self.assertRaises(DeliveryError):
+            self._run_route_with_changes(
+                [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+                snapshot_sha="d" * 64,
+            )
+
+        text, resumed = self._run_route_with_changes(
+            [GitChange("M", "app/src/main/java/example/HomeScreen.kt")],
+            snapshot_sha="e" * 64,
+            new_session=True,
+        )
+        self.assertIn("route 收敛会话 2 已开始", text)
+        self.assertEqual(2, resumed["route_session"])
+        self.assertEqual(1, resumed["route_round"])
+        self.assertEqual("INITIAL", resumed["convergence_status"])
+
+    def test_route_rejects_malformed_candidate_without_crashing(self) -> None:
+        """损坏的候选快照返回校验错误，不因不可哈希值抛出 TypeError。"""
+        _, payload = self._run_route_with_changes(
+            [GitChange("M", "app/src/main/java/example/HomeScreen.kt")]
+        )
+        payload["impact_candidates"]["ui"] = [{"path": "not-a-string"}]
+
+        errors = validate_route_impact(payload)
+
+        self.assertTrue(any("impact_candidates" in error for error in errors))
 
     def test_route_ignores_document_only_changes(self) -> None:
         """验证交付文档变化不会触发代码影响面或专项 gate。"""

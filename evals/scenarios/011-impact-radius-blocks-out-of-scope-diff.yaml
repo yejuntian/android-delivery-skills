@@ -36,4 +36,14 @@ checks:
       - "android-implement-and-verify/references/route-impact.schema.json"
     contains:
       - "impact_radius_sha256"
-      - '"const": 5'
+      - '"const": 6'
+  - name: route 收敛有界且相同输入可复用
+    paths:
+      - "scripts/delivery.py"
+      - "scripts/route_impact.py"
+      - "android-implement-and-verify/SKILL.md"
+    contains:
+      - "DEFAULT_ROUTE_MAX_ROUNDS = 3"
+      - "route_input_sha256"
+      - "convergence_status"
+      - "route --new-session"

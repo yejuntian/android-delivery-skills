@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -30,7 +31,18 @@ CONDITIONAL_GATE_BASIS = {
     "ui_a11y": ("ui",),
     "security_privacy": ("api", "data", "system"),
 }
-ROUTE_IMPACT_VERSION = 5
+ROUTE_IMPACT_VERSION = 6
+DEFAULT_ROUTE_MAX_ROUNDS = 3
+ROUTE_CONVERGENCE_STATUSES = {"INITIAL", "CHANGED", "STABLE", "BLOCKED"}
+ROUTE_IMPACT_CATEGORIES = (
+    "ui",
+    "api",
+    "data",
+    "system",
+    "build",
+    "architecture",
+    "tests",
+)
 ROUTE_TASK_STATUSES = {"PENDING"}
 ROUTE_SPECIALIST_TASKS = {
     "android-review-diff": "android-review-diff",
@@ -44,6 +56,64 @@ ROUTE_SPECIALIST_TASKS = {
 
 class RouteImpactError(RuntimeError):
     """表示路由影响快照缺失、损坏或已不属于当前交付上下文。"""
+
+
+def _canonical_sha256(payload: Any) -> str:
+    """对不含时间戳的结构化输入生成稳定摘要。"""
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def normalize_impact_candidates(impacts: dict[str, list[str]]) -> dict[str, list[str]]:
+    """保存七类候选的稳定、去重表示，供人读和摘要比较共同使用。"""
+    return {
+        category: sorted(set(impacts.get(category, [])))
+        for category in ROUTE_IMPACT_CATEGORIES
+    }
+
+
+def route_context_digest(context: dict[str, Any]) -> str:
+    """摘要需求、计划、影响半径和基线等上下文，不包含当前 diff。"""
+    return _canonical_sha256({
+        "requirement_id": context["requirement_id"],
+        "requirement_revision": context["requirement_revision"],
+        "requirement_file_sha256": context["requirement_file_sha256"],
+        "requirement_inputs_sha256": context["requirement_inputs_sha256"],
+        "implementation_plan_sha256": context["implementation_plan_sha256"],
+        "impact_radius_sha256": context["impact_radius_sha256"],
+        "plan_confirmation_receipt_sha256": context["plan_confirmation_receipt_sha256"],
+        "baseline_id": context["baseline_id"],
+    })
+
+
+def route_input_digest(
+    context: dict[str, Any],
+    impact_candidates: dict[str, list[str]],
+    specialist_tasks: list[dict[str, Any]],
+    conditional_gates: list[dict[str, Any]],
+    diff_files: list[str] | None,
+) -> str:
+    """摘要所有影响路由的输入；时间戳和轮次不参与比较。"""
+    return _canonical_sha256({
+        "route_context_sha256": route_context_digest(context),
+        "snapshot_sha256": context["snapshot_sha256"],
+        "diff_files": sorted(set(diff_files or [])),
+        "impact_candidates": impact_candidates,
+        "specialist_tasks": specialist_tasks,
+        "conditional_gates": conditional_gates,
+    })
+
+
+def _validate_max_rounds(max_route_rounds: int) -> None:
+    if isinstance(max_route_rounds, bool) or not isinstance(max_route_rounds, int):
+        raise RouteImpactError("route.max_rounds 必须是正整数")
+    if max_route_rounds < 1:
+        raise RouteImpactError("route.max_rounds 必须大于 0")
 
 
 def build_specialist_tasks(
@@ -123,8 +193,12 @@ def build_route_impact(
     impacts: dict[str, list[str]],
     conditional_candidates: dict[str, bool | None],
     diff_files: list[str] | None = None,
+    previous_payload: dict[str, Any] | None = None,
+    max_route_rounds: int = DEFAULT_ROUTE_MAX_ROUNDS,
+    new_session: bool = False,
 ) -> dict[str, Any]:
-    """构造稳定快照；候选只形成待执行任务，不直接视为专项结论。"""
+    """构造带有限收敛状态的快照；候选只形成待执行任务。"""
+    _validate_max_rounds(max_route_rounds)
     conditional_gates = []
     for candidate_id, gate_id in CONDITIONAL_GATE_IDS.items():
         if not conditional_candidates.get(candidate_id):
@@ -138,6 +212,54 @@ def build_route_impact(
             "id": gate_id,
             "basis_files": basis_files,
         })
+    specialist_tasks = build_specialist_tasks(impacts, diff_files)
+    impact_candidates = normalize_impact_candidates(impacts)
+    route_context_sha256 = route_context_digest(context)
+    route_input_sha256 = route_input_digest(
+        context,
+        impact_candidates,
+        specialist_tasks,
+        conditional_gates,
+        diff_files,
+    )
+
+    previous_context_sha256 = (
+        previous_payload.get("route_context_sha256")
+        if previous_payload
+        else None
+    )
+    previous_input_sha256 = (
+        previous_payload.get("route_input_sha256")
+        if previous_payload
+        else None
+    )
+    previous_round = previous_payload.get("route_round", 0) if previous_payload else 0
+    previous_session = previous_payload.get("route_session", 0) if previous_payload else 0
+    context_changed = (
+        previous_payload is not None
+        and previous_context_sha256 != route_context_sha256
+    )
+    if previous_payload and previous_payload.get("convergence_status") == "BLOCKED":
+        if not new_session and not context_changed:
+            raise RouteImpactError(
+                "route 收敛已阻断；请人工确认后使用 --new-session 开启新的 route 会话"
+            )
+
+    if not previous_payload or new_session or context_changed:
+        route_session = previous_session + 1 if previous_payload else 1
+        route_round = 1
+        convergence_status = "INITIAL"
+    elif route_input_sha256 == previous_input_sha256:
+        route_session = previous_session or 1
+        route_round = previous_round or 1
+        convergence_status = "STABLE"
+    else:
+        route_session = previous_session or 1
+        route_round = (previous_round or 0) + 1
+        convergence_status = (
+            "CHANGED" if route_round <= max_route_rounds else "BLOCKED"
+        )
+
     return {
         "version": ROUTE_IMPACT_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -150,7 +272,15 @@ def build_route_impact(
         "plan_confirmation_receipt_sha256": context["plan_confirmation_receipt_sha256"],
         "baseline_id": context["baseline_id"],
         "snapshot_sha256": context["snapshot_sha256"],
-        "specialist_tasks": build_specialist_tasks(impacts, diff_files),
+        "route_session": route_session,
+        "route_round": route_round,
+        "max_route_rounds": max_route_rounds,
+        "route_context_sha256": route_context_sha256,
+        "route_input_sha256": route_input_sha256,
+        "previous_route_input_sha256": previous_input_sha256,
+        "convergence_status": convergence_status,
+        "impact_candidates": impact_candidates,
+        "specialist_tasks": specialist_tasks,
         "conditional_gates": conditional_gates,
     }
 
@@ -172,6 +302,8 @@ def validate_route_impact(payload: Any) -> list[str]:
         "baseline_id",
         "snapshot_sha256",
         "generated_at",
+        "route_context_sha256",
+        "route_input_sha256",
     ):
         if not isinstance(payload.get(field), str) or not payload[field]:
             errors.append(f"路由影响快照缺少 {field}")
@@ -182,12 +314,54 @@ def validate_route_impact(payload: Any) -> list[str]:
         "impact_radius_sha256",
         "plan_confirmation_receipt_sha256",
         "snapshot_sha256",
+        "route_context_sha256",
+        "route_input_sha256",
     ):
         value = payload.get(field)
         if isinstance(value, str) and value and not re.fullmatch(r"[a-f0-9]{64}", value):
             errors.append(f"路由影响快照 {field} 必须是 SHA-256")
+    previous_input_sha256 = payload.get("previous_route_input_sha256")
+    if "previous_route_input_sha256" not in payload:
+        errors.append("路由影响快照缺少 previous_route_input_sha256")
+    elif previous_input_sha256 is not None and (
+        not isinstance(previous_input_sha256, str)
+        or not re.fullmatch(r"[a-f0-9]{64}", previous_input_sha256)
+    ):
+        errors.append("路由影响快照 previous_route_input_sha256 必须是 SHA-256 或 null")
     if not isinstance(payload.get("requirement_revision"), int) or payload["requirement_revision"] < 1:
         errors.append("路由影响快照 requirement_revision 必须是正整数")
+    for field in ("route_session", "route_round", "max_route_rounds"):
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            errors.append(f"路由影响快照 {field} 必须是正整数")
+    convergence_status = payload.get("convergence_status")
+    if convergence_status not in ROUTE_CONVERGENCE_STATUSES:
+        errors.append(
+            "路由影响快照 convergence_status 必须是 INITIAL、CHANGED、STABLE 或 BLOCKED"
+        )
+    elif all(
+        isinstance(payload.get(field), int) and not isinstance(payload.get(field), bool)
+        for field in ("route_round", "max_route_rounds")
+    ):
+        route_round = payload["route_round"]
+        max_route_rounds = payload["max_route_rounds"]
+        if convergence_status == "BLOCKED" and route_round <= max_route_rounds:
+            errors.append("路由影响快照 BLOCKED 必须超过 max_route_rounds")
+        if convergence_status != "BLOCKED" and route_round > max_route_rounds:
+            errors.append("路由影响快照非 BLOCKED 状态不得超过 max_route_rounds")
+
+    candidates = payload.get("impact_candidates")
+    if not isinstance(candidates, dict) or set(candidates) != set(ROUTE_IMPACT_CATEGORIES):
+        errors.append(
+            "路由影响快照 impact_candidates 必须包含且仅包含七类工程候选"
+        )
+    elif any(
+        not isinstance(paths, list)
+        or not all(isinstance(path, str) and path for path in paths)
+        or len(paths) != len(set(paths))
+        for paths in candidates.values()
+    ):
+        errors.append("路由影响快照 impact_candidates 的每类候选必须是去重字符串数组")
 
     tasks = payload.get("specialist_tasks")
     if not isinstance(tasks, list):
@@ -287,4 +461,23 @@ def load_route_impact(path: str | Path) -> dict[str, Any]:
     errors = validate_route_impact(payload)
     if errors:
         raise RouteImpactError("；".join(errors))
+    return payload
+
+
+def load_previous_route_impact(path: str | Path) -> dict[str, Any] | None:
+    """读取当前版本的上一轮快照；旧版本作为首次 route 重新建立。"""
+    target = Path(path).expanduser().resolve()
+    if not target.is_file():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RouteImpactError(f"上一轮路由影响快照无法读取: {target}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RouteImpactError("上一轮路由影响快照根节点必须是 object")
+    if payload.get("version") != ROUTE_IMPACT_VERSION:
+        return None
+    errors = validate_route_impact(payload)
+    if errors:
+        raise RouteImpactError("上一轮路由影响快照无效: " + "；".join(errors))
     return payload

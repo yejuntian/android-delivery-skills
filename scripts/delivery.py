@@ -93,8 +93,10 @@ from .requirement_inputs import (  # noqa: E402
     validate_requirement_input_boundaries,
 )
 from .route_impact import (  # noqa: E402
+    DEFAULT_ROUTE_MAX_ROUNDS,
     RouteImpactError,
     build_route_impact,
+    load_previous_route_impact,
     write_route_impact,
 )
 from .user_facing_labels import (  # noqa: E402
@@ -364,6 +366,11 @@ def parse_args(argv=None):
     # 阶段三：route (动态路由审查阶段)
     parser_route = subparsers.add_parser("route", help="分析代码改动并调用对应审查能力")
     parser_route.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
+    parser_route.add_argument(
+        "--new-session",
+        action="store_true",
+        help="人工确认后开启新的 route 收敛会话",
+    )
 
     # 测试映射：把需求义务结构化绑定到测试用例，需求增量后标记 STALE 由 AI 回填。
     parser_mapping = subparsers.add_parser(
@@ -398,6 +405,19 @@ def load_config(config_path):
     if not isinstance(config, dict):
         raise DeliveryError(f"配置根节点必须是 YAML object: {path}")
     return config
+
+
+def route_max_rounds(config: dict) -> int:
+    """读取 route 收敛上限；默认三轮，配置必须是有限正整数。"""
+    route_config = config.get("route", {})
+    if route_config is None:
+        route_config = {}
+    if not isinstance(route_config, dict):
+        raise DeliveryError("route 配置必须是 YAML object")
+    max_rounds = route_config.get("max_rounds", DEFAULT_ROUTE_MAX_ROUNDS)
+    if isinstance(max_rounds, bool) or not isinstance(max_rounds, int) or max_rounds < 1:
+        raise DeliveryError("route.max_rounds 必须是正整数")
+    return max_rounds
 
 
 def resolve_config_paths(config, config_path):
@@ -782,7 +802,11 @@ def print_route_instructions(skills_to_run, specialist_tasks=None):
         for skill in skills_to_run:
             print(f"  - {skill}")
     print("计划外旧业务影响、需求冲突或业务预期不明确即使是 P0/P1 也必须先询问用户，不得自动修复。")
-    print("注意：一次只调用一个。修复导致 diff 变化时重新执行 route，直到路由稳定。")
+    print(
+        "注意：一次只调用一个。修复导致 diff 变化时重新执行 route；"
+        "输入摘要未变化时复用 route，变化轮次超过配置上限时 route 会阻断。"
+    )
+    print("人工确认原范围内继续时使用 route --new-session，不得自动无限重试。")
     print("候选分类必须结合已确认需求和真实 diff 复核，不得凭文件名脑补业务变化。")
     print("第二轮条件能力只在候选适用时执行；无真机继续其他门禁，动态能力未验证不得写成通过。")
     print("最终必须执行 android-test-and-fix 全绿门禁；未执行项不得计为通过。")
@@ -1535,7 +1559,9 @@ def cmd_route(args):
         plan_path=implementation_plan_path(paths.requirement_dir),
     )
 
+    route_path = route_impact_path_for_config(resolved_config)
     try:
+        previous_route = load_previous_route_impact(route_path)
         code_snapshot = current_delivery_snapshot(
             project_path,
             baseline_path,
@@ -1553,12 +1579,39 @@ def cmd_route(args):
             impacts,
             conditional_gates,
             diff_files=diff_files,
+            previous_payload=previous_route,
+            max_route_rounds=route_max_rounds(config),
+            new_session=bool(getattr(args, "new_session", False)),
         )
-        route_path = route_impact_path_for_config(resolved_config)
         write_route_impact(route_path, route_payload)
     except (GitInspectionError, RouteImpactError) as exc:
         raise DeliveryError(str(exc)) from exc
     print(f"📄 路由影响快照: {route_path}")
+
+    if route_payload["convergence_status"] == "BLOCKED":
+        print(
+            f"❌ route 收敛超过 {route_payload['max_route_rounds']} 个变化轮次，"
+            "最终交付已阻断。"
+        )
+        print(
+            "👉 AI 指令：先判断需求/计划/影响半径是否扩大；原范围内继续修复时，"
+            "经人工确认后使用 --new-session 开启新的 route 会话。"
+        )
+        raise DeliveryError(
+            "route 收敛已阻断；请人工确认后使用 --new-session 开启新的 route 会话"
+        )
+    if route_payload["convergence_status"] == "STABLE":
+        print("✅ route 输入摘要未变化，复用上一轮候选和专项任务。")
+    elif route_payload["convergence_status"] == "INITIAL":
+        print(
+            f"🧭 route 收敛会话 {route_payload['route_session']} 已开始，"
+            f"当前轮次 {route_payload['route_round']}/{route_payload['max_route_rounds']}。"
+        )
+    else:
+        print(
+            f"🧭 route 收敛会话 {route_payload['route_session']} 当前轮次 "
+            f"{route_payload['route_round']}/{route_payload['max_route_rounds']}。"
+        )
 
     if not diff_files:
         print("⚠️ 未检测到任何代码变更。")

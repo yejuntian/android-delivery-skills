@@ -301,7 +301,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 python3 ai-skills/android-delivery-skills/scripts/delivery.py route
 ```
 
-**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的代码 diff（排除 `document/` 交付证据）；diff 超出已确认影响半径时立即阻断。路由候选合并实际 diff 与 profile 声明的 API 契约来源，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照同时绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接与本地资料摘要；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
+**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的代码 diff（排除 `document/` 交付证据）；diff 超出已确认影响半径时立即阻断。路由候选合并实际 diff 与 profile 声明的 API 契约来源，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接、本地资料摘要和 route 收敛状态；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
 - Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
 - 一次只查一项。
 - 不要自行脑补脚本未列出的审查项。
@@ -313,7 +313,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py route
   4. 确认命令退出码为 `0` 后更新受影响测试映射、实施计划和 `impact-radius.json`，向用户展示并执行 `confirm-plan`；计划确认后才按结果最小修改实现和测试，再重新执行 `route`。不得只在最终报告追加说明或复用变化前的证据。
 - 最终 diff 中出现不在已确认 `impact-radius.json` 的代码文件时，完整通过必须阻断；只能把新增影响写回需求/计划/影响半径并重新确认，或移除无关改动，不能由 AI 在最终报告中口头豁免。
 - 已确认需求范围内的 P0/P1 技术问题发现后立即修复，并从受影响的最小测试集开始重跑；计划外已上线业务影响、需求冲突或业务预期不明确即使评为 P0/P1 也必须先重新确认。非阻断 P2/P3 可修复时一并关闭。
-- 修复导致 diff 变化时重新执行 `route`，直到路由结果稳定。
+- 修复导致 diff 变化时重新执行 `route`。route 在 `.state/route-impact.json` 记录七类候选、`route_input_sha256`、`route_round`、`route_session` 和 `convergence_status`；默认 `route.max_rounds: 3`，相同输入标记 `STABLE` 并复用候选/任务，变化轮次超过上限标记 `BLOCKED` 并阻断最终门禁。需求/计划/影响半径上下文变化自动开启新会话；原范围内确需继续时，人工确认后使用 `delivery.py route --new-session`，不得自动放大上限。
 - 最后按 `.state/route-impact.json` 的 `specialist_tasks` 逐项执行；`android-test-and-fix` 负责完整回归门禁，UI 变更时由独立 `android-verify-ui` 任务负责视觉与人工验收。route 不直接调用任何 Skill，最终门禁检查每项任务的当前结果。
 - `android-test-and-fix` 在此阶段根据最终 diff、影响类别和测试映射选择测试层，再按 BDD 场景聚合 Journey `FULL/PARTIAL/NONE`；Journey 通过也不能替代未分配给它的证据。
 - 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。

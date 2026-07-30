@@ -98,6 +98,72 @@ class TestMappingTests(unittest.TestCase):
         }
         self.assertEqual([], validate_test_mapping(mapping, make_snapshot(self.obligations)))
 
+    def test_current_mapping_must_include_expected_tests(self) -> None:
+        """CURRENT 映射必须包含影响半径声明的预期测试，但允许额外测试。"""
+        mapping = {
+            "version": MAPPING_VERSION,
+            "mappings": [
+                {
+                    "obligation_id": "BDD-001",
+                    "obligation_sha256": "a" * 64,
+                    "test_ids": ["FeatureTest#t1", "FeatureTest#extra"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": None,
+                },
+                {
+                    "obligation_id": "BDD-004",
+                    "obligation_sha256": "b" * 64,
+                    "test_ids": ["FeatureTest#t2"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": None,
+                },
+            ],
+        }
+        impact_radius = {
+            "impacts": [
+                {"id": "BDD-001", "expected_tests": ["FeatureTest#t1", "FeatureTest#missing"]},
+                {"id": "BDD-004", "expected_tests": ["FeatureTest#t2"]},
+            ]
+        }
+
+        errors = validate_test_mapping(mapping, make_snapshot(self.obligations), impact_radius)
+
+        self.assertTrue(any("FeatureTest#missing" in error for error in errors))
+        self.assertFalse(any("FeatureTest#extra" in error for error in errors))
+
+    def test_manual_mapping_with_empty_expected_tests_is_allowed(self) -> None:
+        """人工验收可用空 expected_tests，不被强制转换为自动化测试。"""
+        mapping = {
+            "version": MAPPING_VERSION,
+            "mappings": [
+                {
+                    "obligation_id": "BDD-001",
+                    "obligation_sha256": "a" * 64,
+                    "test_ids": [],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": "人工点击并核对截图",
+                },
+                {
+                    "obligation_id": "BDD-004",
+                    "obligation_sha256": "b" * 64,
+                    "test_ids": ["FeatureTest#t2"],
+                    "mapping_status": "CURRENT",
+                    "manual_reason": None,
+                },
+            ],
+        }
+        impact_radius = {
+            "impacts": [
+                {"id": "BDD-001", "expected_tests": []},
+                {"id": "BDD-004", "expected_tests": ["FeatureTest#t2"]},
+            ]
+        }
+
+        self.assertEqual(
+            [],
+            validate_test_mapping(mapping, make_snapshot(self.obligations), impact_radius),
+        )
+
     def test_rebuild_preserves_current_manual_mapping(self) -> None:
         """重复初始化不能丢失同一需求语义上的人工验收登记。"""
         existing = {

@@ -88,8 +88,9 @@ def _validate_entry(item: Any, index: int) -> dict[str, Any]:
 def validate_test_mapping(
     payload: Any,
     snapshot: dict[str, Any],
+    impact_radius: dict[str, Any] | None = None,
 ) -> list[str]:
-    """校验映射覆盖全部当前义务，且没有登记已删除义务。"""
+    """校验映射覆盖当前义务，并按需核对影响半径中的预期测试。"""
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["测试映射根节点必须是 object"]
@@ -135,6 +136,30 @@ def validate_test_mapping(
                 or NON_BUSINESS_TEST_METHOD_RE.match(method_name)
             ):
                 errors.append(f"义务 {identifier} 映射了无业务语义的模板测试: {test_id}")
+    if isinstance(impact_radius, dict):
+        expected_tests_by_id: dict[str, set[str]] = {}
+        for impact in impact_radius.get("impacts") or []:
+            if not isinstance(impact, dict) or not isinstance(impact.get("id"), str):
+                continue
+            expected_tests = {
+                test_id.strip()
+                for test_id in impact.get("expected_tests") or []
+                if isinstance(test_id, str) and test_id.strip()
+            }
+            if expected_tests:
+                expected_tests_by_id[impact["id"]] = expected_tests
+        for entry in mappings:
+            if entry["mapping_status"] != "CURRENT":
+                continue
+            missing_tests = sorted(
+                expected_tests_by_id.get(entry["obligation_id"], set())
+                - set(entry["test_ids"])
+            )
+            if missing_tests:
+                errors.append(
+                    f"义务 {entry['obligation_id']} 的测试映射缺少影响半径 expected_tests: "
+                    + ", ".join(missing_tests)
+                )
     missing = sorted(expected_ids - seen)
     if missing:
         errors.append("测试映射缺少当前确认义务的登记: " + ", ".join(missing))

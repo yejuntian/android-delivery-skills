@@ -1675,7 +1675,15 @@ def cmd_init_test_mapping(args):
     mapping_path = paths.test_mapping_path
     if args.validate:
         payload = load_test_mapping(mapping_path)
-        errors = validate_test_mapping(payload, snapshot)
+        try:
+            impact_radius = load_impact_radius(
+                paths.impact_radius_path,
+                snapshot,
+                content,
+            )
+        except ImpactRadiusError as exc:
+            raise DeliveryError(str(exc)) from exc
+        errors = validate_test_mapping(payload, snapshot, impact_radius)
         if errors:
             print("❌ 测试映射未通过校验:", file=sys.stderr)
             for error in errors:

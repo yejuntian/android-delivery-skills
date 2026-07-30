@@ -3,7 +3,7 @@
 
 用途：校验实施计划与影响半径，并生成绑定当前已确认需求的机器收据。
 
-核心流程：读取固定的 ``实施计划.md``，检查用户需要查看的五类内容；用户明确
+核心流程：读取固定的 ``实施计划.md``，检查用户需要查看的六类内容；用户明确
 确认后保存需求修订、需求摘要、计划摘要和影响半径摘要。后续编码入口和最终门禁
 重新校验收据，需求、计划或影响半径变化时旧收据自动失效。
 
@@ -39,6 +39,7 @@ REQUIRED_PLAN_SECTIONS = (
     "影响半径摘要",
     "明确不修改范围",
 )
+BDD_ID_PATTERN = re.compile(r"(?<![\w-])BDD-[0-9]+(?![\w-])")
 
 
 class ImplementationPlanError(RuntimeError):
@@ -65,19 +66,10 @@ def implementation_plan_digest(content: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def read_implementation_plan(path: str | Path) -> str:
-    """读取并校验计划结构，保证用户确认前能看到五类关键边界。"""
-    source = Path(path).expanduser().resolve()
-    if not source.is_file():
-        raise ImplementationPlanError(f"尚未生成实施计划: {source}")
-    try:
-        content = source.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise ImplementationPlanError(f"实施计划无法读取: {source}: {exc}") from exc
-    if not content.strip():
-        raise ImplementationPlanError(f"实施计划不能为空: {source}")
-
-    missing = []
+def _extract_plan_sections(content: str) -> dict[str, str]:
+    """提取并校验固定章节，保持结构检查与语义检查使用同一份切片。"""
+    sections: dict[str, str] = {}
+    missing: list[str] = []
     for section in REQUIRED_PLAN_SECTIONS:
         heading = re.search(
             rf"^\s*#{{1,6}}\s+{re.escape(section)}(?:[（(（].*?[)））])?\s*$",
@@ -88,14 +80,37 @@ def read_implementation_plan(path: str | Path) -> str:
             missing.append(section)
             continue
         body_start = heading.end()
-        next_heading = re.search(r"^\s*#{1,6}\s+.+$", content[body_start:], re.MULTILINE)
+        next_heading = re.search(
+            r"^\s*#{1,6}\s+.+$",
+            content[body_start:],
+            re.MULTILINE,
+        )
         body_end = body_start + next_heading.start() if next_heading else len(content)
-        if not content[body_start:body_end].strip():
+        body = content[body_start:body_end].strip()
+        if not body:
             missing.append(f"{section}（内容为空）")
+            continue
+        sections[section] = body
     if missing:
         raise ImplementationPlanError(
             "实施计划缺少必需内容（必须是精确标题，可带括号说明）: " + "、".join(missing)
         )
+    return sections
+
+
+def read_implementation_plan(path: str | Path) -> str:
+    """读取并校验计划结构，保证用户确认前能看到六类关键边界。"""
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise ImplementationPlanError(f"尚未生成实施计划: {source}")
+    try:
+        content = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ImplementationPlanError(f"实施计划无法读取: {source}: {exc}") from exc
+    if not content.strip():
+        raise ImplementationPlanError(f"实施计划不能为空: {source}")
+
+    _extract_plan_sections(content)
     return content.strip()
 
 
@@ -115,6 +130,86 @@ def _validate_confirmed_requirement(
         raise ImplementationPlanError("当前需求没有有效原子验收项，不能确认实施计划")
 
 
+def _reference_present(
+    body: str,
+    reference: str,
+    all_references: list[str] | None = None,
+) -> bool:
+    """按确定性文本匹配检查计划是否提到一个机器清单引用。"""
+    normalized_body = body.replace("\\", "/")
+    normalized_reference = reference.strip().replace("\\", "/")
+    if normalized_reference in normalized_body:
+        return True
+    # 兼容计划只写文件名的旧习惯；同名文件不唯一时要求完整路径。
+    if "/" not in normalized_reference or normalized_reference.endswith("/"):
+        return False
+    filename = normalized_reference.rsplit("/", 1)[-1]
+    if all_references:
+        if sum(
+            candidate.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] == filename
+            for candidate in all_references
+            if isinstance(candidate, str) and candidate.strip()
+        ) > 1:
+            return False
+    return bool(
+        re.search(
+            rf"(?<![\w.\-/]){re.escape(filename)}(?![\w.\-/])",
+            normalized_body,
+        )
+    )
+
+
+def _validate_plan_semantics(
+    plan_content: str,
+    radius_payload: dict[str, Any],
+) -> None:
+    """低成本校验计划中的关键引用与影响半径一致，不解析完整 Markdown 语义。"""
+    sections = _extract_plan_sections(plan_content)
+    scope = sections["实现范围"]
+    file_scope = "\n".join(
+        (sections["预计修改文件"], sections["影响半径摘要"]),
+    )
+    test_scope = sections["测试方案"]
+    errors: list[str] = []
+    impacts = radius_payload.get("impacts") or []
+    expected_files = [
+        path
+        for item in impacts
+        if isinstance(item, dict)
+        for path in item.get("expected_files") or []
+        if isinstance(path, str) and path.strip()
+    ]
+    impact_ids = {
+        item["id"]
+        for item in impacts
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    mentioned_ids = set(BDD_ID_PATTERN.findall(scope))
+    for identifier in sorted(impact_ids - mentioned_ids):
+        errors.append(f"实现范围缺少影响半径 BDD: {identifier}")
+    for identifier in sorted(mentioned_ids - impact_ids):
+        errors.append(f"实现范围包含非当前影响半径 BDD: {identifier}")
+    for item in impacts:
+        if not isinstance(item, dict):
+            continue
+        for path in item.get("expected_files") or []:
+            if (
+                isinstance(path, str)
+                and path.strip()
+                and not _reference_present(file_scope, path, expected_files)
+            ):
+                errors.append(f"计划未引用预期文件: {path}")
+        for test_id in item.get("expected_tests") or []:
+            if (
+                isinstance(test_id, str)
+                and test_id.strip()
+                and not _reference_present(test_scope, test_id)
+            ):
+                errors.append(f"测试方案未引用预期测试: {test_id}")
+    if errors:
+        raise ImplementationPlanError("实施计划与影响半径不一致: " + "；".join(errors))
+
+
 def _receipt_context(
     snapshot: dict[str, Any],
     requirement_content: str,
@@ -129,6 +224,7 @@ def _receipt_context(
         radius_payload = load_impact_radius(radius_path, snapshot, requirement_content)
     except ImpactRadiusError as exc:
         raise ImplementationPlanError(str(exc)) from exc
+    _validate_plan_semantics(plan_content, radius_payload)
     return {
         "requirement_id": snapshot["requirement_id"],
         "requirement_revision": snapshot["revision"],

@@ -352,7 +352,11 @@ def current_context(config_path: Path, config: dict[str, Any]) -> dict[str, Any]
     try:
         if test_mapping_path.is_file():
             test_mapping = load_test_mapping(test_mapping_path)
-            mapping_errors = validate_test_mapping(test_mapping, requirement_snapshot)
+            mapping_errors = validate_test_mapping(
+                test_mapping,
+                requirement_snapshot,
+                radius_payload,
+            )
             if mapping_errors:
                 raise DeliveryGateError("；".join(mapping_errors))
             context["test_mapping"] = {

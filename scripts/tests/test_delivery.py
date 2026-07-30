@@ -1272,13 +1272,13 @@ class RequirementSnapshotTests(unittest.TestCase):
             """# 实施计划
 
 ## 实现范围
-- 修改错误提示。
+- BDD-001：修改错误提示。
 ## 已上线业务影响
 - 成功登录保持不变。
 ## 预计修改文件
 - `LoginViewModel.kt`
 ## 测试方案
-- 增加失败分支测试。
+- LoginViewModelTest#failure
 ## 影响半径摘要
 - 允许文件：LoginViewModel.kt。
 - 允许目录前缀：无。

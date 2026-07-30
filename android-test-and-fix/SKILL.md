@@ -65,7 +65,7 @@ Red-Green 优先规则不要求删除或重写旧生产代码。生成代码、�
 
 完整交付阶段只执行与最终 diff、受影响语言、模块和 variant 相符的现有任务或配置。AI 根据本次修改范围、项目模块、测试目录、Gradle 配置、CI、README 和项目脚本直接选择最小验证命令；普通单元测试不要求预先配置固定命令，也不先运行全量任务发现。只有静态门禁确实需要确认项目能力且现有资料无法判断时，才读取 `references/gradle-task-discovery.md`。缺少某项能力时降级并继续其他门禁，不自动安装工具、添加插件或修改依赖。
 
-命令来源优先级：本次修改对应的测试与构建配置、已确认实施计划、`test-cases/impact-radius.json` 的 `expected_tests`、`test-cases/test-mapping.json`、本轮执行收据、CI、README、项目脚本和用户确认。前序文件已经覆盖当前需求修订时，直接读取复用；不得为了“再确认”重复执行耗时发现。
+命令来源优先级：本次修改对应的测试与构建配置、已确认实施计划、`test-cases/impact-radius.json` 的 `expected_tests`、`test-cases/test-mapping.json`、本轮执行收据、CI、README、项目脚本和用户确认。`expected_tests` 是计划阶段的预期测试入口；真实覆盖以 `test-mapping.json` 的 `test_ids` 和执行收据为准，`CURRENT` 映射必须包含对应的预期测试，允许为了覆盖边界增加额外测试。人工验收时将 `expected_tests` 留空并填写 `manual_reason`，不强制虚构自动化测试。前序文件已经覆盖当前需求修订时，直接读取复用；不得为了“再确认”重复执行耗时发现。
 
 执行顺序：
 
@@ -254,7 +254,7 @@ python3 ai-skills/android-delivery-skills/android-test-and-fix/scripts/run_journ
 - 条件必需：按业务影响选择仪器或截图测试；Journey 只执行 `FULL` 或 `PARTIAL` 中实际分配给它的验证义务。
 - 每个 BDD 使用 `COVERED_AUTOMATED`、`COVERED_MANUAL`、`UNVERIFIED`、`BLOCKED` 或 `NOT_APPLICABLE`；`COVERED_MANUAL` 必须已经实际执行并有证据。
 - 全部已确认 BDD 都必须进入 `test-mapping.json`；`docs/需求测试追溯.md` 由机器自动渲染。
-- 测试映射：`COVERED_AUTOMATED` 义务必须在 `<requirement_dir>/test-cases/test-mapping.json` 中登记，`mapping_status=CURRENT`，且登记的 `test_ids` 出现在执行收据里；STALE 映射表示需求已增量但测试未同步，直接阻断。
+- 测试映射：`COVERED_AUTOMATED` 义务必须在 `<requirement_dir>/test-cases/test-mapping.json` 中登记，`mapping_status=CURRENT`，且登记的 `test_ids` 出现在执行收据里；`CURRENT` 映射还必须包含对应影响半径 `expected_tests` 中的每个预期测试，不能用另一个测试名掩盖计划未落实。允许登记额外真实测试，人工验收保持 `expected_tests=[]` 并填写 `manual_reason`；STALE 映射表示需求已增量但测试未同步，直接阻断。
 - 所有必需 BDD 均为 `COVERED_AUTOMATED` 或有证据的 `COVERED_MANUAL`；任何工具不得越过自身证据边界。
 - 失败数为 0，P0/P1 测试缺口为 0。未执行项不得计为通过。
 - 必需测试不得存在未关闭的 `FLAKY`，最终证据必须在最后一次修复后重新执行。

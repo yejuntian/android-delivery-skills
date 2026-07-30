@@ -36,23 +36,24 @@ from ..requirement_snapshot import obligation_digest, requirement_digest, requir
 
 
 def valid_plan(extra: str = "") -> str:
-    """生成包含用户必须审阅的五类边界的最小计划。"""
+    """生成包含用户必须审阅的六类边界和影响半径引用的最小计划。"""
     return f"""# 实施计划
 
 ## 实现范围
-- 修改登录错误提示。{extra}
+- BDD-001：修改登录错误提示。{extra}
 
 ## 已上线业务影响
 - 保持成功登录不变。
 
 ## 预计修改文件
-- `LoginViewModel.kt`
+- `app/src/main/java/LoginViewModel.kt`
+- `app/src/test/java/LoginViewModelTest.kt`
 
 ## 测试方案
-- 增加失败分支单元测试。
+- `LoginViewModelTest#failureMessage`
 
 ## 影响半径摘要
-- 允许文件：LoginViewModel.kt、LoginViewModelTest.kt。
+- 允许文件：app/src/main/java/LoginViewModel.kt、app/src/test/java/LoginViewModelTest.kt。
 - 允许目录前缀：无。
 - 范围外处理：移除或重新确认。
 
@@ -161,7 +162,10 @@ class ImplementationPlanTests(unittest.TestCase):
     def test_missing_or_empty_required_section_is_rejected(self) -> None:
         """验证计划不能只给标题，也不能漏掉用户要求查看的范围。"""
         implementation_plan_path(self.root).write_text(
-            valid_plan().replace("## 测试方案\n- 增加失败分支单元测试。\n\n", ""),
+            valid_plan().replace(
+                "## 测试方案\n- `LoginViewModelTest#failureMessage`\n\n",
+                "",
+            ),
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ImplementationPlanError, "测试方案"):
@@ -173,6 +177,49 @@ class ImplementationPlanTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ImplementationPlanError, "内容为空"):
             confirm_implementation_plan(self.snapshot, self.requirement, self.root)
+
+    def test_plan_references_must_match_impact_radius(self) -> None:
+        """验证 BDD、预期文件和预期测试必须出现在对应计划章节。"""
+        plan = valid_plan()
+        plan = plan.replace("BDD-001：", "BDD-999：")
+        plan = plan.replace(
+            "app/src/main/java/LoginViewModel.kt",
+            "app/src/main/java/OtherViewModel.kt",
+        )
+        plan = plan.replace("LoginViewModelTest#failureMessage", "OtherViewModelTest#otherCase")
+        implementation_plan_path(self.root).write_text(plan, encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            ImplementationPlanError,
+            "BDD-001|LoginViewModel.kt|LoginViewModelTest#failureMessage",
+        ):
+            confirm_implementation_plan(self.snapshot, self.requirement, self.root)
+
+    def test_plan_rejects_unknown_bdd_in_scope(self) -> None:
+        """验证实现范围不能额外声明当前影响半径之外的 BDD。"""
+        plan = valid_plan().replace("BDD-001：", "BDD-001、BDD-999：")
+        implementation_plan_path(self.root).write_text(plan, encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            ImplementationPlanError,
+            "非当前影响半径 BDD: BDD-999",
+        ):
+            confirm_implementation_plan(self.snapshot, self.requirement, self.root)
+
+    def test_plan_can_use_unique_file_basename(self) -> None:
+        """验证兼容旧计划中的唯一文件名写法，同时仍强制引用预期文件。"""
+        plan = valid_plan()
+        plan = plan.replace("app/src/main/java/LoginViewModel.kt", "LoginViewModel.kt")
+        plan = plan.replace("app/src/test/java/LoginViewModelTest.kt", "LoginViewModelTest.kt")
+        plan = plan.replace(
+            "app/src/main/java/LoginViewModel.kt、app/src/test/java/LoginViewModelTest.kt",
+            "LoginViewModel.kt、LoginViewModelTest.kt",
+        )
+        implementation_plan_path(self.root).write_text(plan, encoding="utf-8")
+
+        receipt, _ = confirm_implementation_plan(self.snapshot, self.requirement, self.root)
+
+        self.assertEqual(self.snapshot["requirement_id"], receipt["requirement_id"])
 
     def test_requirement_or_plan_change_invalidates_old_confirmation(self) -> None:
         """验证需求和计划任一变化后都必须重新展示并获得用户确认。"""
@@ -188,7 +235,7 @@ class ImplementationPlanTests(unittest.TestCase):
             valid_plan("并记录重试入口。"),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效"):
+        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效|计划未引用预期文件"):
             validate_plan_confirmation(self.snapshot, self.requirement, self.root)
 
     def test_impact_radius_change_invalidates_old_confirmation(self) -> None:
@@ -200,7 +247,7 @@ class ImplementationPlanTests(unittest.TestCase):
         payload["impacts"][0]["expected_files"].append("app/src/main/java/Unexpected.kt")
         target.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效"):
+        with self.assertRaisesRegex(ImplementationPlanError, "旧计划确认失效|计划未引用预期文件"):
             validate_plan_confirmation(self.snapshot, self.requirement, self.root)
 
     def test_unconfirmed_requirement_cannot_confirm_plan(self) -> None:

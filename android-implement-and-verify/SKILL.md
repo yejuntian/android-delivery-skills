@@ -25,7 +25,7 @@ description: |
 对用户始终收敛为 `确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付`：
 
 1. **确认需求**：展示最新中文需求、已上线业务影响和必要待确认点；用户增删改后合并事实源并继续确认。
-2. **拆分测试与确认计划**：把全部已确认行为映射为中文业务场景、测试用例和影响半径，再用一份 Markdown 展示实现范围、旧业务影响、预计文件、测试和不修改范围；用户确认后才编码。
+2. **拆分测试与确认计划**：把全部已确认行为映射为中文业务场景、测试用例和影响半径，再用一份 Markdown 展示“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”六类边界；用户确认后才编码。
 3. **实现验证**：按一个可观察行为完成失败测试、最小实现和测试通过，只报告本轮实现与验证结果。
 4. **变更后增量循环**：业务语义变化时只修订受影响需求、影响半径、测试和代码；实现完善时只做最小修改、受影响测试和必要编译。
 5. **最终交付**：仅在用户明确要求时执行最终路由、完整门禁和中文报告；Git 提交仍需单独授权。
@@ -273,7 +273,7 @@ python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requiremen
 python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
 ```
 
-退出码 `0` 才允许编码。该命令生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，并同步刷新 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`（存在时）和 `docs/需求测试追溯.md`；不修改业务文件或 Git。需求语义必须先写入 `requirement_file`，计划变化必须先写入同一份 `docs/实施计划.md`，相关人读 Markdown 同步成功后才允许进入编码。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `docs/实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划五类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
+退出码 `0` 才允许编码。该命令生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，并同步刷新 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`（存在时）和 `docs/需求测试追溯.md`；不修改业务文件或 Git。需求语义必须先写入 `requirement_file`，计划变化必须先写入同一份 `docs/实施计划.md`，相关人读 Markdown 同步成功后才允许进入编码。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `docs/实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划六类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
 1. **BDD + TDD**：先把全部已确认 BDD 映射到真实测试，再逐场景执行 `Red -> Green -> Refactor`。Red 必须由业务断言失败证明，并由自动生成的 `.state/tdd-cycle.json` 保存 Red receipt、Green receipt、代码快照、测试源码快照和 BDD/testcase 关系；Green 后再重构并重跑受影响测试。一个 BDD 可以由 Unit、集成、UI 或人工证据共同覆盖，但任何工具不得越过自己的断言边界。
 2. **主动检索与共享边界保护**：动笔前，主动寻找同类组件、Base 类和测试范式，并复核拟修改共享边界的每个已上线业务调用方已归入“明确修改、必须保护、暂时无法确认”。新发现项按中途需求修订同步确认；未明确授权且旧行为有可靠依据时默认保护，依据不足或与新需求冲突时暂停。按上一条先运行或补齐保护测试，闭环前不得修改共享边界；能够局部实现时优先新增语义明确的入口、overload 或策略，保持旧入口默认语义不变。
 3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。

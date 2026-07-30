@@ -71,7 +71,7 @@ class RunJourneyTest(unittest.TestCase):
         return f"""# 实施计划
 
 ## 实现范围
-- 修改{scope}。
+- BDD-001：修改{scope}。
 
 ## 已上线业务影响
 - 原有成功流程保持不变。

@@ -51,7 +51,7 @@ class ConfigPaths:
 
     @property
     def communications_path(self) -> Path:
-        """返回协作待办路径，AI 手写 blocker/待确认/已发送/低风险直回。"""
+        """返回协作待办路径，只记录待确认或阻塞事项。"""
         return (self.docs_dir / "协作待办.md").resolve()
 
     @property

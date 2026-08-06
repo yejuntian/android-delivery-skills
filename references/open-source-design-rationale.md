@@ -282,7 +282,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 - **问题**：长期复用一个 `current-requirement` 会让上一需求的正文、截图、接口证据、测试用例和报告与下一需求混放；每次开始需求就清空目录又会在误判完成状态、需要追溯或回看失败证据时造成不可逆丢失。纯机器编号可以隔离，但用户无法快速识别内容。
 - **来源**：[XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/latest/) 区分持久状态与可再生成缓存；[Bazel Sandboxing](https://bazel.build/docs/sandboxing) 为动作建立隔离执行根，避免未声明的旧输入影响结果；[Gradle-managed Directories](https://docs.gradle.org/current/userguide/directory_layout.html#dir:gradle_user_home) 对缓存采用周期清理和不同保留期，而不是每次构建后全部删除。
-- **决策**：采用这些原则而不照搬工具实现。每个新串行需求创建 `REQ-日期-序号-中文名称` 独立目录；JSON 保存稳定机器状态，`docs/需求说明.md` 提供中文入口。只有用户明确结束/取消上一需求并开始下一需求时才轮换；默认先预览，确认后执行。上一需求和新需求不共享正文、UI/API 固定证据、测试用例、报告或 Git 基线。
+- **决策**：采用这些原则而不照搬工具实现。每个新串行需求创建 `REQ-日期-序号-中文名称` 独立目录；JSON 保存稳定机器状态，`docs/需求状态.md` 提供自动生成的中文状态入口，已有 `docs/需求说明.md` 原位兼容但不再作为新目录名称。只有用户明确结束/取消上一需求并开始下一需求时才轮换；默认先预览，确认后执行。上一需求和新需求不共享正文、UI/API 固定证据、测试用例、报告或 Git 基线。
 - **回收边界**：已完成或取消的需求必须同时超出最近保留数量和最短保留天数才可回收；活动、未完成、近期、状态缺失或损坏的目录保留。可再生成的 `tempfile` 使用相同时间门槛，但仍只删除允许根目录的直接子项。轮换和回收不嵌入 `init`、测试或交付命令，避免隐式破坏。
 - **职责边界**：`requirement_workspace.py` 只管理项目外目录和 `local.yaml` 的两个活动指针；它不理解需求、不修改 Android 源码、不执行测试、不提交或清理 Git。确认写操作使用单写锁和唯一暂存目录，失败回滚只处理本轮拥有的对象并恢复旧状态，避免多个窗口互相覆盖。轮换后仍必须按 `init → 用户确认 → check-env --new-requirement` 建立新需求事实和基线。
 - **拒绝**：不按每次交付无条件删除 `current-requirement` 或整个 `tempfile`，不以同一目录加前缀模拟隔离，不让 AI 根据聊天内容猜测上一需求是否完成，也不把工作区目录纳入 Skill 源码提交。
@@ -341,7 +341,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **采用依据**：Spec Kit 的 spec/plan 分离和跨产物一致性、Superpowers 的编码前计划确认与小步执行，以及本流程 M01 单一事实、M02 追溯、M08 新鲜证据、M21 局部反馈和 M26 规则去重。
 - **决策**：`requirement_file` 仍是唯一需求事实；每个接受答案先写回并重新读取。R1/R2 确认后只新增一份用户可读 `<requirement_dir>/docs/实施计划.md`，固定展示六类边界；用户确认后由单一职责 `implementation_plan.py` 生成绑定需求修订、有效义务摘要、计划摘要和影响半径摘要的收据。`route` 与完整输入摘要复核收据，需求、计划或影响半径变化后旧 route、测试收据和专项证据失效。
 - **增量边界**：验收语义变化只更新受影响需求、测试、同一计划和影响半径，再确认后继续局部迭代；没有改变六类计划内容和影响半径的实现完善不重复确认。聊天只给摘要与 Markdown 链接，机器收据不要求用户阅读。
-- **拒绝**：不复制 Spec Kit 的 spec/plan/tasks/checklists 文件树，不把 `docs/需求说明.md` 改成业务事实，不新增通用 phase 状态机，也不让脚本生成业务计划或替用户确认。
+- **拒绝**：不复制 Spec Kit 的 spec/plan/tasks/checklists 文件树，不把 `docs/需求状态.md` 或兼容的 `docs/需求说明.md` 改成业务事实，不新增通用 phase 状态机，也不让脚本生成业务计划或替用户确认。
 
 ### M30 Karpathy 编程降错准则适配
 
@@ -357,6 +357,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **决策**：
   - md 是主产物（人读/自检/AI 执行依据），JSON 是门禁附件（SHA 链/自动化证据/哈希校验全读 JSON 不动）。人工 Markdown 统一放在 `docs/`，`render_artifacts.py` 从 JSON 渲染 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`、`docs/需求测试追溯.md` 和 `docs/交付结论.md`。需求语义必须先写回 requirement_file，计划确认成功后同步相关人读 md；JSON 不能成为唯一追溯记录。
   - `docs/` 默认保持扁平：协作待办、变更审查、决策和问题分别使用 `协作待办.md`、`审查-<主题>.md`、`决策-<主题>.md`、`问题-<主题>.md`；`api/`、`ui/`、`config/`、`issues/` 只在有对应资料时创建。所有 AI 手写文档仍填 `android-implement-and-verify/templates/` 骨架（plan/review/test/result/decision/communications）。
+  - 用户日常只需定位需求事实、实施计划、续接指南和交付结论四个入口；其余 Markdown 明确标为自动生成或按需记录。`docs/需求状态.md` 只显示工作区元数据并指向 requirement_file，不复制业务正文。
   - 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前 `archive_before_reclaim` 完整归档 `docs/` 到 `archive/<requirement_id>/`，机器 JSON 和原始证据随源清理不堆积；双门槛（keep_completed + retention_days）不变。
 - **边界**：续接指南是从事实源渲染的状态快照，不是第二事实源（不变量 #25 不变）；md 与 JSON 一致性靠脚本渲染（零漂移），手写 md 由 SKILL 要求填模板；JSON 路径全部原位不迁移，零破坏在途需求。
 - **拒绝**：不迁移 JSON 路径（破坏在途需求风险）；不新建 test/ result/ 子目录（与 test-cases/test-results 混淆）；不复制 Spec Kit/Matt Pocock 完整文件树或 Handoff 体系（M01/M27 已拒绝）；M31 阶段不加项目级并行冲突检测，后续由 M32 的轻量 worktree claim 补齐；不做需求级度量或架构图（超范围）。
@@ -369,10 +370,10 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **沙盒实测证据**：两 worktree 独立分支互不污染；A 脏工作树不阻塞 B（独立 worktree）；`config_paths` 以各自 `requirement_dir/.state` 隔离 baseline/snapshot/route/evidence/capabilities；同一物理 worktree 的第二需求 claim 被 O_EXCL 锁拒；改不同文件无冲突；`git worktree remove/prune` 可回收。
 - **决策**：
   - 业界标准 = 纯 git worktree，零自研并行 wrapper 脚本；只增加一个按物理 worktree 路径的轻量 claim，阻断错误复用但不锁整个仓库。一个需求 = 一个 worktree + 独立分支 + 独立 profile + 独立 requirement_dir。
-  - 文档落地：`requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），目录名英文 slug（kebab-case），中文名存 `docs/需求说明.md` 首行 + workspace state 的 title，只在总览/集成报告显示。
+  - 文档落地：项目内通道使用 `requirement_dir = <project_path>/document/<日期-英文名>/`（文档跟 worktree 走），项目外串行轮换继续使用 `<workspace_root>/requirements-runtime/REQ-*`；二者内部职责相同，入口必须说明适用分支。目录名使用稳定 slug，中文名存 `docs/需求状态.md` 首行和 workspace state 的 title，只在总览/集成报告显示。
   - 用户确认改为私有分支集成前一次 `git rebase`，主分支只用 `git merge --ff-only`，保持历史一条线；rebase 后旧分支证据不作为最终结论，合入后重跑最终门禁。
   - `requirement_workspace.py` 新增 `integrate`（汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md` + 各通道标 MERGED+批次号）、扩展 `index --main-worktree`（刷新全局 `<主工作树>/document/需求总览.md`，六列含分支和集成批次，分支自动从 workspace state 填）。
-  - 不污染门禁：document/ 随 Android 项目代码提交；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。
+  - 不污染门禁：document/ 随 Android 项目代码提交；`git_changes.current_delivery_snapshot` 排除 document/（含 untracked 子文件，沙盒验证不污染也不误伤代码变化）。项目内 `requirement-workspace.json` 的项目位置使用相对需求目录的引用，状态摘要也只展示相对位置；项目外且不进 Git 的轮换目录继续兼容绝对路径。
 - **对不变量 #18 / M22 的覆盖说明**：M22 原则"需求资料默认不进 Android 项目"。本决策由用户明确确认：文档放 project_path/document/ 时跟代码提交 + 摘要排除，保证可追溯且不污染代码门禁，覆盖旧默认。rotate 单配置通道仍可用项目外 requirements-runtime，不变。
 - **拒绝**：不新增 parallel_channel.py 或任何自研并行 wrapper（业界无此实践）；不锁整个 Git 仓库，不做内容级冲突预检（Git rebase/merge 自然暴露冲突）；不对共享分支 rebase，不使用 cherry-pick；不把 `document/` 加入目标项目 `.gitignore`。
 

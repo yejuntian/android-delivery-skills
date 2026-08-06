@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """脚本名称：test_requirement_workspace.py
 
-用途：验证串行需求独立工作区轮换、中文说明、路径保护和延迟回收策略。
+用途：验证串行需求独立工作区轮换、中文状态摘要、路径保护和延迟回收策略。
 
 覆盖范围：profiles 策略解析、旧目录迁移、新需求创建、配置注释保留、失败回滚、
 并发锁、时间门槛、临时缓存回收和危险路径拒绝。测试只使用临时目录，不操作真实需求或项目。
@@ -28,19 +28,25 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import requirement_workspace as requirement_workspace_module  # noqa: E402
 from ..config_paths import resolve_config_paths  # noqa: E402
 from ..requirement_workspace import (  # noqa: E402
     RequirementWorkspaceError,
     WORKSPACE_LOCK_FILE,
     WorkspacePolicy,
+    _prepare_new_workspace,
+    _resolve_project_reference,
     _sanitize_title,
     _validate_requirement_source,
     _write_state,
     _write_summary,
+    archive_before_reclaim,
     build_reclaim_plan,
     execute_reclaim_plan,
+    integrate_channels,
     load_workspace_policy,
     main,
+    render_workspace_index,
     rotate_workspace,
     workspace_mutation_lock,
 )
@@ -180,8 +186,8 @@ class RequirementWorkspaceTests(unittest.TestCase):
         config, policy, paths = self._policy_and_paths()
         now = datetime(2026, 7, 21, 9, 30, tzinfo=timezone.utc)
 
-        with patch(
-            "scripts.requirement_workspace.working_tree_status", return_value=""
+        with patch.object(
+            requirement_workspace_module, "working_tree_status", return_value=""
         ):
             new_dir, plan = rotate_workspace(
                 self.config_path,
@@ -208,7 +214,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
             )["status"],
         )
         self.assertTrue((new_dir / "docs" / "视频下载页登录拦截.md").is_file())
-        self.assertTrue((new_dir / "docs" / "需求说明.md").is_file())
+        self.assertTrue((new_dir / "docs" / "需求状态.md").is_file())
         for name in ("test-cases", "test-results", ".state"):
             self.assertTrue((new_dir / name).is_dir())
         # 专项资料和扩展 Markdown 目录按需创建，避免每个需求留下空目录。
@@ -229,24 +235,35 @@ class RequirementWorkspaceTests(unittest.TestCase):
     def test_rotation_failure_restores_config_directory_and_metadata(self) -> None:
         """验证完成状态写入失败时恢复旧目录，并移除本轮新增状态和新目录。"""
         (self.current / "requirement.docx").write_bytes(b"old")
+        docs = self.current / "docs"
+        docs.mkdir()
+        legacy_summary = docs / "需求说明.md"
+        legacy_content = "# 原工作区状态\n"
+        legacy_summary.write_text(legacy_content, encoding="utf-8")
         source = self.workspace / "new-requirement.md"
         source.write_text("# 新需求", encoding="utf-8")
         config_before = self.config_path.read_text(encoding="utf-8")
         config, policy, paths = self._policy_and_paths()
 
         def write_summary_with_failure(directory, state):
-            """调用原实现生成新说明，并在旧需求标记阶段注入失败。"""
+            """写入真实摘要后注入失败，验证旧文件内容可完整回滚。"""
+            result = _write_summary(directory, state)
             if state.get("status") in {"COMPLETED", "CANCELLED"}:
-                raise RequirementWorkspaceError("模拟上一需求说明写入失败")
-            return _write_summary(directory, state)
+                raise RequirementWorkspaceError("模拟上一需求状态摘要写入后失败")
+            return result
 
         with (
-            patch("scripts.requirement_workspace.working_tree_status", return_value=""),
-            patch(
-                "scripts.requirement_workspace._write_summary",
+            patch.object(
+                requirement_workspace_module, "working_tree_status", return_value=""
+            ),
+            patch.object(
+                requirement_workspace_module,
+                "_write_summary",
                 side_effect=write_summary_with_failure,
             ),
-            self.assertRaisesRegex(RequirementWorkspaceError, "模拟上一需求说明写入失败"),
+            self.assertRaisesRegex(
+                RequirementWorkspaceError, "模拟上一需求状态摘要写入后失败"
+            ),
         ):
             rotate_workspace(
                 self.config_path,
@@ -262,8 +279,64 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertEqual(config_before, self.config_path.read_text(encoding="utf-8"))
         self.assertTrue((self.current / "requirement.docx").is_file())
         self.assertFalse((self.current / "requirement-workspace.json").exists())
-        self.assertFalse((self.current / "docs" / "需求说明.md").exists())
+        self.assertFalse((self.current / "docs" / "需求状态.md").exists())
+        self.assertEqual(legacy_content, legacy_summary.read_text(encoding="utf-8"))
         self.assertFalse(any(item.name.startswith("REQ-") for item in policy.root.iterdir()))
+
+    def test_existing_workspace_keeps_legacy_summary_filename(self) -> None:
+        """已有需求说明原位刷新，避免在途需求被强制迁移或留下两份摘要。"""
+        docs = self.current / "docs"
+        docs.mkdir()
+        legacy = docs / "需求说明.md"
+        legacy.write_text("# 旧状态\n", encoding="utf-8")
+
+        _write_summary(
+            self.current,
+            {
+                "status": "ACTIVE",
+                "title": "登录拦截",
+                "requirement_file": "docs/login.md",
+            },
+        )
+
+        self.assertIn("唯一需求事实源", legacy.read_text(encoding="utf-8"))
+        self.assertFalse((docs / "需求状态.md").exists())
+
+    def test_project_bound_workspace_uses_portable_project_reference(self) -> None:
+        """跟项目提交的状态和摘要不写入本机绝对项目或工作目录。"""
+        project = self.root / "MyApp"
+        creating = project / "document" / ".creating-login"
+        creating.mkdir(parents=True)
+        source = self.root / "login.md"
+        source.write_text("# 登录拦截\n", encoding="utf-8")
+
+        _prepare_new_workspace(
+            creating,
+            "REQ-20260721-001",
+            "登录拦截",
+            source,
+            project,
+            "feature/login",
+            datetime(2026, 7, 21, tzinfo=timezone.utc),
+        )
+
+        state_text = (creating / "requirement-workspace.json").read_text(
+            encoding="utf-8"
+        )
+        state = json.loads(state_text)
+        summary = (creating / "docs" / "需求状态.md").read_text(encoding="utf-8")
+        self.assertEqual("../..", state["project_path"])
+        self.assertNotIn(str(project), state_text)
+        self.assertNotIn(str(project), summary)
+        self.assertNotIn(str(creating), summary)
+        self.assertIn("../..（相对当前需求目录）", summary)
+
+    def test_project_reference_rejects_invalid_json_type(self) -> None:
+        """损坏状态不能把对象静默解释成项目路径。"""
+        with self.assertRaisesRegex(
+            RequirementWorkspaceError, "project_path 必须是字符串路径或空值"
+        ):
+            _resolve_project_reference(self.current, {"path": str(self.project)})
 
     def test_reclaim_requires_count_and_age_and_never_deletes_active(self) -> None:
         """验证只有同时超出最近数量和保留天数的已完成目录才会被删除。"""
@@ -318,10 +391,6 @@ class RequirementWorkspaceTests(unittest.TestCase):
 
     def test_reclaim_archives_human_md_before_delete(self) -> None:
         """回收前把完整 docs/ 归档到 archive/，源目录删除后人读记录仍可查。"""
-        from ..requirement_workspace import (
-            archive_before_reclaim,
-            render_workspace_index,
-        )
         policy = WorkspacePolicy(
             mode="rotate",
             root=self.workspace / "requirements-runtime",
@@ -334,7 +403,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         done = policy.root / "REQ-20260701-001-已完成需求"
         done.mkdir()
         (done / "docs").mkdir()
-        (done / "docs" / "需求说明.md").write_text("# 需求正文", encoding="utf-8")
+        (done / "docs" / "需求说明.md").write_text("# 历史需求状态", encoding="utf-8")
         (done / "docs" / "续接指南.md").write_text("# 续接", encoding="utf-8")
         (done / "docs" / "决策-2026-07-01-不引库.md").write_text("# 决策", encoding="utf-8")
         (done / "test-cases").mkdir()
@@ -396,14 +465,20 @@ class RequirementWorkspaceTests(unittest.TestCase):
 
     def test_integrate_generates_report_and_marks_merged(self) -> None:
         """integrate 汇总各通道生成交付集成报告，并标 MERGED + 批次号。"""
-        from ..requirement_workspace import integrate_channels
-
         # 两个并行通道（模拟两个 worktree 的 requirement_dir）
-        channel_a = self.workspace / "channels" / "2026-07-25-login"
-        channel_b = self.workspace / "channels" / "2026-07-25-pay"
-        for channel, title, branch, conclusion in [
-            (channel_a, "登录页改造", "feature/req-login", "FULL_PASS"),
-            (channel_b, "支付断点续传", "feature/req-pay", "LOCAL_PASS_DEVICE_PENDING"),
+        project_a = self.workspace / "project-login"
+        project_b = self.workspace / "project-pay"
+        channel_a = project_a / "document" / "2026-07-25-login"
+        channel_b = project_b / "document" / "2026-07-25-pay"
+        for channel, project_reference, title, branch, conclusion in [
+            (channel_a, "../..", "登录页改造", "feature/req-login", "FULL_PASS"),
+            (
+                channel_b,
+                str(project_b),
+                "支付断点续传",
+                "feature/req-pay",
+                "LOCAL_PASS_DEVICE_PENDING",
+            ),
         ]:
             channel.mkdir(parents=True)
             _write_state(channel, {
@@ -411,16 +486,24 @@ class RequirementWorkspaceTests(unittest.TestCase):
                 "title": title,
                 "branch": branch,
                 "requirement_id": channel.name,
-                "project_path": str(self.workspace / f"project-{channel.name}"),
+                "project_path": project_reference,
             })
             (channel / "test-results").mkdir()
             (channel / "test-results" / "delivery-result.json").write_text(
-                json.dumps({"conclusion": conclusion, "obligations": [], "pending_capabilities": []}),
+                json.dumps(
+                    {
+                        "conclusion": conclusion,
+                        "obligations": [],
+                        "pending_capabilities": [],
+                    }
+                ),
                 encoding="utf-8",
             )
 
         main_worktree = self.workspace / "MyApp"
-        with patch("scripts.requirement_workspace.release_channel") as release_channel:
+        with patch.object(
+            requirement_workspace_module, "release_channel"
+        ) as release_channel:
             report = integrate_channels(
                 main_worktree, [channel_a, channel_b], "2026-07-25-批次1"
             )
@@ -432,11 +515,46 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.assertIn("FULL_PASS", content)
 
         # 各通道 state 被标 MERGED + 批次号。
-        state_a = json.loads((channel_a / "requirement-workspace.json").read_text(encoding="utf-8"))
+        state_a = json.loads(
+            (channel_a / "requirement-workspace.json").read_text(encoding="utf-8")
+        )
         self.assertEqual("MERGED", state_a["status"])
         self.assertEqual("2026-07-25-批次1", state_a["integration_batch"])
         self.assertEqual(2, release_channel.call_count)
+        released_projects = {call.args[0] for call in release_channel.call_args_list}
+        self.assertEqual({project_a.resolve(), project_b.resolve()}, released_projects)
 
+    def test_integrate_rejects_invalid_project_reference_before_writes(self) -> None:
+        """任一通道状态损坏时，不生成报告或改写其他通道状态。"""
+        main_worktree = self.workspace / "MyApp"
+        channel_a = self.workspace / "channels" / "login"
+        channel_b = self.workspace / "channels" / "pay"
+        for channel, project_path in (
+            (channel_a, str(self.project)),
+            (channel_b, {"unexpected": "object"}),
+        ):
+            channel.mkdir(parents=True)
+            _write_state(
+                channel,
+                {
+                    "status": "COMPLETED",
+                    "title": channel.name,
+                    "project_path": project_path,
+                },
+            )
+
+        with self.assertRaisesRegex(
+            RequirementWorkspaceError, "project_path 必须是字符串路径或空值"
+        ):
+            integrate_channels(main_worktree, [channel_a, channel_b], "invalid-state")
+
+        for channel in (channel_a, channel_b):
+            state = json.loads(
+                (channel / "requirement-workspace.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual("COMPLETED", state["status"])
+            self.assertNotIn("integration_batch", state)
+        self.assertFalse((main_worktree / "document").exists())
 
     def test_next_preview_accepts_chinese_outcome_without_modifying_files(self) -> None:
         """验证中文结论能生成准确预览，且未确认时不轮换目录或配置。"""
@@ -480,9 +598,12 @@ class RequirementWorkspaceTests(unittest.TestCase):
         error = io.StringIO()
 
         with (
-            patch("scripts.requirement_workspace.working_tree_status", return_value=""),
-            patch(
-                "scripts.requirement_workspace.execute_reclaim_plan",
+            patch.object(
+                requirement_workspace_module, "working_tree_status", return_value=""
+            ),
+            patch.object(
+                requirement_workspace_module,
+                "execute_reclaim_plan",
                 side_effect=OSError("权限不足"),
             ),
             redirect_stdout(output),

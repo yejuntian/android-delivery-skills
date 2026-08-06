@@ -36,6 +36,22 @@ class FlowDocsTests(unittest.TestCase):
         self.assertNotIn("当前验证基线：核心单测", combined)
         self.assertNotRegex(combined, r"当前自动化验证[^\n]*\d+/\d+")
 
+    def test_flow_docs_distinguish_project_and_local_document_channels(self) -> None:
+        """文档明确两种保存分支，并把日常入口与机器附件分层展示。"""
+        rendered = render_documents()
+        combined = "\n".join(rendered.values())
+        required = [
+            "项目内 worktree 通道",
+            "本机串行轮换通道",
+            "requirements-runtime/REQ-",
+            "日常只需要关注四个人工入口",
+            "需求状态.md",
+            "同一需求的补充仍走增量闭环，不运行 next",
+        ]
+        for phrase in required:
+            self.assertIn(phrase, combined)
+        self.assertNotIn("文档布局（跟项目走，git 跟踪）", combined)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,8 @@
 - 一个需求使用一个 git worktree、独立分支、独立 channel 配置和独立 `requirement_dir`；同通道内串行。
 - `check-env` 原子占用当前物理 worktree 路径；同一 worktree 的第二个活动需求阻断，不同 worktree 即使属于同一 Git 仓库也允许并行。
 - 后续 `route` 会复核占用身份，最终 gate 继续复核 route 快照、Git 基线和当前代码摘要；完成、取消或集成后释放通道。
-- 文档放 `<project>/document/<日期-英文名>/` 并随代码提交；`.state/` 是不进 Git 的需求级机器状态。`document/` 不参与代码 diff 和代码摘要，但目录之外的真实代码不能借此绕过门禁。
+- 项目内 worktree 通道把文档放 `<project>/document/<日期-英文名>/` 并随代码提交；项目外串行轮换通道由 `requirement_workspace.py next` 创建到 `requirements-runtime/REQ-*`，不进入目标项目 Git。两者内部职责相同，`.state/` 都是不进 Git 的需求级机器状态；`document/` 不参与代码 diff 和代码摘要，但目录之外的真实代码不能借此绕过门禁。
+- 项目内 `requirement-workspace.json` 只保存相对需求目录的项目引用，状态摘要不展开本机绝对目录；历史绝对引用和项目外轮换目录继续兼容。
 - 共享真机、模拟器和账号仍需串行使用。
 
 ## 合并

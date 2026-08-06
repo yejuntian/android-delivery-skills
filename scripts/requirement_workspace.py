@@ -44,7 +44,9 @@ OUTCOME_ALIASES = {
     "已取消": "cancelled",
 }
 WORKSPACE_STATE_FILE = "requirement-workspace.json"
-WORKSPACE_SUMMARY_FILE = Path("docs") / "需求说明.md"
+WORKSPACE_SUMMARY_FILE = Path("docs") / "需求状态.md"
+LEGACY_WORKSPACE_SUMMARY_FILE = Path("docs") / "需求说明.md"
+WORKSPACE_SUMMARY_FILES = (WORKSPACE_SUMMARY_FILE, LEGACY_WORKSPACE_SUMMARY_FILE)
 # 只预创建流程始终需要的目录；接口、UI、配置和问题资料按需落盘。
 REQUIRED_SUBDIRECTORIES = ("test-cases", "test-results", ".state")
 OPTIONAL_SUBDIRECTORIES = ("api", "ui", "config", "issues")
@@ -237,9 +239,9 @@ def _write_state(directory: Path, payload: dict[str, Any]) -> None:
 
 
 def _snapshot_workspace_metadata(directory: Path) -> dict[str, str | None]:
-    """在轮换前保存状态和中文说明，失败时恢复原始内容。"""
+    """在轮换前保存状态和新旧中文摘要，失败时恢复原始内容。"""
     snapshot: dict[str, str | None] = {}
-    for name in (WORKSPACE_STATE_FILE, WORKSPACE_SUMMARY_FILE):
+    for name in (WORKSPACE_STATE_FILE, *WORKSPACE_SUMMARY_FILES):
         path = directory / name
         if path.exists() and not path.is_file():
             raise RequirementWorkspaceError(f"需求工作区元数据不是普通文件: {path}")
@@ -271,10 +273,54 @@ def _status_label(status: str) -> str:
     }.get(status, "状态暂时无法识别")
 
 
+def _workspace_summary_path(directory: Path) -> Path:
+    """新工作区使用明确名称，已有旧工作区继续原位更新而不强制迁移。"""
+    preferred = directory / WORKSPACE_SUMMARY_FILE
+    legacy = directory / LEGACY_WORKSPACE_SUMMARY_FILE
+    if legacy.is_file() and not preferred.exists():
+        return legacy
+    return preferred
+
+
+def _project_reference_for_state(directory: Path, project_path: Path | None) -> str | None:
+    """项目内状态保存相对引用，项目外本机状态保留绝对路径。"""
+    if project_path is None:
+        return None
+    workspace = directory.expanduser().resolve()
+    project = project_path.expanduser().resolve()
+    if _is_relative_to(workspace, project):
+        return Path(os.path.relpath(project, workspace)).as_posix()
+    return str(project)
+
+
+def _resolve_project_reference(directory: Path, raw_value: Any) -> Path | None:
+    """把新相对引用和历史绝对引用统一解析为真实项目目录。"""
+    if raw_value is None or raw_value == "":
+        return None
+    if not isinstance(raw_value, (str, os.PathLike)):
+        raise RequirementWorkspaceError(
+            "需求工作区 project_path 必须是字符串路径或空值"
+        )
+    reference = Path(raw_value).expanduser()
+    if reference.is_absolute():
+        return reference.resolve()
+    return (directory.expanduser().resolve() / reference).resolve()
+
+
 def _write_summary(directory: Path, state: dict[str, Any]) -> None:
-    """生成用户可读的中文需求说明，不要求用户理解机器状态。"""
+    """生成用户可读的需求状态摘要，不复制业务需求。"""
     title = str(state.get("title") or "未命名需求")
     status = _status_label(str(state.get("status") or ""))
+    project_reference = state.get("project_path")
+    portable = bool(
+        project_reference and not Path(str(project_reference)).expanduser().is_absolute()
+    )
+    project_display = (
+        f"{project_reference}（相对当前需求目录）"
+        if portable
+        else project_reference or "未配置"
+    )
+    workspace_display = ".（当前需求目录）" if portable else str(directory)
     lines = [
         f"# {title}",
         "",
@@ -282,16 +328,16 @@ def _write_summary(directory: Path, state: dict[str, Any]) -> None:
         f"- 当前状态：{status}",
         f"- 开始时间：{state.get('created_at', '未记录')}",
         f"- 完成时间：{state.get('completed_at') or '尚未完成'}",
-        f"- Android 项目：{state.get('project_path') or '未配置'}",
+        f"- Android 项目：{project_display}",
         f"- 目标分支：{state.get('branch') or '未限制'}",
         f"- 需求文档：{state.get('requirement_file') or '未配置'}",
-        f"- 工作目录：{directory}",
+        f"- 工作目录：{workspace_display}",
         f"- 是否允许回收：{'否' if state.get('status') == 'ACTIVE' else '满足保留策略后允许'}",
         "",
-        "> 本文件供用户阅读；同目录 JSON 保存稳定机器状态。",
+        "> 本文件由工作区状态自动生成，不写业务需求；唯一需求事实源见上面的“需求文档”。",
         "",
     ]
-    _write_text_atomic(directory / WORKSPACE_SUMMARY_FILE, "\n".join(lines))
+    _write_text_atomic(_workspace_summary_path(directory), "\n".join(lines))
 
 
 def _sanitize_title(title: str) -> str:
@@ -602,23 +648,29 @@ def integrate_channels(
     """
     main_worktree = Path(main_worktree).expanduser().resolve()
     report_root = main_worktree / "document"
-    report_root.mkdir(parents=True, exist_ok=True)
     triples: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    state_updates: list[tuple[Path, dict[str, Any], Path | None]] = []
     release_targets: list[tuple[Path, Path]] = []
     for channel_dir in channel_dirs:
         channel_dir = Path(channel_dir).expanduser().resolve()
         state, result = _read_channel_state(channel_dir)
         triples.append((channel_dir, state, result))
-        # 把状态标 MERGED + 批次号写回各通道 state（单一职责：只写本批次标记）。
         state_path = channel_dir / WORKSPACE_STATE_FILE
         existing = _read_json(state_path) or {}
         if isinstance(existing, dict):
-            existing["status"] = "MERGED"
-            existing["integration_batch"] = batch_label
-            _write_state(channel_dir, existing)
-            project_value = existing.get("project_path")
-            if project_value:
-                release_targets.append((Path(str(project_value)), channel_dir))
+            project_path = _resolve_project_reference(
+                channel_dir, existing.get("project_path")
+            )
+            state_updates.append((channel_dir, existing, project_path))
+
+    # 所有外部引用先解析成功，避免后续通道损坏时留下部分 MERGED 状态。
+    report_root.mkdir(parents=True, exist_ok=True)
+    for channel_dir, existing, project_path in state_updates:
+        existing["status"] = "MERGED"
+        existing["integration_batch"] = batch_label
+        _write_state(channel_dir, existing)
+        if project_path:
+            release_targets.append((project_path, channel_dir))
     report_path = report_root / f"{INTEGRATION_REPORT_PREFIX}{batch_label}.md"
     _write_text_atomic(report_path, render_integration_report(triples, batch_label))
     for project_path, channel_dir in release_targets:
@@ -677,7 +729,7 @@ def _mark_previous_workspace(
     requirement_file: str,
     now: datetime,
 ) -> None:
-    """为上一需求写入完成状态和中文说明，供后续延迟回收判断。"""
+    """为上一需求写入完成状态和中文状态摘要，供后续延迟回收判断。"""
     existing = _read_json(directory / WORKSPACE_STATE_FILE) or {}
     state = {
         **existing,
@@ -687,9 +739,8 @@ def _mark_previous_workspace(
         "status": "COMPLETED" if outcome == "completed" else "CANCELLED",
         "created_at": existing.get("created_at") or now.isoformat(),
         "completed_at": now.isoformat(),
-        "project_path": existing.get("project_path") or (
-            str(project_path) if project_path else None
-        ),
+        "project_path": existing.get("project_path")
+        or _project_reference_for_state(directory, project_path),
         "branch": existing.get("branch") or branch,
         "requirement_file": existing.get("requirement_file") or requirement_file,
     }
@@ -725,7 +776,7 @@ def _prepare_new_workspace(
         "status": "ACTIVE",
         "created_at": now.isoformat(),
         "completed_at": None,
-        "project_path": str(project_path) if project_path else None,
+        "project_path": _project_reference_for_state(directory, project_path),
         "branch": branch,
         "requirement_file": requirement_name.as_posix(),
     }
@@ -1121,7 +1172,7 @@ def main(argv: list[str] | None = None) -> int:
                 execute_reclaim_plan(policy, plan)
             except (RequirementWorkspaceError, OSError) as exc:
                 print(f"✅ 新需求工作区已创建: {new_directory}")
-                print(f"中文需求说明: {new_directory / WORKSPACE_SUMMARY_FILE}")
+                print(f"中文需求状态: {new_directory / WORKSPACE_SUMMARY_FILE}")
                 print(
                     f"⚠️ 工作区轮换已经成功，但延迟回收没有全部完成: {exc}",
                     file=sys.stderr,
@@ -1133,7 +1184,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
         print(f"✅ 新需求工作区已创建: {new_directory}")
-        print(f"中文需求说明: {new_directory / WORKSPACE_SUMMARY_FILE}")
+        print(f"中文需求状态: {new_directory / WORKSPACE_SUMMARY_FILE}")
         print("下一步：先执行 delivery.py init，确认需求理解后再执行 check-env --new-requirement。")
         return 0
     except (DeliveryError, RequirementWorkspaceError, OSError) as exc:

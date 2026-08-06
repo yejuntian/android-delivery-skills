@@ -200,7 +200,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--suite",
         choices=sorted(SUITE_ALIASES),
         default="fast",
-        help="评测套件：fast=artifact+contracts",
+        help=f"评测套件；fast 当前包含：{', '.join(SUITE_ALIASES['fast'])}",
     )
     parser.add_argument(
         "--format",

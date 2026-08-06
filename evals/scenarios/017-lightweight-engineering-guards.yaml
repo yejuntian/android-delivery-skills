@@ -36,3 +36,9 @@ checks:
     contains:
       - "难以逆转、没有背景会令人困惑、存在真实取舍"
       - "普通实现选择写在需求或计划中"
+  - name: 人工文档不缓存环境可直接发现的值
+    path: "references/open-source-design-rationale.md"
+    contains:
+      - "文档指针同时说明资料内容和触发分支"
+      - "环境本身也是事实源"
+      - "不在人工说明中复制维护"

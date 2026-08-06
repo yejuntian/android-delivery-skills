@@ -20,6 +20,7 @@ import unittest
 
 from evals.oracles.contract_coverage import evaluate_contract_coverage
 from evals.oracles.contract_loader import default_contract_path, load_contracts
+from evals.runners.run_evals import SUITE_ALIASES
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -44,7 +45,7 @@ class EvalContractTests(unittest.TestCase):
         self.assertGreaterEqual(report["summary"]["total"], 10)
 
     def test_unified_fast_runner_passes(self) -> None:
-        """执行统一 fast suite，确认 artifact 与 contracts 两层 eval 都被纳入汇总。"""
+        """执行统一 fast suite，确认全部已登记的轻量 eval 都被纳入汇总。"""
         completed = subprocess.run(
             [
                 sys.executable,
@@ -71,6 +72,19 @@ class EvalContractTests(unittest.TestCase):
         self.assertEqual("fast", report["suite"])
         self.assertEqual(0, report["summary"]["failed"])
         self.assertEqual(["artifact", "contracts", "behavior", "transcript", "command"], [suite["suite"] for suite in report["suites"]])
+
+    def test_fast_help_matches_registered_suites(self) -> None:
+        """确认 CLI 帮助从当前 suite 注册表生成，不保留会过期的手写清单。"""
+        completed = subprocess.run(
+            [sys.executable, str(RUNNER), "--help"],
+            cwd=REPOSITORY_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode, msg=completed.stderr)
+        expected = f"fast当前包含：{','.join(SUITE_ALIASES['fast'])}"
+        self.assertIn(expected, "".join(completed.stdout.split()))
 
 
 if __name__ == "__main__":

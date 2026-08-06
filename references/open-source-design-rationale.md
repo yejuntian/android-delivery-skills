@@ -312,7 +312,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 
 ### M27 Matt Pocock Skills 精华适配
 
-- **调研对象**：2026-08-07 复核 [mattpocock/skills](https://github.com/mattpocock/skills) `skills/engineering` 全目录，提交 `6acc160e4e0cd062dbbbd7a1b26ae92855edf07e`；除需求、TDD 和诊断主链外，继续核对 `code-review`、`codebase-design`、`prototype`、`resolving-merge-conflicts`、`triage`、`wayfinder`、`wizard` 和 setup/router 能力。
+- **调研对象**：2026-08-07 复核 [mattpocock/skills](https://github.com/mattpocock/skills) `skills` 全目录，提交 `6acc160e4e0cd062dbbbd7a1b26ae92855edf07e`；除需求、TDD 和诊断主链外，继续核对 `writing-for-agents`、`code-review`、`codebase-design`、`prototype`、`resolving-merge-conflicts`、`triage`、`wayfinder`、`wizard` 和 setup/router 能力。
 - **判断**：其小 Skill 组合、单一事实源和渐进加载与本流程方向一致，但它是通用工程方法集，不具备本流程的 Android 路由、需求修订、旧业务保护、设备降级、证据新鲜度和机器门禁，不能替换现有 Harness。
 - **采用**：多来源资料保留来源定位和权威范围，区分可查明事实、用户决定、可证伪推导和未确认假设；需求已经清晰时直接综合，不为模板重新访谈。DOCX 首次转写保留标题、列表、表格、链接、正文顺序和图片核对缺口，后续仍只维护原有 `requirement_file`。
 - **采用**：先从用户目标、触发、规则、状态恢复、数据契约和范围理解需求；目标项目已有术语与 ADR 时按当前范围读取。测试优先使用项目已有的最高可观察边界，减少为测试新增接缝。
@@ -323,6 +323,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 - **采用**：代码质量用删除检验、调用方知识和真实替代行为判断模块深度与测试接缝；只有难以逆转的公共契约存在多个真实方案时才比较不同接口形状。决策记录仅服务难逆转、缺少背景会令人困惑且存在真实取舍的决定。
 - **采用**：文字和正式资料无法关闭状态或 UI 结构决定时，允许用临时原型回答一个问题；结论写回唯一需求事实，验证过的模型按生产标准实现，临时代码不成为设计基准、测试证据或第二事实源。
 - **采用**：最终审查并列保留需求轴与工程轴，不能互相抵消；并行分支冲突先追溯双方需求和测试意图，兼容时同时保留，不兼容时服从当前集成目标且不发明新行为。
+- **采用**：文档指针同时说明资料内容和触发分支；环境本身也是事实源，可由代码、配置、目录、`--help` 或统一命令直接查明的值不在人工说明中复制维护，文档只保留权威入口、无法直接发现的约定和设计原因。
 - **拒绝**：不复制其完整 Skill 套件、Issue/Wayfinder/Handoff/Triage 体系，不新增切片 Schema、Ticket、状态机或审批，不为每个需求逐题长时间访谈，不自动扫描并重构架构，不为原型建立固定分支流程，也不在实现后自动提交；这些做法会增加认知和运行成本，或违背用户授权、最小修改及旧业务保护目标。
 - **落点演进**：最初只把领域资料、疑难诊断和测试可信度落到既有运行时来源，不新增包装层。2026-08-07 用户明确要求按该项目的渐进加载理念彻底重构后，新增 `android-delivery-guide`、`android-delivery-setup` 两个显式用户入口，以及 catalog、声明式流程契约和 Figma XML 交接工具；七个原运行时 Skill、命令协议和最终门禁仍不改名、不复制。
 
@@ -455,6 +456,7 @@ Top15 保持 Kotlin/Android 优先，同时要求原则能落到 Java 老项目�
 ## 维护规则
 
 - 每次修改 Skill、脚本、配置、Schema、路由、门禁或用户可见流程后，交付前主动核对并最小同步职责对应的运行时来源、设计依据和测试；不相关文档不改，说明文档只摘要或链接。
+- 环境中可由代码、配置、目录、`--help` 或统一验证命令直接查明的值，不在人工说明中复制维护；文档引用权威入口，只记录无法直接发现的约定、原因和风险边界。
 - 修改规则时先分离"本次新增目标"和"旧约束保护清单"：新增目标只允许最小增量落地，旧有需求确认、旧业务保护、新鲜证据、影响半径、职责归属、Git 授权、设备降级和维护验证等约束默认保留；除非用户明确要求废弃并同步运行时来源、设计依据和测试，否则不得为适配新增目标删弱旧约束。
 - 本机首次维护本流程时先运行 `python3 scripts/install_maintenance_hook.py` 安装 pre-commit 自动验证；修改共享规则、任一 Skill、本文、流程契约、Oracle、路由、门禁或脚本行为后，必须从本仓库根目录运行 `python3 scripts/validate_maintenance.py`；该命令统一运行 Skill catalog 校验、规则归属测试、流程文档同步检查和 fast eval。这些维护门禁不接入 `delivery.py`，普通 Android 需求没有修改流程仓库时不运行。
 - 修改跨 Skill 原则时，同步 `_shared/android-global-rules.md` 和本文对应决策。

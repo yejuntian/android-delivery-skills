@@ -29,7 +29,7 @@ from urllib.parse import urlsplit, urlunsplit
 import xml.etree.ElementTree as ET
 
 # 直接运行时建立包上下文，保证 IDE、python -m 和脚本调用使用同一导入。
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 

@@ -11,9 +11,10 @@ import tempfile
 import unittest
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from ..execution_evidence import RECEIPT_PRODUCER, RECEIPT_VERSION, junit_content_signature, sha256_file
 from ..tdd_cycle import (

@@ -18,6 +18,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import glob
 import hashlib
+import importlib
+import importlib.util
 import json
 import os
 import re
@@ -35,45 +37,81 @@ from urllib.parse import urlsplit, urlunsplit
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 SUITE_ROOT = SKILL_DIR.parent
+SUITE_SCRIPTS_DIR = SUITE_ROOT / "scripts"
 DEFAULT_HARNESS = SKILL_DIR / "assets" / "journey-harness"
 DEFAULT_CONFIG = SUITE_ROOT / "profiles" / "local.yaml"
 JOURNEY_GRADLE_HOME_ENV = "ANDROID_DELIVERY_JOURNEY_GRADLE_HOME"
 JOURNEY_BUILD_ROOT_ENV = "ANDROID_DELIVERY_JOURNEY_BUILD_ROOT"
 JOURNEY_RUNTIME_ARTIFACTS = {"harness-app-build", "project-cache", "reports"}
 
-# Journey 与总入口必须使用完全相同的配置路径语义。
-if str(SUITE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SUITE_ROOT))
-from scripts.config_paths import (  # noqa: E402
-    baseline_path_for_config,
-    requirement_snapshot_path_for_config,
-    resolve_config_paths,
-)
-from scripts.device_preflight import choose_device, list_devices  # noqa: E402
-from scripts.delivery import DeliveryError, read_requirement  # noqa: E402
-from scripts.git_ignore import GitIgnoreError, ensure_requirement_state_ignored  # noqa: E402
-from scripts.git_changes import GitInspectionError, current_delivery_snapshot  # noqa: E402
-from scripts.implementation_plan import (  # noqa: E402
-    ImplementationPlanError,
-    implementation_plan_digest,
-    implementation_plan_path,
-    read_implementation_plan,
-    validate_plan_confirmation,
-)
-from scripts.requirement_snapshot import (  # noqa: E402
-    RequirementSnapshotError,
-    load_requirement_snapshot,
-    requirement_digest,
-)
-from scripts.requirement_inputs import requirement_inputs_digest  # noqa: E402
-from scripts.user_facing_labels import (  # noqa: E402
-    ChineseArgumentParser,
-    JOURNEY_APPLICABILITY_LABELS,
-    JOURNEY_STATUS_LABELS,
-    SNAPSHOT_STATUS_LABELS,
-    localize_machine_terms,
-    user_label,
-)
+# Journey 目录名包含连字符；使用唯一包名加载共享脚本，避免与宿主仓库的
+# 顶层 ``scripts`` 包冲突，同时保留共享模块内部的相对导入语义。
+_SUITE_PACKAGE = "_android_delivery_runtime_scripts"
+
+
+def _register_suite_package() -> None:
+    if _SUITE_PACKAGE in sys.modules:
+        return
+    spec = importlib.util.spec_from_file_location(
+        _SUITE_PACKAGE,
+        SUITE_SCRIPTS_DIR / "__init__.py",
+        submodule_search_locations=[str(SUITE_SCRIPTS_DIR)],
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载 Android Delivery 共享脚本: {SUITE_SCRIPTS_DIR}")
+    package = importlib.util.module_from_spec(spec)
+    sys.modules[_SUITE_PACKAGE] = package
+    spec.loader.exec_module(package)
+
+
+def _suite_module(name: str) -> Any:
+    _register_suite_package()
+    return importlib.import_module(f"{_SUITE_PACKAGE}.{name}")
+
+
+_config_paths = _suite_module("config_paths")
+baseline_path_for_config = _config_paths.baseline_path_for_config
+requirement_snapshot_path_for_config = _config_paths.requirement_snapshot_path_for_config
+resolve_config_paths = _config_paths.resolve_config_paths
+
+_device_preflight = _suite_module("device_preflight")
+choose_device = _device_preflight.choose_device
+list_devices = _device_preflight.list_devices
+
+_delivery = _suite_module("delivery")
+DeliveryError = _delivery.DeliveryError
+read_requirement = _delivery.read_requirement
+
+_git_ignore = _suite_module("git_ignore")
+GitIgnoreError = _git_ignore.GitIgnoreError
+ensure_requirement_state_ignored = _git_ignore.ensure_requirement_state_ignored
+
+_git_changes = _suite_module("git_changes")
+GitInspectionError = _git_changes.GitInspectionError
+current_delivery_snapshot = _git_changes.current_delivery_snapshot
+
+_implementation_plan = _suite_module("implementation_plan")
+ImplementationPlanError = _implementation_plan.ImplementationPlanError
+implementation_plan_digest = _implementation_plan.implementation_plan_digest
+implementation_plan_path = _implementation_plan.implementation_plan_path
+read_implementation_plan = _implementation_plan.read_implementation_plan
+validate_plan_confirmation = _implementation_plan.validate_plan_confirmation
+
+_requirement_snapshot = _suite_module("requirement_snapshot")
+RequirementSnapshotError = _requirement_snapshot.RequirementSnapshotError
+load_requirement_snapshot = _requirement_snapshot.load_requirement_snapshot
+requirement_digest = _requirement_snapshot.requirement_digest
+
+_requirement_inputs = _suite_module("requirement_inputs")
+requirement_inputs_digest = _requirement_inputs.requirement_inputs_digest
+
+_user_facing_labels = _suite_module("user_facing_labels")
+ChineseArgumentParser = _user_facing_labels.ChineseArgumentParser
+JOURNEY_APPLICABILITY_LABELS = _user_facing_labels.JOURNEY_APPLICABILITY_LABELS
+JOURNEY_STATUS_LABELS = _user_facing_labels.JOURNEY_STATUS_LABELS
+SNAPSHOT_STATUS_LABELS = _user_facing_labels.SNAPSHOT_STATUS_LABELS
+localize_machine_terms = _user_facing_labels.localize_machine_terms
+user_label = _user_facing_labels.user_label
 
 PASS = "PASS"
 PREFLIGHT_PASS = "PREFLIGHT_PASS"

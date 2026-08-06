@@ -5,15 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import unittest
-from unittest import mock
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from .. import device_preflight  # noqa: E402
+from ..test_support import patch_module_global  # noqa: E402
 
 
 ADB_DEVICES = """List of devices attached
@@ -38,7 +39,7 @@ class DevicePreflightTests(unittest.TestCase):
         )
 
     def test_choose_device_requires_serial_when_multiple_devices_exist(self) -> None:
-        with mock.patch.object(device_preflight, "_run", return_value=(0, ADB_DEVICES)):
+        with patch_module_global(device_preflight, "_run", return_value=(0, ADB_DEVICES)):
             serial, error = device_preflight.choose_device(None)
             self.assertIsNone(serial)
             self.assertIn("多个设备", error)
@@ -52,12 +53,12 @@ class DevicePreflightTests(unittest.TestCase):
 
     def test_preflight_requires_successful_physical_screenshot(self) -> None:
         with (
-            mock.patch.object(
+            patch_module_global(
                 device_preflight,
                 "_run",
                 side_effect=[(0, ADB_DEVICES), (0, "device\n")],
             ),
-            mock.patch.object(
+            patch_module_global(
                 device_preflight,
                 "_capture_screenshot",
                 return_value=(True, None),
@@ -79,7 +80,7 @@ class DevicePreflightTests(unittest.TestCase):
         )
 
     def test_preflight_rejects_emulator_for_physical_ui_acceptance(self) -> None:
-        with mock.patch.object(device_preflight, "_run", return_value=(0, ADB_DEVICES)):
+        with patch_module_global(device_preflight, "_run", return_value=(0, ADB_DEVICES)):
             result = device_preflight.preflight_device(
                 "emulator-5554",
                 require_physical=True,

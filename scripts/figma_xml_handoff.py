@@ -13,7 +13,7 @@ import subprocess
 import sys
 from typing import Any
 
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 

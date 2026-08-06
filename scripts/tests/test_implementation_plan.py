@@ -20,9 +20,10 @@ import unittest
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 # 同时支持 IDE 包测试、`python -m` 和直接运行当前测试文件。
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from ..impact_radius import impact_radius_path  # noqa: E402
 from ..implementation_plan import (  # noqa: E402

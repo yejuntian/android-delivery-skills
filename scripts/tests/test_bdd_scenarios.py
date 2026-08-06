@@ -9,9 +9,10 @@ from pathlib import Path
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from ..bdd_scenarios import (  # noqa: E402
     BddScenarioError,

@@ -17,16 +17,17 @@ import subprocess
 import tempfile
 import sys
 import unittest
-from unittest import mock
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 # 同时支持 IDE 包测试、`python -m` 和直接运行当前测试文件。
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from .. import install_maintenance_hook as install_maintenance_hook_module  # noqa: E402
+from ..test_support import patch_module_global  # noqa: E402
 from ..install_maintenance_hook import HOOK_MARKER, install_hook  # noqa: E402
 from ..maintenance_pre_commit import decide_validation  # noqa: E402
 
@@ -90,7 +91,7 @@ class InstallMaintenanceHookTests(unittest.TestCase):
 
     def _mock_git_path(self):
         """返回 mock 对象，让安装脚本把 hook 写入临时路径。"""
-        return mock.patch.object(
+        return patch_module_global(
             install_maintenance_hook_module.subprocess,
             "run",
             return_value=subprocess.CompletedProcess(

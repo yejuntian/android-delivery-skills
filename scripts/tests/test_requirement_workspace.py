@@ -17,19 +17,20 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from typing import Any
 import unittest
-from unittest.mock import patch
 
 import yaml
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from .. import requirement_workspace as requirement_workspace_module  # noqa: E402
-from ..config_paths import resolve_config_paths  # noqa: E402
+from ..test_support import patch_module_global  # noqa: E402
 from ..requirement_workspace import (  # noqa: E402
     RequirementWorkspaceError,
     WORKSPACE_LOCK_FILE,
@@ -67,7 +68,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         self.profile_dir = self.workspace / "profiles"
         self.profile_dir.mkdir()
         self.config_path = self.profile_dir / "local.yaml"
-        self.config = {
+        self.config: dict[str, Any] = {
             "project_path": str(self.project),
             "branch": "feature/example",
             "workspace_root": str(self.workspace),
@@ -186,7 +187,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
         config, policy, paths = self._policy_and_paths()
         now = datetime(2026, 7, 21, 9, 30, tzinfo=timezone.utc)
 
-        with patch.object(
+        with patch_module_global(
             requirement_workspace_module, "working_tree_status", return_value=""
         ):
             new_dir, plan = rotate_workspace(
@@ -247,16 +248,15 @@ class RequirementWorkspaceTests(unittest.TestCase):
 
         def write_summary_with_failure(directory, state):
             """写入真实摘要后注入失败，验证旧文件内容可完整回滚。"""
-            result = _write_summary(directory, state)
+            _write_summary(directory, state)
             if state.get("status") in {"COMPLETED", "CANCELLED"}:
                 raise RequirementWorkspaceError("模拟上一需求状态摘要写入后失败")
-            return result
 
         with (
-            patch.object(
+            patch_module_global(
                 requirement_workspace_module, "working_tree_status", return_value=""
             ),
-            patch.object(
+            patch_module_global(
                 requirement_workspace_module,
                 "_write_summary",
                 side_effect=write_summary_with_failure,
@@ -416,6 +416,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
 
         archive = archive_before_reclaim(done, policy.root)
         self.assertIsNotNone(archive)
+        assert archive is not None
         self.assertTrue((archive / "docs" / "需求说明.md").is_file())
         self.assertTrue((archive / "docs" / "续接指南.md").is_file())
         self.assertTrue((archive / "docs" / "决策-2026-07-01-不引库.md").is_file())
@@ -501,7 +502,7 @@ class RequirementWorkspaceTests(unittest.TestCase):
             )
 
         main_worktree = self.workspace / "MyApp"
-        with patch.object(
+        with patch_module_global(
             requirement_workspace_module, "release_channel"
         ) as release_channel:
             report = integrate_channels(
@@ -598,10 +599,10 @@ class RequirementWorkspaceTests(unittest.TestCase):
         error = io.StringIO()
 
         with (
-            patch.object(
+            patch_module_global(
                 requirement_workspace_module, "working_tree_status", return_value=""
             ),
-            patch.object(
+            patch_module_global(
                 requirement_workspace_module,
                 "execute_reclaim_plan",
                 side_effect=OSError("权限不足"),

@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 import sys
 import tempfile
+from types import ModuleType
 import unittest
 
 import yaml
@@ -13,11 +15,30 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SETUP_SCRIPTS = REPOSITORY_ROOT / "android-delivery-setup" / "scripts"
-if str(SETUP_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SETUP_SCRIPTS))
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+if globals().get("__package__") in {None, ""}:
+    sys.path.insert(0, str(SCRIPTS_DIR.parent))
+    __package__ = "scripts.tests"
+    __spec__ = None
 
-from setup_project import SetupError, apply_setup, inspect_project  # noqa: E402
-from scripts.config_paths import resolve_config_paths  # noqa: E402
+
+def _load_setup_project() -> ModuleType:
+    """从带连字符的 Skill 目录加载真实 setup_project.py。"""
+    module_path = SETUP_SCRIPTS / "setup_project.py"
+    spec = importlib.util.spec_from_file_location("android_delivery_setup_project", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载项目初始化脚本: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_SETUP_PROJECT = _load_setup_project()
+SetupError = getattr(_SETUP_PROJECT, "SetupError")
+apply_setup = getattr(_SETUP_PROJECT, "apply_setup")
+inspect_project = getattr(_SETUP_PROJECT, "inspect_project")
+
+from ..config_paths import resolve_config_paths  # noqa: E402
 
 
 class SetupProjectTests(unittest.TestCase):

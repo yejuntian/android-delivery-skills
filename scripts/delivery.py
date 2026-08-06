@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # 直接运行时建立包上下文；IDE 和 `python -m` 始终解析同一个相对导入。
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 

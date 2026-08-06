@@ -19,7 +19,7 @@ import sys
 from typing import Any
 
 # 直接运行时建立包上下文，保证 IDE、python -m 和脚本调用使用同一导入。
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     __package__ = "scripts"
 
@@ -1335,8 +1335,6 @@ def _cmd_assemble(args: argparse.Namespace, config_path: Path, context: dict[str
         print(f"❌ 报告结论：{conclusion}", file=sys.stderr)
         return 2
     print("✅ assemble + validate 通过")
-    return 0
-    print("✅ 最终交付证据与当前需求、Git 基线和代码摘要一致。")
     return 0
 
 

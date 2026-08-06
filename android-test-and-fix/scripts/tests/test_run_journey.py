@@ -20,7 +20,6 @@
 
 from __future__ import annotations
 
-import importlib
 import importlib.util
 import json
 import os
@@ -37,21 +36,23 @@ from unittest import mock
 SCRIPT = Path(__file__).resolve().parents[1] / "run_journey.py"
 # 动态加载被测脚本，避免要求 Journey 目录成为可安装 Python 包。
 SPEC = importlib.util.spec_from_file_location("run_journey", SCRIPT)
-run_journey = importlib.util.module_from_spec(SPEC)
+run_journey: Any = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = run_journey
 SPEC.loader.exec_module(run_journey)
 
 # Journey 目录名包含连字符，无法作为常规 Python 包导入；沿用被测脚本已建立的
 # Skill 根目录，通过动态模块对象访问修订工具，避免 IDE 把跨目录静态导入误报为缺失。
-REQUIREMENT_SNAPSHOT: Any = importlib.import_module("scripts.requirement_snapshot")
+REQUIREMENT_SNAPSHOT: Any = run_journey._suite_module("requirement_snapshot")
 apply_requirement_revision = REQUIREMENT_SNAPSHOT.apply_requirement_revision
 requirement_digest = REQUIREMENT_SNAPSHOT.requirement_digest
 requirement_summary_digest = REQUIREMENT_SNAPSHOT.requirement_summary_digest
 write_requirement_snapshot = REQUIREMENT_SNAPSHOT.write_requirement_snapshot
-IMPLEMENTATION_PLAN: Any = importlib.import_module("scripts.implementation_plan")
+IMPLEMENTATION_PLAN: Any = run_journey._suite_module("implementation_plan")
 confirm_implementation_plan = IMPLEMENTATION_PLAN.confirm_implementation_plan
 implementation_plan_path = IMPLEMENTATION_PLAN.implementation_plan_path
+TEST_SUPPORT: Any = run_journey._suite_module("test_support")
+patch_module_global = TEST_SUPPORT.patch_module_global
 
 
 class RunJourneyTest(unittest.TestCase):
@@ -289,17 +290,17 @@ class RunJourneyTest(unittest.TestCase):
         result_path = root / "result.json"
         discovery = run_journey.CommandResult(["gradlew", "tasks"], 0, "assembleDebug - build")
         with (
-            mock.patch.object(run_journey, "load_config", return_value={}),
-            mock.patch.object(run_journey, "resolve_result_path", return_value=result_path),
-            mock.patch.object(run_journey, "resolve_journey_runtime_root", return_value=root / "runtime"),
-            mock.patch.object(run_journey, "resolve_journeys_dir", return_value=journeys),
-            mock.patch.object(run_journey, "resolve_android_sdk", return_value="/sdk"),
-            mock.patch.object(
+            patch_module_global(run_journey, "load_config", return_value={}),
+            patch_module_global(run_journey, "resolve_result_path", return_value=result_path),
+            patch_module_global(run_journey, "resolve_journey_runtime_root", return_value=root / "runtime"),
+            patch_module_global(run_journey, "resolve_journeys_dir", return_value=journeys),
+            patch_module_global(run_journey, "resolve_android_sdk", return_value="/sdk"),
+            patch_module_global(
                 run_journey,
                 "discover_journey_task",
                 return_value=(None, discovery),
             ),
-            mock.patch.object(run_journey, "choose_device") as choose_device,
+            patch_module_global(run_journey, "choose_device") as choose_device,
         ):
             exit_code = run_journey.main([
                 "--config", str(root / "local.yaml"),
@@ -365,7 +366,7 @@ class RunJourneyTest(unittest.TestCase):
 
         baseline = root / "baseline.json"
         baseline.write_text(json.dumps({"id": "run-123"}), encoding="utf-8")
-        with mock.patch.object(run_journey, "baseline_path_for_config", return_value=baseline):
+        with patch_module_global(run_journey, "baseline_path_for_config", return_value=baseline):
             scoped = run_journey.requirement_scope_id(config_path, config)
         self.assertTrue(scoped.startswith("run-123-"))
 
@@ -435,8 +436,8 @@ class RunJourneyTest(unittest.TestCase):
             "requirement_file": "requirement.md",
         }
         with (
-            mock.patch.object(run_journey, "baseline_path_for_config", return_value=baseline),
-            mock.patch.object(
+            patch_module_global(run_journey, "baseline_path_for_config", return_value=baseline),
+            patch_module_global(
                 run_journey, "requirement_snapshot_path_for_config", return_value=snapshot,
             ),
         ):
@@ -481,13 +482,13 @@ class RunJourneyTest(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         harness = root / "harness"
         with (
-            mock.patch.object(run_journey, "load_config", return_value={}),
-            mock.patch.object(
+            patch_module_global(run_journey, "load_config", return_value={}),
+            patch_module_global(
                 run_journey,
                 "delivery_context",
                 return_value={"requirement_status": "PENDING_CONFIRMATION"},
             ),
-            mock.patch.object(run_journey, "resolve_journeys_dir") as resolve_cases,
+            patch_module_global(run_journey, "resolve_journeys_dir") as resolve_cases,
         ):
             exit_code = run_journey.main([
                 "--config", str(root / "local.yaml"),
@@ -566,7 +567,7 @@ class RunJourneyTest(unittest.TestCase):
             "requirement_dir": "requirement",
             "requirement_file": "requirement.md",
         }
-        with mock.patch.object(
+        with patch_module_global(
             run_journey, "requirement_snapshot_path_for_config", return_value=snapshot_path,
         ):
             confirmed = run_journey.delivery_context(config_path, config)
@@ -640,10 +641,10 @@ class RunJourneyTest(unittest.TestCase):
             executed=1, failures=1, files=["TEST-home.xml"]
         )
         with (
-            mock.patch.object(run_journey, "run", side_effect=fake_run),
-            mock.patch.object(run_journey, "apply_precondition", return_value=(True, [], "")) as prepare,
-            mock.patch.object(run_journey, "collect_structured_results", return_value=structured),
-            mock.patch.object(run_journey, "collect_screenshots", return_value=[]),
+            patch_module_global(run_journey, "run", side_effect=fake_run),
+            patch_module_global(run_journey, "apply_precondition", return_value=(True, [], "")) as prepare,
+            patch_module_global(run_journey, "collect_structured_results", return_value=structured),
+            patch_module_global(run_journey, "collect_screenshots", return_value=[]),
         ):
             result = run_journey.run_harness(
                 harness, ":harness-app:journeyTest", "com.example", "device", 2, "/sdk", {}
@@ -666,14 +667,14 @@ class RunJourneyTest(unittest.TestCase):
             return run_journey.CommandResult(command, 0, "BUILD SUCCESSFUL")
 
         with (
-            mock.patch.object(run_journey, "run", side_effect=fake_run),
-            mock.patch.object(run_journey, "apply_precondition", return_value=(True, [], "")),
-            mock.patch.object(
+            patch_module_global(run_journey, "run", side_effect=fake_run),
+            patch_module_global(run_journey, "apply_precondition", return_value=(True, [], "")),
+            patch_module_global(
                 run_journey,
                 "collect_structured_results",
                 return_value=run_journey.StructuredTestResult(),
             ),
-            mock.patch.object(run_journey, "collect_screenshots", return_value=[]),
+            patch_module_global(run_journey, "collect_screenshots", return_value=[]),
         ):
             result = run_journey.run_harness(
                 harness, ":harness-app:journeyTest", "com.example", "device", 2, "/sdk", {}
@@ -701,19 +702,19 @@ class RunJourneyTest(unittest.TestCase):
             run_journey.PASS, 1, [], [], "", executed_tests=1, result_files=["TEST-home.xml"]
         )
         with (
-            mock.patch.object(run_journey, "load_config", return_value=config),
-            mock.patch.object(run_journey, "resolve_result_path", return_value=result_path),
-            mock.patch.object(run_journey, "resolve_journey_runtime_root", return_value=root / "runtime"),
-            mock.patch.object(run_journey, "resolve_journeys_dir", return_value=journeys),
-            mock.patch.object(run_journey, "resolve_android_sdk", return_value="/sdk"),
-            mock.patch.object(run_journey, "choose_device", return_value=("device", None)),
-            mock.patch.object(
+            patch_module_global(run_journey, "load_config", return_value=config),
+            patch_module_global(run_journey, "resolve_result_path", return_value=result_path),
+            patch_module_global(run_journey, "resolve_journey_runtime_root", return_value=root / "runtime"),
+            patch_module_global(run_journey, "resolve_journeys_dir", return_value=journeys),
+            patch_module_global(run_journey, "resolve_android_sdk", return_value="/sdk"),
+            patch_module_global(run_journey, "choose_device", return_value=("device", None)),
+            patch_module_global(
                 run_journey,
                 "discover_journey_task",
                 return_value=(":harness-app:journeyTest", None),
             ),
-            mock.patch.object(run_journey, "verify_installed", return_value=(True, ["adb"])),
-            mock.patch.object(run_journey, "run_harness", return_value=harness_result),
+            patch_module_global(run_journey, "verify_installed", return_value=(True, ["adb"])),
+            patch_module_global(run_journey, "run_harness", return_value=harness_result),
         ):
             exit_code = run_journey.main([
                 "--config", str(root / "local.yaml"),
@@ -735,7 +736,7 @@ class RunJourneyTest(unittest.TestCase):
         """验证超时返回环境失败码，且命令与输出都不会泄漏 DeepLink 参数。"""
         command = ["adb", "shell", "am", "start", "-d", "sample://login?token=secret"]
         expired = subprocess.TimeoutExpired(command, timeout=1, output="sample://login?token=secret")
-        with mock.patch.object(run_journey.subprocess, "run", side_effect=expired):
+        with patch_module_global(run_journey.subprocess, "run", side_effect=expired):
             result = run_journey.run(command, timeout=1)
 
         self.assertEqual(124, result.returncode)

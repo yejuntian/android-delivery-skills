@@ -501,21 +501,6 @@ def _impact_blast_radius(
         rows.append({"id": identifier, "change": change_type, "effect": effect})
     return rows
 
-    lines.extend([
-        "",
-        "## 下一步",
-        "",
-        "- 未确认变化：完成 `confirm-requirement-update`。",
-        "- 计划未确认：展示 `实施计划.md` 并 `confirm-plan`。",
-        "- STALE 映射：重新登记测试，`mapping_status` 回填 CURRENT。",
-        "- 最终结论为通过且无变化：可直接交付；否则按五步流程继续。",
-        "",
-        "> 本指南由各 JSON 自动聚合，是状态快照而非第二事实源；需求正文以配置的 requirement_file 为准。",
-        "",
-    ])
-    return "\n".join(lines)
-
-
 def write_resume_guide(path: Path, content: str) -> None:
     """原子写入续接指南 md。"""
     write_text_atomic(path, content)

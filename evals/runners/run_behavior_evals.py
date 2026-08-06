@@ -92,7 +92,7 @@ def evaluate_check(contract_set: Any, check: dict[str, Any], scenario_path: Path
     if actual_passed != expected_passed:
         messages.append(f"期望 passed={expected_passed}，实际 passed={actual_passed}")
 
-    expected_contracts = expect.get("violation_contracts", [])
+    expected_contracts = expect.get("violation_contracts")
     if expected_contracts is None:
         expected_contracts = []
     if not isinstance(expected_contracts, list) or any(

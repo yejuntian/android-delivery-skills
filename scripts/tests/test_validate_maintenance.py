@@ -17,16 +17,17 @@ from pathlib import Path
 import subprocess
 import unittest
 import sys
-from unittest import mock
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 # 同时支持 IDE 包测试、`python -m` 和直接运行当前测试文件。
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from .. import validate_maintenance as validate_maintenance_module  # noqa: E402
+from ..test_support import patch_module_global  # noqa: E402
 from ..validate_maintenance import planned_commands, run_validation  # noqa: E402
 
 
@@ -52,7 +53,7 @@ class ValidateMaintenanceTests(unittest.TestCase):
 
     def test_run_validation_summarizes_success(self) -> None:
         """验证四个命令都成功时汇总为全绿。"""
-        with mock.patch.object(
+        with patch_module_global(
             validate_maintenance_module.subprocess,
             "run",
             return_value=subprocess.CompletedProcess(args=[], returncode=0),
@@ -65,7 +66,7 @@ class ValidateMaintenanceTests(unittest.TestCase):
 
     def test_run_validation_stops_after_first_failure(self) -> None:
         """验证第一个维护命令失败后短路，避免后续结果掩盖失败点。"""
-        with mock.patch.object(
+        with patch_module_global(
             validate_maintenance_module.subprocess,
             "run",
             return_value=subprocess.CompletedProcess(args=[], returncode=1),

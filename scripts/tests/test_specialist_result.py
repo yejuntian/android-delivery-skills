@@ -18,16 +18,17 @@ import tempfile
 import unittest
 
 from contextlib import redirect_stdout
-from unittest import mock
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
+if globals().get("__package__") in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
+    __spec__ = None
 
 from .. import delivery as delivery_module  # noqa: E402
 from .. import delivery_gate as delivery_gate_module  # noqa: E402
+from ..test_support import patch_module_global  # noqa: E402
 from ..execution_evidence import sha256_file  # noqa: E402
 from ..specialist_result import (  # noqa: E402
     API_CONTRACT_CHECK_IDS,
@@ -613,8 +614,8 @@ class SpecialistResultTests(unittest.TestCase):
             encoding="utf-8",
         )
         with (
-            mock.patch.object(delivery_module, "load_config", return_value={}),
-            mock.patch.object(delivery_gate_module, "current_context", return_value=self.context),
+            patch_module_global(delivery_module, "load_config", return_value={}),
+            patch_module_global(delivery_gate_module, "current_context", return_value=self.context),
             redirect_stdout(output),
         ):
             exit_code = main(["path", "--config", str(config_path)])

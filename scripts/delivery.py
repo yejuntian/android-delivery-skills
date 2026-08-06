@@ -26,8 +26,6 @@ import json
 import os
 import re
 import sys
-import zipfile
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -119,6 +117,7 @@ from .fact_inbox import (  # noqa: E402
     materialize_confirmed_facts,
     pending_facts,
 )
+from .document_sources import DocumentSourceError, docx_to_markdown  # noqa: E402
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -427,20 +426,11 @@ def resolve_config_paths(config, config_path):
 
 
 def _read_docx(path):
-    """DOCX 是标准 OOXML 压缩包，直接提取正文，避免额外文档依赖。"""
+    """把 DOCX 结构保真地转写为可审阅 Markdown。"""
     try:
-        with zipfile.ZipFile(path) as archive:
-            root = ET.fromstring(archive.read("word/document.xml"))
-    except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError) as exc:
-        raise DeliveryError(f"DOCX 文件损坏或结构不受支持: {path}: {exc}") from exc
-
-    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    paragraphs = []
-    for paragraph in root.iter(f"{namespace}p"):
-        text = "".join(node.text or "" for node in paragraph.iter(f"{namespace}t")).strip()
-        if text:
-            paragraphs.append(text)
-    return "\n".join(paragraphs)
+        return docx_to_markdown(path)
+    except DocumentSourceError as exc:
+        raise DeliveryError(str(exc)) from exc
 
 
 def read_requirement(path):
@@ -473,7 +463,8 @@ def read_requirement(path):
 
 def print_bdd_instruction():
     """打印中文需求验收指令（精简版），机器编号保留但不要求用户理解英文术语。"""
-    print("👉 AI 指令：先形成初步需求理解，不要立即编码。")
+    print("👉 AI 指令：先形成初步需求理解并综合已知资料；资料已足够时不要重复提问，也不要立即编码。")
+    print("能从代码、配置、测试和契约查明的技术事实直接查明；只有改变产品行为、范围或验收的决定才询问用户。")
     print("把独立触发和结果拆成 BDD-001 形式的场景；每个场景包含 Given/When/Then。")
     print("检测到变化时面向用户只展示：新增、修改、删除、未变化。决策只展示：已确认、待确认、已撤回、冲突。")
     print("首次确认前每次补充/修改/删除/纠正，先展示本轮变化摘要，再合并写回 requirement_file，重新 init 读取。")
@@ -515,7 +506,7 @@ def print_environment_rules():
     print("  2. 最小修改：只改已确认需求直接涉及的范围，复用现有分层，不跨职责塞逻辑或顺手重构。")
     print("  3. 局部迭代：编码后的完善、修改、删除或修复只运行受影响测试和必要编译，不自动 route 或全量审查。")
     print("  4. 需求变化：只有业务行为、边界或验收结果变化时才修订需求；确认后仍回到局部迭代。")
-    print("  5. 测试左移：按 BDD 场景映射真实测试 ID；先用业务断言复现 Red，再做最小修改使其 Green。")
+    print("  5. 测试左移：优先复用项目已有的最高可观察边界；按 BDD 先复现 Red，再做最小修改使其 Green。复杂需求按计划中的真实依赖逐片完成，小需求直接执行。")
     print("  6. 最终交付：仅在用户当前或最初明确要求最终检查、完整交付或准备提交时执行 route、assemble、lint 和完整门禁。")
     print("  7. 测试命令：AI 根据本次修改、实际模块、测试结构和项目已有方式直接选择最小命令，不得写死 assembleDebug 或 lintDebug；普通单元测试不先运行全量任务发现。")
     print("  8. 追溯与证据：局部结果只证明本轮范围；最终代码必须重新执行全部必需命令，需求映射率为 100%。")
@@ -846,7 +837,8 @@ def cmd_init(args):
         requirement_path = paths.requirement_path
     elif requirement_path.suffix.lower() == ".docx" and not md_path.is_file():
         # 首次：AI 自动读取 docx 正文并转写成 docs/<需求名>.md（事实源切换）。
-        docx_content = read_requirement(requirement_path)
+        # 这里允许空正文继续进入图片型模板分支；通用读取仍拒绝空需求。
+        docx_content = _read_docx(requirement_path)
         md_path.parent.mkdir(parents=True, exist_ok=True)
         if not docx_content.strip():
             # 图片型 docx 提取不到正文：用模板骨架建空文件，
@@ -1393,8 +1385,9 @@ def cmd_confirm_requirement_update(args):
     print("\n👉 下一步")
     print("  1. 把实施计划写入上述 md（填 android-implement-and-verify/templates/plan.md 骨架）")
     print("  2. 把影响半径写入上述 JSON（参考 android-implement-and-verify/references/impact-radius.example.json，并按 references/impact-radius.schema.json 生成，覆盖当前需求基线以来的全部语义变化）")
-    print("  3. 展示简短摘要给用户，停止等待确认")
-    print("  4. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
+    print("  3. 小需求只写一行实现步骤；仅跨会话或多条独立验收链路按端到端结果拆分")
+    print("  4. 展示简短摘要给用户，停止等待确认")
+    print("  5. 确认后 confirm-plan → init-test-mapping 登记测试 → 编码")
     mapping_path = getattr(paths, "test_mapping_path", None)
     if mapping_path is not None:
         print(

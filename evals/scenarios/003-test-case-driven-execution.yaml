@@ -16,3 +16,10 @@ checks:
     contains:
       - "把 Journey、Compose UI Test、Espresso、UIAutomator、Unit、Integration、Contract、Screenshot 和人工验收视为不同证据执行器"
       - "不追求所有需求机械执行全部测试类型"
+  - name: 复杂需求纵向拆分而小需求直接执行
+    path: "android-implement-and-verify/references/implementation-and-testing.md"
+    contains:
+      - "小需求直接按 BDD 执行"
+      - "复杂需求按实施计划中的前置依赖逐片执行"
+      - "最高公共边界"
+      - "文件和内部调用只是实现细节，不单独成为切片"

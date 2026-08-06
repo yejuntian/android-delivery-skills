@@ -19,6 +19,7 @@ description: |
 | 当前任务 | 必读资料 |
 | --- | --- |
 | 澄清需求、BDD、计划、影响半径或事实收件箱 | `references/requirement-and-plan.md` |
+| 多来源文档、表格、截图、术语或需求冲突 | `references/document-and-requirement-understanding.md`，再按需读取上一行 |
 | TDD、局部迭代、测试选择或 Figma XML 实现 | `references/implementation-and-testing.md`；Figma XML 另读 `references/figma-android-xml-handoff.md` |
 | route、专项、自修复、assemble、最终结论 | `references/final-delivery.md` |
 | 多需求 worktree、轮换、合并或跨上下文续接 | `references/parallel-and-resume.md` |
@@ -31,8 +32,8 @@ description: |
 
 始终向用户收敛为 `确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付`：
 
-1. **确认需求**：把每个已接受答案写回唯一 `requirement_file`，展示最新变更摘要、已上线业务影响和待确认点。
-2. **拆分测试与确认计划**：把已确认行为映射为 BDD、测试和影响半径，展示同一份实施计划；用户确认后才编码。
+1. **确认需求**：先综合已知资料，不重复询问；把每个已接受答案写回唯一 `requirement_file`，展示最新变更摘要、已上线业务影响和待确认点。
+2. **拆分测试与确认计划**：把已确认行为映射为 BDD、测试和影响半径；只有跨会话或多条独立验收链路的复杂需求才在同一计划中拆纵向切片，小需求一行直通。用户仍只确认一次计划。
 3. **实现验证**：逐个可观察行为完成 Red、最小实现、Green 和受影响验证。
 4. **变更后增量循环**：这是任意阶段都能触发的回退路径，不是可跳过的线性尾声。
 5. **最终交付**：仅在用户明确要求时执行最终 route、专项、完整门禁和中文报告；提交仍需单独授权。

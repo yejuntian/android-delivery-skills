@@ -2,6 +2,13 @@ id: 002-docx-to-md-fact-source
 title: docx 只作初始输入，init 后 md 成为事实源
 rubric: artifact-integrity-v1
 checks:
+  - name: DOCX 转写保留可审阅结构
+    path: "scripts/document_sources.py"
+    contains:
+      - "按正文顺序保留标题、列表、表格、链接和图片缺口"
+      - "_table_markdown"
+      - "hyperlink"
+      - "内嵌图片：需结合原 DOCX 核对"
   - name: init 首次 docx 自动转写 md
     path: "scripts/delivery.py"
     contains:
@@ -21,3 +28,13 @@ checks:
       - "图片型 docx 提取不到正文时使用需求模板骨架"
     not_contains:
       - "同步 `.docx` 时必须使用能保留现有结构和样式的文档编辑能力"
+  - name: 多来源需求不形成第二事实源
+    path: "android-implement-and-verify/references/document-and-requirement-understanding.md"
+    contains:
+      - "不要为了填模板重新采访用户"
+      - "区分结论类型"
+      - "事实"
+      - "决定"
+      - "推导"
+      - "假设"
+      - "最终确认的是合并后的 `requirement_file`"

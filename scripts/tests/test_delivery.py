@@ -242,22 +242,81 @@ class RequirementReaderTests(unittest.TestCase):
                 path.write_text("登录后展示中文标题\n", encoding="utf-8")
                 self.assertEqual(read_requirement(path), "登录后展示中文标题")
 
-    def test_reads_docx_paragraphs(self) -> None:
-        """验证标准 OOXML 段落按原顺序提取，不依赖第三方 Word 解析库。"""
+    def test_reads_docx_structure_in_body_order(self) -> None:
+        """验证 DOCX 标题、列表、链接、表格和图片缺口转成可审阅 Markdown。"""
         path = self.root / "requirement.docx"
         # 构造最小 OOXML 正文，避免测试依赖第三方 Word 解析库。
         document_xml = """<?xml version="1.0" encoding="UTF-8"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>
-    <w:p><w:r><w:t>第一条需求</w:t></w:r></w:p>
-    <w:p><w:r><w:t>第二条需求</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>登录需求</w:t></w:r></w:p>
+    <w:p><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>失败时显示原因</w:t></w:r></w:p>
+    <w:p><w:hyperlink r:id="rId5"><w:r><w:t>接口契约</w:t></w:r></w:hyperlink></w:p>
+    <w:tbl>
+      <w:tr><w:tc><w:p><w:r><w:t>状态</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>结果</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr><w:tc><w:p><w:r><w:t>失败</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>显示错误</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+    <w:p><w:r><w:drawing/><w:t>错误态示意</w:t></w:r></w:p>
   </w:body>
 </w:document>
 """
+        relationships_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId5" Target="https://example.com/api" Type="hyperlink" TargetMode="External"/>
+</Relationships>
+"""
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr("word/document.xml", document_xml)
+            archive.writestr("word/_rels/document.xml.rels", relationships_xml)
 
-        self.assertEqual(read_requirement(path), "第一条需求\n第二条需求")
+        markdown = read_requirement(path)
+        self.assertIn("# 登录需求", markdown)
+        self.assertIn("- 失败时显示原因", markdown)
+        self.assertIn("[接口契约](https://example.com/api)", markdown)
+        self.assertIn("| 状态 | 结果 |", markdown)
+        self.assertIn("| 失败 | 显示错误 |", markdown)
+        self.assertIn("[内嵌图片：需结合原 DOCX 核对]", markdown)
+
+    def test_init_keeps_image_only_docx_template_fallback(self) -> None:
+        """验证纯图片 DOCX 仍创建需求骨架，不把图片标记误当成完整正文。"""
+        requirement_dir = self.root / "REQ-20260807-001-image"
+        requirement_dir.mkdir()
+        docx_path = requirement_dir / "requirement.docx"
+        document_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:drawing/></w:r></w:p></w:body>
+</w:document>
+"""
+        with zipfile.ZipFile(docx_path, "w") as archive:
+            archive.writestr("word/document.xml", document_xml)
+
+        md_path = requirement_dir / "docs" / "image.md"
+        source_paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=docx_path,
+            requirement_dir=requirement_dir,
+        )
+        markdown_paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=md_path,
+            requirement_dir=requirement_dir,
+        )
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.validate_requirement_input_boundaries"),
+            mock.patch(
+                "scripts.delivery.resolve_paths",
+                side_effect=[source_paths, markdown_paths],
+            ),
+            redirect_stdout(io.StringIO()),
+            self.assertRaises(DeliveryError),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        markdown = md_path.read_text(encoding="utf-8")
+        self.assertIn("# <需求标题>", markdown)
+        self.assertNotIn("内嵌图片：需结合原 DOCX 核对", markdown)
 
     def test_rejects_missing_empty_unsupported_and_corrupt_files(self) -> None:
         """验证不可用需求资料明确报错，禁止搜索替代文件或返回猜测正文。"""
@@ -293,6 +352,8 @@ class UserInstructionTests(unittest.TestCase):
 
         text = output.getvalue()
         self.assertIn("先形成初步需求理解", text)
+        self.assertIn("资料已足够时不要重复提问", text)
+        self.assertIn("只有改变产品行为、范围或验收的决定才询问用户", text)
         self.assertIn("BDD-001", text)
         self.assertIn("Given/When/Then", text)
         self.assertIn("确认后不得编码", text)

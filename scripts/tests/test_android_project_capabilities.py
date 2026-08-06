@@ -23,6 +23,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import android_project_capabilities as android_project_capabilities_module  # noqa: E402
 from ..android_project_capabilities import (  # noqa: E402
     classify_tasks,
     discover_capabilities,
@@ -139,7 +140,7 @@ class AndroidProjectCapabilitiesTests(unittest.TestCase):
             root = Path(raw_root)
             (root / "a.txt").write_text("ordinary\n", encoding="utf-8")
             (root / "b.txt").write_text("ordinary\n", encoding="utf-8")
-            with mock.patch("scripts.android_project_capabilities.MAX_DISCOVERY_FILES", 1):
+            with mock.patch.object(android_project_capabilities_module, "MAX_DISCOVERY_FILES", 1):
                 result = discover_static_analysis_signals(root, [])
 
         self.assertTrue(result["discovery_truncated"])

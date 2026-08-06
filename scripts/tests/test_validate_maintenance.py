@@ -26,6 +26,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import validate_maintenance as validate_maintenance_module  # noqa: E402
 from ..validate_maintenance import planned_commands, run_validation  # noqa: E402
 
 
@@ -51,8 +52,9 @@ class ValidateMaintenanceTests(unittest.TestCase):
 
     def test_run_validation_summarizes_success(self) -> None:
         """验证四个命令都成功时汇总为全绿。"""
-        with mock.patch(
-            "scripts.validate_maintenance.subprocess.run",
+        with mock.patch.object(
+            validate_maintenance_module.subprocess,
+            "run",
             return_value=subprocess.CompletedProcess(args=[], returncode=0),
         ) as run:
             with redirect_stdout(io.StringIO()):
@@ -63,8 +65,9 @@ class ValidateMaintenanceTests(unittest.TestCase):
 
     def test_run_validation_stops_after_first_failure(self) -> None:
         """验证第一个维护命令失败后短路，避免后续结果掩盖失败点。"""
-        with mock.patch(
-            "scripts.validate_maintenance.subprocess.run",
+        with mock.patch.object(
+            validate_maintenance_module.subprocess,
+            "run",
             return_value=subprocess.CompletedProcess(args=[], returncode=1),
         ) as run:
             with redirect_stdout(io.StringIO()):

@@ -26,6 +26,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import delivery_gate as delivery_gate_module  # noqa: E402
 from ..delivery_gate import (  # noqa: E402
     DeliveryGateError,
     _changed_paths_for_radius,
@@ -1298,20 +1299,18 @@ class DeliveryGateTests(unittest.TestCase):
             fact_inbox = requirement_dir / ".state" / "fact-inbox.json"
             fact = add_fact(fact_inbox, "还要支持空数组")
             with (
-                mock.patch("scripts.delivery_gate.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery_gate.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_gate_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_gate_module, "requirement_snapshot_path_for_config",
                     return_value=requirement_snapshot,
                 ),
-                mock.patch(
-                    "scripts.delivery_gate.validate_plan_confirmation",
+                mock.patch.object(delivery_gate_module, "validate_plan_confirmation",
                     return_value={
                         "implementation_plan_sha256": "d" * 64,
                         "impact_radius_sha256": radius_sha,
                         "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                 ),
-                mock.patch("scripts.delivery_gate.route_impact_path_for_config", return_value=route_path),
+                mock.patch.object(delivery_gate_module, "route_impact_path_for_config", return_value=route_path),
             ):
                 with self.assertRaisesRegex(DeliveryGateError, "聊天事实"):
                     current_context(root / "local.yaml", config)
@@ -1370,9 +1369,8 @@ class DeliveryGateTests(unittest.TestCase):
                 "requirement_file": str(requirement),
             }
             with (
-                mock.patch("scripts.delivery_gate.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery_gate.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_gate_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_gate_module, "requirement_snapshot_path_for_config",
                     return_value=snapshot,
                 ),
             ):
@@ -1389,8 +1387,8 @@ class DeliveryGateTests(unittest.TestCase):
             )
             self.context["expected_obligations"]["BDD-001"]["text"] = "点击重试后恢复"
             with (
-                mock.patch("scripts.delivery_gate.load_config", return_value={}),
-                mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
+                mock.patch.object(delivery_gate_module, "load_config", return_value={}),
+                mock.patch.object(delivery_gate_module, "current_context", return_value=self.context),
                 redirect_stdout(io.StringIO()),
             ):
                 exit_code = main([
@@ -1419,8 +1417,8 @@ class DeliveryGateTests(unittest.TestCase):
             result = Path(raw_root) / "delivery-result.json"
             result.write_text(json.dumps(self.payload, ensure_ascii=False), encoding="utf-8")
             with (
-                mock.patch("scripts.delivery_gate.load_config", return_value={}),
-                mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
+                mock.patch.object(delivery_gate_module, "load_config", return_value={}),
+                mock.patch.object(delivery_gate_module, "current_context", return_value=self.context),
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()),
             ):
@@ -1480,8 +1478,8 @@ class DeliveryGateTests(unittest.TestCase):
         """验证 route 条件门禁上下文可以直接供 AI 读取并生成最终报告。"""
         output = io.StringIO()
         with (
-            mock.patch("scripts.delivery_gate.load_config", return_value={}),
-            mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
+            mock.patch.object(delivery_gate_module, "load_config", return_value={}),
+            mock.patch.object(delivery_gate_module, "current_context", return_value=self.context),
             redirect_stdout(output),
         ):
             exit_code = main(["snapshot", "--config", str(self.temp_root / "local.yaml")])

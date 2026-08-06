@@ -42,6 +42,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import delivery as delivery_module  # noqa: E402
+from .. import requirement_snapshot as requirement_snapshot_module  # noqa: E402
 from ..delivery import (  # noqa: E402
     DeliveryError,
     classify_conditional_gate_candidates,
@@ -328,10 +330,9 @@ class RequirementReaderTests(unittest.TestCase):
             requirement_dir=requirement_dir,
         )
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.validate_requirement_input_boundaries"),
-            mock.patch(
-                "scripts.delivery.resolve_paths",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "validate_requirement_input_boundaries"),
+            mock.patch.object(delivery_module, "resolve_paths",
                 side_effect=[source_paths, markdown_paths],
             ),
             redirect_stdout(io.StringIO()),
@@ -363,10 +364,10 @@ class RequirementReaderTests(unittest.TestCase):
             requirement_dir=requirement_dir,
         )
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.validate_requirement_input_boundaries"),
-            mock.patch("scripts.delivery.resolve_paths", return_value=source_paths),
-            mock.patch("scripts.delivery.write_text_atomic", side_effect=OSError("disk full")),
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "validate_requirement_input_boundaries"),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=source_paths),
+            mock.patch.object(delivery_module, "write_text_atomic", side_effect=OSError("disk full")),
             redirect_stdout(io.StringIO()),
             self.assertRaisesRegex(DeliveryError, "无法安全写入"),
         ):
@@ -480,8 +481,8 @@ class RequirementSnapshotTests(unittest.TestCase):
             requirement_dir=self.requirement_dir,
         )
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
             self.assertRaises(DeliveryError),
         ):
             cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
@@ -505,10 +506,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         add_fact(self.requirement_dir / ".state" / "fact-inbox.json", "还要支持空数组")
 
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             self.assertRaisesRegex(DeliveryError, "聊天事实"),
@@ -536,10 +536,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         args = SimpleNamespace(config=str(self.root / "local.yaml"), revision_file=None)
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             self.assertRaises(DeliveryError),
@@ -547,10 +546,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             cmd_confirm_requirement_update(args)
 
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(io.StringIO()),
@@ -577,10 +575,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         args = SimpleNamespace(config=str(self.root / "local.yaml"), revision_file=None)
         patches = (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
         )
@@ -588,10 +585,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             cmd_confirm_requirement_update(args)
 
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(io.StringIO()),
@@ -619,10 +615,9 @@ class RequirementSnapshotTests(unittest.TestCase):
             requirement_dir=self.requirement_dir,
         )
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(io.StringIO()),
@@ -637,10 +632,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         revision_file.write_text(json.dumps(manifest), encoding="utf-8")
 
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             self.assertRaises(RequirementSnapshotError),
@@ -921,10 +915,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         output = io.StringIO()
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(output),
@@ -1042,8 +1035,7 @@ class RequirementSnapshotTests(unittest.TestCase):
 
         before = self.snapshot.read_bytes()
         with (
-            mock.patch(
-                "scripts.requirement_snapshot._atomic_write",
+            mock.patch.object(requirement_snapshot_module, "_atomic_write",
                 side_effect=RequirementSnapshotError("write interrupted"),
             ),
             self.assertRaisesRegex(RequirementSnapshotError, "write interrupted"),
@@ -1282,10 +1274,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         output = io.StringIO()
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(output),
@@ -1326,10 +1317,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         output = io.StringIO()
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(output),
@@ -1434,10 +1424,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         output = io.StringIO()
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(output),
@@ -1467,10 +1456,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
         changed_output = io.StringIO()
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             redirect_stdout(changed_output),
@@ -1506,10 +1494,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
 
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             self.assertRaisesRegex(DeliveryError, "尚未确认为最新修订"),
@@ -1543,10 +1530,9 @@ class RequirementSnapshotTests(unittest.TestCase):
         )
 
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=self.snapshot,
             ),
             self.assertRaisesRegex(ImplementationPlanError, "尚未生成实施计划"),
@@ -1903,11 +1889,10 @@ class GitDiffCollectionTests(unittest.TestCase):
             requirement_dir=requirement.parent,
         )
         patches = (
-            mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
-            mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-            mock.patch("scripts.delivery.baseline_path_for_config", return_value=check_baseline),
-            mock.patch(
-                "scripts.delivery.requirement_snapshot_path_for_config",
+            mock.patch.object(delivery_module, "load_config", return_value={"branch": "feature"}),
+            mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+            mock.patch.object(delivery_module, "baseline_path_for_config", return_value=check_baseline),
+            mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                 return_value=snapshot,
             ),
         )
@@ -1943,11 +1928,10 @@ class GitDiffCollectionTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "load_config", return_value={"branch": "feature"}),
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=snapshot,
                 ),
                 redirect_stdout(io.StringIO()),
@@ -1991,11 +1975,10 @@ class GitDiffCollectionTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "load_config", return_value={"branch": "feature"}),
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=snapshot,
                 ),
                 redirect_stdout(output),
@@ -2028,14 +2011,12 @@ class GitDiffCollectionTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch(
-                    "scripts.delivery.load_config",
+                mock.patch.object(delivery_module, "load_config",
                     return_value={"branch": "feature"},
                 ),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=snapshot,
                 ),
                 redirect_stdout(io.StringIO()),
@@ -2094,14 +2075,12 @@ class GitDiffCollectionTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch(
-                    "scripts.delivery.load_config",
+                mock.patch.object(delivery_module, "load_config",
                     return_value={"branch": "feature"},
                 ),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=snapshot,
                 ),
                 redirect_stdout(io.StringIO()),
@@ -2133,11 +2112,10 @@ class GitDiffCollectionTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=baseline),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "load_config", return_value={"branch": "feature"}),
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=baseline),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=snapshot,
                 ),
                 redirect_stdout(io.StringIO()),
@@ -2179,15 +2157,13 @@ class GitDiffCollectionTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch("scripts.delivery.load_config", return_value={"branch": "feature"}),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.baseline),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "load_config", return_value={"branch": "feature"}),
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=self.baseline),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=self.baseline.with_name("requirement-snapshot.json"),
                 ),
-                mock.patch(
-                    "scripts.delivery.write_requirement_snapshot",
+                mock.patch.object(delivery_module, "write_requirement_snapshot",
                     side_effect=RequirementSnapshotError("snapshot failed"),
                 ),
                 redirect_stdout(io.StringIO()),
@@ -2239,18 +2215,16 @@ class RouteCommandTests(unittest.TestCase):
         old_cwd = Path.cwd()
         try:
             with (
-                mock.patch("scripts.delivery.load_config", return_value=config or {}),
-                mock.patch("scripts.delivery.resolve_paths", return_value=paths),
-                mock.patch("scripts.delivery.current_branch", return_value="feature"),
-                mock.patch("scripts.delivery.assert_channel", return_value={}),
-                mock.patch("scripts.delivery.baseline_path_for_config", return_value=self.root / "baseline.json"),
-                mock.patch(
-                    "scripts.delivery.requirement_snapshot_path_for_config",
+                mock.patch.object(delivery_module, "load_config", return_value=config or {}),
+                mock.patch.object(delivery_module, "resolve_paths", return_value=paths),
+                mock.patch.object(delivery_module, "current_branch", return_value="feature"),
+                mock.patch.object(delivery_module, "assert_channel", return_value={}),
+                mock.patch.object(delivery_module, "baseline_path_for_config", return_value=self.root / "baseline.json"),
+                mock.patch.object(delivery_module, "requirement_snapshot_path_for_config",
                     return_value=self.root / "requirement-snapshot.json",
                 ),
-                mock.patch("scripts.delivery.route_impact_path_for_config", return_value=route_path),
-                mock.patch(
-                    "scripts.delivery.load_requirement_snapshot",
+                mock.patch.object(delivery_module, "route_impact_path_for_config", return_value=route_path),
+                mock.patch.object(delivery_module, "load_requirement_snapshot",
                     return_value={
                         "requirement_id": "requirement-1",
                         "revision": 1,
@@ -2261,8 +2235,7 @@ class RouteCommandTests(unittest.TestCase):
                         "obligations": [{"id": "BDD-001", "sha256": "b" * 64}],
                     },
                 ),
-                mock.patch(
-                    "scripts.delivery.current_delivery_snapshot",
+                mock.patch.object(delivery_module, "current_delivery_snapshot",
                     return_value={
                         "baseline_id": "requirement-1",
                         "baseline_head": "head-1",
@@ -2270,16 +2243,14 @@ class RouteCommandTests(unittest.TestCase):
                         "snapshot_sha256": snapshot_sha,
                     },
                 ),
-                mock.patch(
-                    "scripts.delivery.validate_plan_confirmation",
+                mock.patch.object(delivery_module, "validate_plan_confirmation",
                     return_value={
                         "implementation_plan_sha256": "d" * 64,
                         "impact_radius_sha256": "f" * 64,
                         "plan_confirmation_receipt_sha256": "e" * 64,
                     },
                 ),
-                mock.patch(
-                    "scripts.delivery.load_impact_radius",
+                mock.patch.object(delivery_module, "load_impact_radius",
                     return_value={
                         "allowed_files": allowed_files
                         if allowed_files is not None
@@ -2293,7 +2264,7 @@ class RouteCommandTests(unittest.TestCase):
                         "impacts": [],
                     },
                 ),
-                mock.patch("scripts.delivery.get_diff_changes", return_value=(changes, [])),
+                mock.patch.object(delivery_module, "get_diff_changes", return_value=(changes, [])),
                 redirect_stdout(output),
             ):
                 cmd_route(args)

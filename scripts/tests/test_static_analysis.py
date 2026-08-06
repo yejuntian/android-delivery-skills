@@ -23,7 +23,13 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
-from ..git_changes import GitChange, current_delivery_snapshot, write_baseline  # noqa: E402
+from ..git_changes import (  # noqa: E402
+    GitChange,
+    collect_changed_entries,
+    current_delivery_snapshot,
+    load_baseline,
+    write_baseline,
+)
 from ..static_analysis import (  # noqa: E402
     CONTROL_AUDIT_PRODUCER,
     FINDING_ID_PATTERN,
@@ -304,14 +310,17 @@ class StaticAnalysisTests(unittest.TestCase):
     def test_build_control_audit_rejects_concurrent_code_change(self) -> None:
         """验证多窗口在审计期间改代码时不会把旧候选绑定到新摘要。"""
         baseline_path = Path(self.temp_dir.name) / "baseline.json"
-        with (
-            mock.patch("scripts.static_analysis.load_baseline", return_value={"id": "baseline-1"}),
-            mock.patch("scripts.static_analysis.collect_changed_entries", return_value=([], [])),
-            mock.patch(
-                "scripts.static_analysis.current_delivery_snapshot",
-                side_effect=[{"snapshot_sha256": "a" * 64}, {"snapshot_sha256": "b" * 64}],
+        replacements = {
+            load_baseline.__name__: mock.Mock(return_value={"id": "baseline-1"}),
+            collect_changed_entries.__name__: mock.Mock(return_value=([], [])),
+            current_delivery_snapshot.__name__: mock.Mock(
+                side_effect=[
+                    {"snapshot_sha256": "a" * 64},
+                    {"snapshot_sha256": "b" * 64},
+                ]
             ),
-        ):
+        }
+        with mock.patch.dict(build_control_audit.__globals__, replacements):
             with self.assertRaisesRegex(StaticAnalysisError, "审计期间代码发生变化"):
                 build_control_audit(self.project, baseline_path)
 

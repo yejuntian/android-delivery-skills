@@ -26,6 +26,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import install_maintenance_hook as install_maintenance_hook_module  # noqa: E402
 from ..install_maintenance_hook import HOOK_MARKER, install_hook  # noqa: E402
 from ..maintenance_pre_commit import decide_validation  # noqa: E402
 
@@ -89,8 +90,9 @@ class InstallMaintenanceHookTests(unittest.TestCase):
 
     def _mock_git_path(self):
         """返回 mock 对象，让安装脚本把 hook 写入临时路径。"""
-        return mock.patch(
-            "scripts.install_maintenance_hook.subprocess.run",
+        return mock.patch.object(
+            install_maintenance_hook_module.subprocess,
+            "run",
             return_value=subprocess.CompletedProcess(
                 args=[],
                 returncode=0,

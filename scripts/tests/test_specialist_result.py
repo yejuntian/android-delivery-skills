@@ -26,6 +26,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(SCRIPTS_DIR.parent))
     __package__ = "scripts.tests"
 
+from .. import delivery as delivery_module  # noqa: E402
+from .. import delivery_gate as delivery_gate_module  # noqa: E402
 from ..execution_evidence import sha256_file  # noqa: E402
 from ..specialist_result import (  # noqa: E402
     API_CONTRACT_CHECK_IDS,
@@ -611,8 +613,8 @@ class SpecialistResultTests(unittest.TestCase):
             encoding="utf-8",
         )
         with (
-            mock.patch("scripts.delivery.load_config", return_value={}),
-            mock.patch("scripts.delivery_gate.current_context", return_value=self.context),
+            mock.patch.object(delivery_module, "load_config", return_value={}),
+            mock.patch.object(delivery_gate_module, "current_context", return_value=self.context),
             redirect_stdout(output),
         ):
             exit_code = main(["path", "--config", str(config_path)])

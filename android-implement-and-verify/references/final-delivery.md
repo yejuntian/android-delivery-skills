@@ -25,6 +25,8 @@
 - `android-verify-api-contract`：只在 API/DTO/Repository/mapper/缓存契约变化时执行。
 - `android-verify-ui`：独立物理设备预检、Figma 与真机截图视觉验收；不得由 Figma XML 生成报告替代。
 
+最终汇总必须并列保留两条结论：`android-review-diff` 的“需求轴”回答是否做对、做全、越界和破坏旧业务；`android-review-code-quality` 的“工程轴”回答是否符合项目规范、架构和可维护性。两轴不能合并抵消，一轴失败时不得因另一轴通过而建议交付。
+
 范围或需求问题进入增量闭环；已确认范围内 P0/P1 技术问题最小修复并重验。适用但缺设备、契约或基准时标记 `UNVERIFIED/BLOCKED`，不影响其他可执行门禁继续。
 
 ## 执行证据

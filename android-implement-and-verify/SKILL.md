@@ -19,7 +19,7 @@ description: |
 | 当前任务 | 必读资料 |
 | --- | --- |
 | 澄清需求、BDD、计划、影响半径或事实收件箱 | `references/requirement-and-plan.md` |
-| 多来源文档、表格、截图、术语或需求冲突 | `references/document-and-requirement-understanding.md`，再按需读取上一行 |
+| 多来源文档、表格、截图、术语、需求冲突或需用原型澄清 | `references/document-and-requirement-understanding.md`，再按需读取上一行 |
 | TDD、局部迭代、测试选择或 Figma XML 实现 | `references/implementation-and-testing.md`；Figma XML 另读 `references/figma-android-xml-handoff.md` |
 | route、专项、自修复、assemble、最终结论 | `references/final-delivery.md` |
 | 多需求 worktree、轮换、合并或跨上下文续接 | `references/parallel-and-resume.md` |

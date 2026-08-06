@@ -1,0 +1,38 @@
+id: 017-lightweight-engineering-guards
+title: 工程方法补强不增加第二事实源或固定仪式
+rubric: artifact-integrity-v1
+checks:
+  - name: 可执行澄清只回答阻塞决定并回写唯一需求
+    path: "android-implement-and-verify/references/document-and-requirement-understanding.md"
+    contains:
+      - "才用临时原型回答一个明确问题"
+      - "不直接作为正式业务代码合入"
+      - "验证过的状态模型或接口形状可以按生产标准整理、补测试后进入正式实现"
+      - "不创建新修订、Ticket、分支或第二事实源"
+  - name: 代码质量使用深模块和真实接缝判断
+    path: "android-review-code-quality/SKILL.md"
+    contains:
+      - "做删除检验"
+      - "一个实现且没有真实替代需求通常只是额外间接层"
+      - "调用方和测试应通过同一稳定接口观察结果"
+      - "只有难以逆转的公共契约"
+  - name: 最终审查保留需求轴与工程轴
+    paths:
+      - "android-review-diff/SKILL.md"
+      - "android-review-code-quality/SKILL.md"
+      - "android-implement-and-verify/references/final-delivery.md"
+    contains:
+      - "需求轴结论"
+      - "工程轴结论"
+      - "两轴不能合并抵消"
+  - name: 合并冲突按双方意图而不是行选择
+    path: "android-implement-and-verify/references/parallel-and-resume.md"
+    contains:
+      - "分别说明每侧改动要保护的行为"
+      - "不按 ours/theirs、新旧时间或代码行表面选择"
+      - "不得借解决冲突发明未确认的新行为"
+  - name: 决策文档只服务高价值取舍
+    path: "android-implement-and-verify/templates/decision.md"
+    contains:
+      - "难以逆转、没有背景会令人困惑、存在真实取舍"
+      - "普通实现选择写在需求或计划中"

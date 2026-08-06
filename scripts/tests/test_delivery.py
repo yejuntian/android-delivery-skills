@@ -278,6 +278,31 @@ class RequirementReaderTests(unittest.TestCase):
         self.assertIn("| 失败 | 显示错误 |", markdown)
         self.assertIn("[内嵌图片：需结合原 DOCX 核对]", markdown)
 
+    def test_reads_docx_heading_roles_from_styles_xml(self) -> None:
+        """验证自定义和继承样式通过 styles.xml 保留标题层级。"""
+        path = self.root / "styled-requirement.docx"
+        document_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="RequirementHeading"/></w:pPr><w:r><w:t>支付需求</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="InheritedHeading"/></w:pPr><w:r><w:t>失败处理</w:t></w:r></w:p>
+  </w:body>
+</w:document>
+"""
+        styles_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:styleId="RequirementHeading"><w:name w:val="标题 2"/></w:style>
+  <w:style w:type="paragraph" w:styleId="InheritedHeading"><w:basedOn w:val="RequirementHeading"/></w:style>
+</w:styles>
+"""
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("word/document.xml", document_xml)
+            archive.writestr("word/styles.xml", styles_xml)
+
+        markdown = read_requirement(path)
+        self.assertIn("## 支付需求", markdown)
+        self.assertIn("## 失败处理", markdown)
+
     def test_init_keeps_image_only_docx_template_fallback(self) -> None:
         """验证纯图片 DOCX 仍创建需求骨架，不把图片标记误当成完整正文。"""
         requirement_dir = self.root / "REQ-20260807-001-image"
@@ -317,6 +342,37 @@ class RequirementReaderTests(unittest.TestCase):
         markdown = md_path.read_text(encoding="utf-8")
         self.assertIn("# <需求标题>", markdown)
         self.assertNotIn("内嵌图片：需结合原 DOCX 核对", markdown)
+
+    def test_init_uses_atomic_write_for_the_docx_fact_source(self) -> None:
+        """验证首次转写失败时不会留下会被后续 init 优先读取的事实源文件。"""
+        requirement_dir = self.root / "REQ-20260807-002-atomic"
+        requirement_dir.mkdir()
+        docx_path = requirement_dir / "requirement.docx"
+        document_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>原始需求</w:t></w:r></w:p></w:body>
+</w:document>
+"""
+        with zipfile.ZipFile(docx_path, "w") as archive:
+            archive.writestr("word/document.xml", document_xml)
+
+        md_path = requirement_dir / "docs" / "atomic.md"
+        source_paths = SimpleNamespace(
+            project_path=self.root / "project",
+            requirement_path=docx_path,
+            requirement_dir=requirement_dir,
+        )
+        with (
+            mock.patch("scripts.delivery.load_config", return_value={}),
+            mock.patch("scripts.delivery.validate_requirement_input_boundaries"),
+            mock.patch("scripts.delivery.resolve_paths", return_value=source_paths),
+            mock.patch("scripts.delivery.write_text_atomic", side_effect=OSError("disk full")),
+            redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(DeliveryError, "无法安全写入"),
+        ):
+            cmd_init(SimpleNamespace(config=str(self.root / "local.yaml")))
+
+        self.assertFalse(md_path.exists())
 
     def test_rejects_missing_empty_unsupported_and_corrupt_files(self) -> None:
         """验证不可用需求资料明确报错，禁止搜索替代文件或返回猜测正文。"""

@@ -27,6 +27,14 @@ class SetupError(RuntimeError):
     """Raised when setup cannot safely inspect or write the requested project."""
 
 
+def _declares(build_text: str, configuration: str) -> bool:
+    """Match one Gradle configuration name without confusing androidTest with test."""
+    return re.search(
+        rf"(?<![a-z0-9_]){re.escape(configuration.lower())}(?![a-z0-9_])",
+        build_text,
+    ) is not None
+
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace")
@@ -108,8 +116,8 @@ def inspect_project(project: str | Path) -> dict[str, Any]:
             "ui_system": ui_system,
         },
         "capabilities": {
-            "unit_tests_declared": "testimplementation" in build_text,
-            "instrumentation_declared": "androidtestimplementation" in build_text,
+            "unit_tests_declared": _declares(build_text, "testImplementation"),
+            "instrumentation_declared": _declares(build_text, "androidTestImplementation"),
             "lint_declared": "lint" in build_text,
             "screenshot_testing_declared": any(
                 token in build_text for token in ("paparazzi", "roborazzi", "shot")

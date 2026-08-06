@@ -45,6 +45,18 @@ class SetupProjectTests(unittest.TestCase):
         self.assertEqual("xml", report["project"]["ui_system"])
         self.assertTrue(report["integrations"]["figma_android_xml"]["applicable"])
 
+    def test_instrumentation_dependency_does_not_imply_unit_tests(self) -> None:
+        """androidTestImplementation 不得因子串重叠误报 testImplementation。"""
+        (self.project / "app" / "build.gradle.kts").write_text(
+            'dependencies { androidTestImplementation("androidx.test:runner:1.6.2") }\n',
+            encoding="utf-8",
+        )
+
+        capabilities = inspect_project(self.project)["capabilities"]
+
+        self.assertFalse(capabilities["unit_tests_declared"])
+        self.assertTrue(capabilities["instrumentation_declared"])
+
     def test_apply_requires_confirmation_and_is_idempotent(self) -> None:
         with self.assertRaisesRegex(SetupError, "--confirm"):
             apply_setup(self.project, confirm=False, force=False)

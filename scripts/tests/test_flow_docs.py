@@ -28,6 +28,14 @@ class FlowDocsTests(unittest.TestCase):
         self.assertIn("Figma 只改变已确认范围内的视觉资料", combined)
         self.assertIn("DRAFT_REQUIREMENT", combined)
 
+    def test_flow_docs_do_not_freeze_volatile_test_counts(self) -> None:
+        """验证文档保留验证入口，不手写会随测试增长而过期的计数。"""
+        rendered = render_documents()
+        combined = "\n".join(rendered.values())
+        self.assertNotIn("最近验证：核心单测", combined)
+        self.assertNotIn("当前验证基线：核心单测", combined)
+        self.assertNotRegex(combined, r"当前自动化验证[^\n]*\d+/\d+")
+
 
 if __name__ == "__main__":
     unittest.main()

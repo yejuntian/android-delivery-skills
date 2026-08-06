@@ -74,6 +74,7 @@ from .impact_radius import (  # noqa: E402
     load_impact_radius,
 )
 from .bdd_scenarios import BddScenarioError, validate_requirement_readiness  # noqa: E402
+from .atomic_write import write_text_atomic  # noqa: E402
 from .requirement_snapshot import (  # noqa: E402
     RequirementSnapshotError,
     apply_requirement_revision,
@@ -431,6 +432,14 @@ def _read_docx(path):
         return docx_to_markdown(path)
     except DocumentSourceError as exc:
         raise DeliveryError(str(exc)) from exc
+
+
+def _write_requirement_markdown(path, content):
+    """原子写入即将成为唯一事实源的 Markdown。"""
+    try:
+        write_text_atomic(path, content)
+    except OSError as exc:
+        raise DeliveryError(f"需求 Markdown 无法安全写入: {Path(path).resolve()}: {exc}") from exc
 
 
 def read_requirement(path):
@@ -845,14 +854,17 @@ def cmd_init(args):
             # AI 在后续沟通中根据截图/Figma/用户补充逐步填充，不脑补。
             template_path = SKILL_ROOT / "android-implement-and-verify" / "templates" / "requirement.md"
             if template_path.is_file():
-                md_path.write_text(template_path.read_text(encoding="utf-8"), encoding="utf-8")
+                _write_requirement_markdown(md_path, template_path.read_text(encoding="utf-8"))
             else:
-                md_path.write_text("# <需求标题>\n\n> 来源：图片型 docx，无文本正文，待 AI 后续填充\n\n## 需求说明\n\n（待填充）\n", encoding="utf-8")
+                _write_requirement_markdown(
+                    md_path,
+                    "# <需求标题>\n\n> 来源：图片型 docx，无文本正文，待 AI 后续填充\n\n## 需求说明\n\n（待填充）\n",
+                )
             print(f"\n⚠️ 该 docx 是图片型，无法提取正文文字。")
             print(f"⚠️ 已用模板骨架创建 docs/{md_name}，AI 将在后续沟通中根据截图/Figma/用户补充逐步填充。")
             print(f"⚠️ 填充后再次执行 init，流程会读取已填充的 docs/{md_name}。")
         else:
-            md_path.write_text(docx_content, encoding="utf-8")
+            _write_requirement_markdown(md_path, docx_content)
             print(f"\n💡 已自动读取 docx 并转写为 docs/{md_name}（事实源）。")
             print(f"💡 以后所有增量、修订和门禁都以 docs/{md_name} 为准，原 docx 仅作初始记录保留。")
         requirement_path = md_path

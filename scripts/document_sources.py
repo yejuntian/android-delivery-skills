@@ -3,7 +3,7 @@
 
 用途：把 DOCX 需求输入转换为保留结构的可审阅 Markdown。
 
-核心流程：读取标准 OOXML 正文和超链接关系，按原顺序转换标题、列表、表格、
+核心流程：读取标准 OOXML 正文、段落样式和超链接关系，按原顺序转换标题、列表、表格、
 链接和图片缺口标记，不依赖第三方 Word 解析库。
 
 职责边界：只读取文档并返回文本；不判断业务语义、不修改需求文件、不访问网络。
@@ -44,6 +44,71 @@ def _relationships(archive: zipfile.ZipFile) -> dict[str, str]:
     }
 
 
+def _style_role(value: str) -> str | None:
+    """把样式 ID 或名称转换为 Markdown 标题角色。"""
+    heading = HEADING_RE.search(value)
+    if heading:
+        return f"heading:{heading.group(1)}"
+    if value.lower() in {"title", "标题"}:
+        return "title"
+    return None
+
+
+def _paragraph_style_roles(archive: zipfile.ZipFile) -> dict[str, str]:
+    """解析段落样式名称、继承和 outline level，避免把 style ID 当显示名称。"""
+    try:
+        root = ET.fromstring(archive.read("word/styles.xml"))
+    except KeyError:
+        return {}
+    except ET.ParseError as exc:
+        raise DocumentSourceError(f"DOCX 样式文件损坏: {exc}") from exc
+
+    definitions: dict[str, tuple[str, str, int | None]] = {}
+    for style in root.findall(f"{W}style"):
+        if style.attrib.get(f"{W}type") not in {None, "paragraph"}:
+            continue
+        style_id = style.attrib.get(f"{W}styleId", "")
+        if not style_id:
+            continue
+        name = style.find(f"{W}name")
+        based_on = style.find(f"{W}basedOn")
+        outline = style.find(f"{W}pPr/{W}outlineLvl")
+        outline_level: int | None = None
+        if outline is not None:
+            try:
+                candidate = int(outline.attrib.get(f"{W}val", ""))
+            except ValueError:
+                candidate = -1
+            if 0 <= candidate <= 5:
+                outline_level = candidate
+        definitions[style_id] = (
+            name.attrib.get(f"{W}val", "") if name is not None else "",
+            based_on.attrib.get(f"{W}val", "") if based_on is not None else "",
+            outline_level,
+        )
+
+    resolved: dict[str, str] = {}
+
+    def resolve(style_id: str, active: set[str]) -> str | None:
+        if style_id in resolved:
+            return resolved[style_id]
+        if style_id in active or style_id not in definitions:
+            return _style_role(style_id)
+        name, based_on, outline_level = definitions[style_id]
+        role = _style_role(style_id) or _style_role(name)
+        if role is None and outline_level is not None:
+            role = f"heading:{outline_level + 1}"
+        if role is None and based_on:
+            role = resolve(based_on, {*active, style_id})
+        if role is not None:
+            resolved[style_id] = role
+        return role
+
+    for style_id in definitions:
+        resolve(style_id, set())
+    return resolved
+
+
 def _node_text(node: ET.Element) -> str:
     """按 OOXML 节点顺序提取文字、制表符和显式换行。"""
     parts: list[str] = []
@@ -79,6 +144,7 @@ def _paragraph_text(paragraph: ET.Element, relationships: dict[str, str]) -> str
 def _paragraph_markdown(
     paragraph: ET.Element,
     relationships: dict[str, str],
+    style_roles: dict[str, str],
 ) -> str:
     """根据段落样式转换标题、列表或普通正文。"""
     text = _paragraph_text(paragraph, relationships)
@@ -92,10 +158,10 @@ def _paragraph_markdown(
         if style is not None:
             style_value = style.attrib.get(f"{W}val", "")
         is_list = properties.find(f"{W}numPr") is not None
-    heading = HEADING_RE.search(style_value)
-    if heading:
-        return f"{'#' * int(heading.group(1))} {text}"
-    if style_value.lower() in {"title", "标题"}:
+    role = style_roles.get(style_value) or _style_role(style_value)
+    if role and role.startswith("heading:"):
+        return f"{'#' * int(role.partition(':')[2])} {text}"
+    if role == "title":
         return f"# {text}"
     return f"- {text}" if is_list else text
 
@@ -130,6 +196,7 @@ def docx_to_markdown(path: str | Path) -> str:
         with zipfile.ZipFile(source) as archive:
             root = ET.fromstring(archive.read("word/document.xml"))
             relationships = _relationships(archive)
+            style_roles = _paragraph_style_roles(archive)
     except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError) as exc:
         raise DocumentSourceError(
             f"DOCX 文件损坏或结构不受支持: {source}: {exc}"
@@ -142,7 +209,7 @@ def docx_to_markdown(path: str | Path) -> str:
     blocks: list[str] = []
     for child in body:
         if child.tag == f"{W}p":
-            block = _paragraph_markdown(child, relationships)
+            block = _paragraph_markdown(child, relationships, style_roles)
         elif child.tag == f"{W}tbl":
             block = _table_markdown(child, relationships)
         else:

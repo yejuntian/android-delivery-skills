@@ -86,7 +86,11 @@ def validate_catalog(root: str | Path) -> list[str]:
     for identifier, entry in indexed.items():
         skill_path = base / identifier / "SKILL.md"
         agent_path = base / identifier / "agents" / "openai.yaml"
-        if not skill_path.is_file() or not agent_path.is_file():
+        if not skill_path.is_file():
+            errors.append(f"{identifier} 缺少 SKILL.md")
+            continue
+        if not agent_path.is_file():
+            errors.append(f"{identifier} 缺少 agents/openai.yaml")
             continue
         frontmatter = _frontmatter(skill_path)
         if set(frontmatter) != {"name", "description"}:

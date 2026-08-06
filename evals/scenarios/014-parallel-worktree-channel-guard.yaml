@@ -3,7 +3,7 @@ title: 并行需求阻断同一物理 worktree 并允许不同 worktree
 rubric: artifact-integrity-v1
 checks:
   - name: 总入口声明物理 worktree 通道保护
-    path: "android-implement-and-verify/SKILL.md"
+    path: "android-implement-and-verify/references/parallel-and-resume.md"
     contains:
       - "原子占用当前物理 worktree 路径"
       - "不同 worktree 即使属于同一 Git 仓库也允许并行"

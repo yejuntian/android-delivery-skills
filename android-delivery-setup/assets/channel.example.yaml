@@ -1,0 +1,41 @@
+# Android Delivery 需求通道配置示例。
+# 把本文件复制为有意义的名称后，替换日期、英文目录名、分支和需求文件。
+schema_version: 1
+workspace_root: ".."
+project_path: "."
+branch: "feature/replace-me"
+requirement_dir: "document/YYYY-MM-DD-feature"
+requirement_file: "docs/requirement.md"
+requirement_workspace:
+  mode: "rotate"
+  root: "document"
+  keep_completed: 3
+  cache_retention_days: 7
+ui:
+  links: []
+  directory: "ui"
+  screenshots: []
+  assets: []
+  notes: ""
+api:
+  links: []
+  files: []
+  status: "unknown"
+  notes: ""
+route:
+  max_rounds: 3
+testing:
+  tdd_required: true
+  journey_harness:
+    cases_dir: null
+    module: "app"
+    variant: "debug"
+    retries: 2
+    device: null
+    app_package_name: null
+    task: null
+    precondition:
+      clear_app_data: false
+      grant_permissions: []
+      deep_link: null
+      launch_activity: null

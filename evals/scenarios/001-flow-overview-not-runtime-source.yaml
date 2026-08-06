@@ -8,6 +8,8 @@ checks:
       - "android-*/SKILL.md"
       - "android-*/references/*.md"
       - "scripts/**/*.py"
+    exclude_paths:
+      - "scripts/render_flow_docs.py"
     not_contains:
       - "FLOW_OVERVIEW.md"
       - "/Users/example/work/MyPython/doc/FLOW_OVERVIEW.md"

@@ -3,8 +3,8 @@
 
 用途：作为 Android Delivery Skill 流程维护的统一本地验证入口。
 
-核心流程：从仓库根目录依次运行规则归属测试和 fast eval，确保共享规则、Skill、流程契约、
-行为回放与命令门禁仍然接线且全绿；任一命令失败时返回非零退出码。
+核心流程：从仓库根目录依次运行 Skill catalog、规则归属、流程文档同步和 fast eval，确保
+共享规则、Skill、流程契约、行为回放与命令门禁仍然接线且全绿；任一命令失败时返回非零退出码。
 
 职责边界：只负责编排维护验证命令和汇总结果；不实现具体评测逻辑、不修改文件、不运行
 Android 构建、设备、真实项目交付或模型服务。
@@ -52,8 +52,16 @@ def planned_commands() -> tuple[MaintenanceCommand, ...]:
     """返回维护验证固定命令列表；具体评测逻辑由各自脚本负责。"""
     return (
         MaintenanceCommand(
+            name="Skill catalog 校验",
+            argv=(sys.executable, "scripts/validate_skill_catalog.py"),
+        ),
+        MaintenanceCommand(
             name="规则归属测试",
             argv=(sys.executable, "-m", "unittest", "scripts.tests.test_skill_rule_ownership", "-q"),
+        ),
+        MaintenanceCommand(
+            name="流程文档同步",
+            argv=(sys.executable, "scripts/render_flow_docs.py", "--check"),
         ),
         MaintenanceCommand(
             name="流程 fast eval",

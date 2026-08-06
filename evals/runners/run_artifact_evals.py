@@ -78,7 +78,7 @@ def load_rubric_ids(root: Path) -> set[str]:
 
 
 def expand_check_paths(root: Path, check: dict[str, Any], scenario_path: Path) -> list[Path]:
-    """解析 check 中的 path/paths/globs，返回去重后的仓库内文件路径。"""
+    """解析包含与排除路径，返回去重后的仓库内文件路径。"""
     raw_paths: list[str] = []
     single_path = check.get("path")
     if single_path is not None:
@@ -103,10 +103,26 @@ def expand_check_paths(root: Path, check: dict[str, Any], scenario_path: Path) -
             if candidate.is_file() and candidate.is_relative_to(root.resolve()):
                 resolved.append(candidate)
 
+    excluded: set[Path] = set()
+    for raw_path in ensure_string_list(
+        check.get("exclude_paths"), "check.exclude_paths", scenario_path
+    ):
+        candidate = (root / raw_path).resolve()
+        if not candidate.is_relative_to(root.resolve()):
+            raise ArtifactEvalError(f"{scenario_path}: exclude_path 越出仓库: {raw_path}")
+        excluded.add(candidate)
+    for pattern in ensure_string_list(
+        check.get("exclude_globs"), "check.exclude_globs", scenario_path
+    ):
+        for match in root.glob(pattern):
+            candidate = match.resolve()
+            if candidate.is_file() and candidate.is_relative_to(root.resolve()):
+                excluded.add(candidate)
+
     unique: list[Path] = []
     seen: set[Path] = set()
     for path in resolved:
-        if path not in seen:
+        if path not in seen and path not in excluded:
             unique.append(path)
             seen.add(path)
     if not unique:

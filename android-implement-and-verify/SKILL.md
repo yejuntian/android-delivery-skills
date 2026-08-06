@@ -2,380 +2,111 @@
 name: android-implement-and-verify
 description: |
   Android 需求实现与闭环验证总入口。适用于完整完成 Android 新需求、需求变更、Bug 修复和功能迭代。五步：确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付。
-  基础门禁固定检查需求/计划/影响半径/最终代码 SHA 绑定、STALE 测试映射、最终执行收据和非零测试；自动化测试按 BDD、实际 diff 和影响类别选择。每个确认答案先写回 requirement_file 再继续，聊天只是草稿；只改已确认范围，最小修改、不脑补未确认字段或接口。
-  首次编码前确认 BDD、建基线、拆测试并确认计划；编码后只跑受影响测试和必要编译；用户要求最终交付时按最终 diff 驱动全绿门禁。仅需单项审查改用对应专项 Skill。
+  固定保护 requirement_file 事实源、需求/计划确认、影响半径、SHA-256、新鲜证据、STALE 测试映射和非零测试。自动化测试按 BDD、实际 diff 和影响类别选择；Figma + XML View 在计划确认后可调用 figma-android-xml 生产布局，再由本 Skill 接管业务接入、测试和独立 UI 验收。
+  首次编码前确认 BDD、基线、计划和影响半径；编码后只跑受影响测试和必要编译；只有用户明确要求最终交付时才按最终 diff 执行 route、专项和完整门禁。仅需单项审查时改用对应专项 Skill。
 ---
 
 # Android 需求实现与闭环验证
 
 ## 共享规则
 
-执行本 Skill 前，必须先遵守 `../_shared/android-global-rules.md`。本 Skill 启用总入口自修复授权：本次需求范围内的问题默认最小修复并重验，不采用专项 Skill 的 standalone report-only 默认值；是否进入完整交付仍按三阶段规则判断。
+执行前必须遵守 `../_shared/android-global-rules.md`。本 Skill 是唯一完整交付编排器，并在已确认需求范围内获得最小自修复和重验授权；不自动发布、推送、上线、操作生产数据或提交 Git。
 
-维护、扩展或重构本流程时读取 `../references/open-source-design-rationale.md`；修改 Skill、路由或门禁后按 `references/delivery-eval-scenarios.md` 做行为评测，并运行 `../evals/runners/run_artifact_evals.py` 检查可机器验证的不变量。编码后出现接口、数据、UI、生命周期、性能或安全候选时，按需读取 `references/conditional-capability-gates.md`；出现 UI 与业务混合、Journey 只能覆盖部分步骤、测试层选择或证据缺口时读取 `../android-test-and-fix/references/adaptive-test-routing.md`。物化中途需求增删改时遵守 `references/requirement-revision.schema.json` 和 `references/impact-radius.schema.json`，生成最终机器报告时遵守 `references/delivery-result.schema.json`。这些资料都不是日常需求执行时的固定上下文。
+## 按需读取
 
-## 职责边界
+不要一次加载全部资料，只读取当前阶段需要的直接 reference：
 
-- **负责**：需求确认、BDD、测试物化、编码、动态路由、自修复、重验和最终门禁。
-- **不负责**：自动发布、推送、上线、操作生产数据或未经授权提交 Git。
-- **与专项 Skill 的关系**：本 Skill 是唯一总入口；专项 Skill 提供诊断与验证结果，不另行编排完整交付。
+| 当前任务 | 必读资料 |
+| --- | --- |
+| 澄清需求、BDD、计划、影响半径或事实收件箱 | `references/requirement-and-plan.md` |
+| TDD、局部迭代、测试选择或 Figma XML 实现 | `references/implementation-and-testing.md`；Figma XML 另读 `references/figma-android-xml-handoff.md` |
+| route、专项、自修复、assemble、最终结论 | `references/final-delivery.md` |
+| 多需求 worktree、轮换、合并或跨上下文续接 | `references/parallel-and-resume.md` |
+| 接口、设计或设备资料缺失 | `references/input-degradation.md` |
+| 条件能力、Schema 或维护流程 | 对应 `references/*.schema.json`、`references/conditional-capability-gates.md`、`../references/delivery-flow.yaml` |
+
+维护本流程时读取 `../references/open-source-design-rationale.md` 和 `references/delivery-eval-scenarios.md`，并执行维护验证和 artifact eval。详细资料不是每次需求的固定上下文。
 
 ## 用户可见五步
 
-对用户始终收敛为 `确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付`：
+始终向用户收敛为 `确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付`：
 
-1. **确认需求**：展示最新中文需求、已上线业务影响和必要待确认点；用户增删改后合并事实源并继续确认。
-2. **拆分测试与确认计划**：把全部已确认行为映射为中文业务场景、测试用例和影响半径，再用一份 Markdown 展示“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”六类边界；用户确认后才编码。
-3. **实现验证**：按一个可观察行为完成失败测试、最小实现和测试通过，只报告本轮实现与验证结果。
-4. **变更后增量循环**：业务语义变化时只修订受影响需求、影响半径、测试和代码；实现完善时只做最小修改、受影响测试和必要编译。
-5. **最终交付**：仅在用户明确要求时执行最终路由、完整门禁和中文报告；Git 提交仍需单独授权。
+1. **确认需求**：把每个已接受答案写回唯一 `requirement_file`，展示最新变更摘要、已上线业务影响和待确认点。
+2. **拆分测试与确认计划**：把已确认行为映射为 BDD、测试和影响半径，展示同一份实施计划；用户确认后才编码。
+3. **实现验证**：逐个可观察行为完成 Red、最小实现、Green 和受影响验证。
+4. **变更后增量循环**：这是任意阶段都能触发的回退路径，不是可跳过的线性尾声。
+5. **最终交付**：仅在用户明确要求时执行最终 route、专项、完整门禁和中文报告；提交仍需单独授权。
 
-内部继续执行本文件规定的三阶段命令、Git 基线、追溯、专项和证据门禁。默认不向用户展开 Skill 名称、脚本顺序、JSON、Schema、哈希或机器状态；只有用户明确询问，或解除故障、授权、阻塞确实需要时才展示必要细节及中文用途。
+默认不向用户展开脚本、JSON、Schema 或哈希；只有用户询问，或授权、阻塞和故障处理需要时才展示必要细节。
 
-## 人读产物与续接
+## 不可变状态规则
 
-- 机器 JSON 是门禁附件；所有人工 Markdown 统一放在 `<requirement_dir>/docs/`，脚本从 JSON 渲染 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`、`docs/需求测试追溯.md` 和 `docs/交付结论.md`。需求语义先写入配置的 `requirement_file`，确认后必须同步相关人读 Markdown；JSON 只做机器校验，不能替代需求追溯。
-- 续做旧需求时，先读 `<requirement_dir>/docs/续接指南.md`，秒懂当前修订、义务状态（CURRENT/STALE）、计划是否确认、最终结论和下一步，不翻聊天。
-- 协作待办、`docs/审查-<主题>.md`（Diff 发现 + Context 发现双表）、`docs/决策-<主题>.md`（MADR 轻量版，推翻用 superseded）由 AI 按需手写，必须填 `android-implement-and-verify/templates/` 骨架（plan/review/decision 等）。
-- 补充资料按需创建：`api/` 保存接口原始资料，`ui/` 保存截图和设计证据，`config/` 只记非密配置元数据（key 名/环境/owner/来源，绝不存 token/私钥/凭据），`issues/` 只保存问题附件或机器记录；问题说明统一写 `docs/问题-<主题>.md`，设计说明统一写 `docs/design-note.md`。简单需求不创建这些目录。
-- 多需求维护：`requirement_workspace.py index` 渲染 workspace 级 `需求总览.md`；回收旧需求前完整归档 `docs/` 到 `archive/<requirement_id>/`，机器 JSON 和原始证据随源清理。维护或扩展流程前先读 `docs/决策-*.md`，避免重复推翻已确认取舍。
+- 聊天只是草稿。最新需求没有写回 `requirement_file` 并重新 `init` 时，不得确认、编码、route 或最终交付。
+- 需求修订必须先确认；实施计划和 `<requirement_dir>/test-cases/impact-radius.json` 必须再单独确认。`confirm-plan` 成功前不得修改生产代码。
+- 影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED；最终 diff 中出现不在已确认 `impact-radius.json` 的代码文件时必须阻断。
+- 需求义务变化后，受影响测试映射自动进入 `STALE`。回填 `CURRENT`、重测并刷新证据前，不得支持最终通过。
+- 需求、计划、影响半径、UI/API 输入或代码变化后，旧 route、专项结果和最终证据按绑定摘要失效，不得复用。
+- route 只登记专项任务，不直接调用 Skill；最终门禁逐项检查当前结果。
 
-## 增量闭环铁律（任何阶段需求变更都触发，AI 必须自动完成，不等用户指示）
+## 增量闭环
 
-**需求变更可能发生在任何阶段**（写需求时、拆 BDD 时、写计划时、编码时、写测试时、真机测试时、route 审查时、gate 校验时）。不管在哪一步发现需求漏洞，都先写回需求文档，再触发全自动闭环。
+任何阶段发现变化都先分类，再选择最小合法回退：
 
-`confirm-requirement-update` 成功后，如果续接指南有 STALE 或新增场景，AI 必须继续完成受影响闭环，但计划或影响半径变化时仍要等待用户重新确认：
+### 需求语义变化
 
-1. **更新计划边界**：先同步 `<requirement_dir>/docs/实施计划.md` 和 `test-cases/impact-radius.json`，登记场景变化、允许文件/目录前缀、受影响模块和测试。
-2. **重新确认计划**：需求、计划或影响半径任一变化都会使旧确认失效；展示更新内容并等待确认，`confirm-plan` 成功前不得修改代码。
-3. **重建测试映射**：执行 `init-test-mapping`，为 STALE/新增场景登记真实测试 ID；先补业务断言并确认 Red。
-4. **最小实现**：只改当前影响半径内的生产代码，使受影响场景 Green；不碰未变化场景和无关已交付逻辑。
-5. **重构回归**：在 Green 保护下做必要重构，运行受影响模块测试和必要编译；旧测试失败必须修到通过，不能跳过。
-6. **刷新证据**：回填测试结果、映射、执行收据和最终证据，旧证据不得复用。
-7. **报告完成**：说明修改文件、测试结果和剩余风险。
+新增或改变页面状态、交互、业务规则、文案语义、接口含义或验收结果时：
 
-需要等待用户的节点只有需求确认、计划确认或缺少不可替代事实；其余执行和重验自动推进。
+1. 写回需求事实源并重新 `init`，等待用户确认。
+2. 执行 `confirm-requirement-update`，使受影响映射进入 `STALE`。
+3. 更新同一份实施计划和影响半径，展示并重新 `confirm-plan`。
+4. 重建测试映射，先观察 Red，再做最小实现、Green、受影响回归和证据刷新。
+5. 回到发现变化前的阶段继续；未变化的 BDD、代码和测试不重做。
 
-## TDD 与测试执行铁律（计划确认后、route 前）
+### 计划或范围变化
 
-计划确认后按 BDD 场景执行测试先行，编码完成后不能直接跳 `route + gate`：
+需求语义不变但预计文件、测试、模块或允许路径变化时，保留需求修订，更新计划和影响半径并重新确认；旧计划收据、route 和下游证据失效。
 
-1. **先建立测试清单**：执行 `init-test-mapping`，为每个 BDD 场景创建或更新真实测试代码、Journey XML 或人工验收记录并登记真实测试 ID；`docs/测试结果.md` 只是可选人读执行摘要，不复制完整测试步骤，也不能替代执行收据和 `delivery-result.json`。
-2. **先写失败测试**：逐个 BDD 补业务断言并观察 Red；测试在实现前已通过时，先检查断言是否真正覆盖新行为。
-3. **再写最少实现**：只修改影响半径内代码使测试 Green，再做必要重构并重跑受影响测试。
-4. **自动保存 TDD 周期**：Red 和 Green 都通过 `execution_evidence.py` 收据后，分别执行
-   `python3 ai-skills/android-delivery-skills/scripts/tdd_cycle.py record-red` 和
-   `python3 ai-skills/android-delivery-skills/scripts/tdd_cycle.py record-green`，
-   自动生成当前需求 `.state/tdd-cycle.json`；最终 gate 会复核收据、测试源码、代码快照和 BDD/testcase 关系。
-5. **按影响补证据**：根据 BDD、实际 diff 和影响类别选择 Unit、集成、构建、安装、Journey、截图、日志或实际人工证据，不机械执行同一串命令。
-6. **回填最终结果**：每个 BDD 场景标 `PASS/FAIL/UNVERIFIED`，绑定测试、截图或日志；所有场景都有诚实结果后才能进入 `route + gate`。
-7. **发现需求漏洞即回写**：先改需求事实源并重新确认需求和计划，再更新测试、实现和证据。
+### 实现细节或纯视觉变化
 
-## 并行需求通道（多窗口同时推进）
+仍在已确认影响半径内且验收语义不变时，不重复需求确认或完整流程。只做最小修改、更新受影响测试、运行必要编译并刷新相关证据。Figma 只改变颜色、间距、字号或图片时按此处理；Figma 新增状态、交互或业务语义时必须回到“需求语义变化”。
 
-- 一个 `--config` 是一个交付通道，同通道内仍串行。多需求并行用业界标准：一个需求 = 一个 git worktree + 独立分支 + 独立 `profiles/<需求>.yaml` + 独立 `requirement_dir`。机器状态位于各自 `requirement_dir/.state`；隔离边界是需求目录，不是 profile 名称。
-- `check-env` 会原子占用当前物理 worktree 路径；同一 worktree 已有其他需求时直接阻断，不同 worktree 即使属于同一 Git 仓库也允许并行。后续 `route` 会复核占用身份，最终 gate 继续复核 route 快照、Git 基线和当前代码摘要；串行轮换、合并集成或取消需求后释放通道。
-- 推荐把交付文档放在 `<project_path>/document/<日期-英文名>/`（文档跟 worktree 走并随代码提交），人工 Markdown 统一放在该需求目录的 `docs/`，机器 JSON 继续放在 `.state/`、`test-cases/` 和 `test-results/`；目录名用 `日期-英文名`（如 `2026-07-25-login`），中文名存 `docs/需求说明.md` 首行和 workspace state 的 title，只在总览/集成报告显示。不要把 `document/` 加入 Android 项目 `.gitignore`；`check-env`、`route`、执行收据和最终门禁统一排除项目根目录下整个 `document/` 目录作为交付证据，文档变化不触发代码影响面、不污染 `snapshot_sha256`，但可以 `git add`/提交以保留需求证据链；`document/` 之外的真实代码改动仍必须正常参与检查，不能用文档排除规则绕过门禁。
-- 不冲突的需求（改不同文件）各窗口独立闭环，从 `init`/`check-env` 到 `route`/`delivery_gate` 全套自带 `--config`。改同一文件时 git 合入自然报冲突，不做预检。
-- 合并用私有分支集成前一次 `git rebase`，主工作树只执行 `git merge --ff-only` 保持历史一条线；rebase 后旧分支证据不作为最终结论，合入后的最终代码必须重跑受影响门禁。共享分支不得 rebase，不使用 cherry-pick。
-- 合并后 `requirement_workspace.py integrate --main-worktree <主工作树> --channels <目录1,目录2> --batch <批次>` 汇总各通道结论生成 `<主工作树>/document/integration-<批次>.md`，各通道标 `MERGED`+批次号；`index --main-worktree <主工作树>` 刷新全局总览到 `<主工作树>/document/需求总览.md`（六列含分支和集成批次）。
-- 并行通道不能用 `requirement_workspace.py next`（它只表示同通道内上一需求结束后开始下一项）；共享真机/模拟器/账号仍需串行。
+需要等待用户的节点只有需求确认、计划确认、route 新会话授权或缺少不可替代事实；其他实现和重验自动推进。
 
-## 需求质量与追溯
+## 实现与测试门禁
 
-### 需求拆细铁律
+计划确认后、route 前必须完成：
 
-- `<需求名>.md`（或 docx 转写的 md）使用场景级 BDD：每个 `### BDD-### 场景名称` 必须包含 Given/When/Then。独立触发、异常和边界拆成独立场景；同一触发下多个验收结果使用结构化 `Then:` 列表表达，例如 `- visible_state: 显示失败状态`，不得用自由文本或 `And` 隐藏多个结果。
-- 信息不足的字段、文案、接口、数据来源必须进 `<需求名>.md` 的"待确认"段追问，不得脑补后写进需求说明。
-- 模板在 `android-implement-and-verify/templates/requirement.md`。`## 待确认` 必须存在，确认前只能写 `- 无`；否则后续命令阻断。
+1. **先建立测试清单**：执行 `init-test-mapping`，让每个 BDD 绑定真实测试代码、Journey XML 或可复现人工验收。
+2. **先写失败测试**：逐个 BDD 补业务断言并观察 Red；实现前已通过时检查断言是否真的覆盖新行为。
+3. **再写最少实现**：只改影响半径内代码使测试 Green，再做必要重构。
+4. **保存 TDD 周期**：Red/Green 收据、代码和测试源码摘要必须绑定当前 BDD/testcase。
+5. **按影响补证据**：根据 BDD、实际 diff 和影响类别选择 Unit、集成、构建、安装、Journey、截图、日志或人工证据，不机械执行同一串命令。
+6. **诚实回填**：每个场景标记 `PASS/FAIL/UNVERIFIED`；自动化测试按 BDD、实际 diff 和影响类别选择，每个适用类别必须有当前版本的执行证据。
 
-### 稳定 ID 与场景门禁
+发现需求漏洞立即进入增量闭环，不能用修测试或改断言绕过需求修订。
 
-- 为每个可观察验收场景分配稳定 `BDD-001`；真实测试使用项目已有的类名/方法名或测试 ID，一个 BDD 可映射多个测试。同一需求内不得因排序或补充内容随意改号。
-- 首次确认前已经展示的 BDD 对未变化内容保持编号稳定；用户在首次确认前撤回的草稿项不进入 R1，不使用已实现需求的删除处置。
-- 需求确认前检查主流程、备选流程、异常流程、恢复流程和非功能约束。缺少某类场景时标记“待确认”或“不适用 + 原因”，不得为了凑数量脑补。
-- 只询问会改变实现、验收或测试范围的问题，按“影响程度 × 不确定程度”内部排序，单轮最多保留 5 个；问题之间存在依赖或先后关系时一次只展示当前最高优先级 1 个。当前回答可能使后续问题失效时必须重新排序。关键业务含义仍不明确时必须继续澄清或阻塞，不用问题数量限制掩盖缺口。
-- 已确认需求必须清晰、无冲突且可通过可观察结果验收；不能从代码、工具输出或常见做法反推未写明的产品规则。
+## Figma XML 实现
 
-### 交互式歧义澄清
+已确认计划包含 Figma + XML View 时，读取 `references/figma-android-xml-handoff.md`：
 
-- 发现业务范围、旧业务处置、接口/数据含义、UI 状态、异常恢复、非功能指标或验收结果存在多种合理解释时，先用自然中文说明模糊点、提问原因和已知事实；已确认需求、契约或项目资料能够唯一确定的内容，以及代码能够直接证明的技术事实，直接采用并说明依据，不把事实问题转嫁给用户。代码或测试中的现有表现只能作为业务决策证据，不能单独推导未确认的产品规则。
-- 能形成真实互斥方案时提供 2～4 个简短候选项，分别说明可观察行为以及与当前问题直接相关的旧业务、实现或测试影响，并始终允许用户自行填写。只有项目事实和已确认约束足以支持明显更合适的方案时才标注建议及理由；常见做法只能用于解释取舍，不能冒充产品规则，金额、权限、隐私和已上线业务变化不得自动替用户选择。无法形成有依据的候选项时直接提出短答案问题，不为凑选项脑补。
-- 把候选项视为表达草案而不是固定合同：用户只回复某一选项时采用其完整语义；“选择 A，但……”合并选项方向与补充限制；要求修改选项但未说明结果时继续给出更精确候选或请求短答案；组合多个选项时先检查是否冲突；全部不适用时以用户自定义内容为新方案。最终需求、BDD 和测试只保存合并后的业务语义，不以选项字母代替内容。
-- 每次回答后先用中文复述最终语义。回答仍有歧义、与选项冲突或改变另一个需求点时，只澄清当前冲突或把独立内容列为新增需求，不静默取舍；该追问仍属于同一问题。编码前或编码中发现已选方案与新项目事实冲突时，暂停受影响范围，展示依据、后果和可行替代，重新确认后再继续，其他已确认独立范围不受影响。
-- 将每个已接受答案立即合并进 `requirement_file`，同步受影响的 BDD、旧业务影响和测试预期；替换失效表述，不保留矛盾版本。每次写回后重新执行 `init`，仍有关键问题则继续澄清，全部完成后等待一次纯确认。聊天不能替代需求事实源。
+- 先确认项目确实是 XML View 或混合项目中的 XML 页面；Compose 不调用 XML Skill。
+- `figma-android-xml` 只生成 XML 和资源，不写 Kotlin/Java，不进入专项 PASS 白名单。
+- 生成结果必须通过 `scripts/figma_xml_handoff.py` 和影响半径校验，再由本 Skill 接管业务接入。
+- build/lint、功能测试和 `android-verify-ui` 真机视觉结果必须另行产生新鲜证据；生成成功不等于交付通过。
 
-### 人工事实源与机器产物
+## 最终交付
 
-- 人主要维护 `requirement_file` 和 `docs/实施计划.md`、业务代码和测试代码；不要要求用户手填修订号、摘要、route、证据引用或最终报告字段。
-- 脚本维护 `requirement-snapshot.json`、`requirement-revision.json`、`test-mapping.json`、`impact-radius.json`、确认收据、route、证据和最终结果。
-- `docs/需求测试追溯.md` 由脚本从当前需求快照、测试映射和交付结果自动渲染，仅供阅读，不是第二事实源或独立 gate。
-- 每个已确认 BDD 必须映射到测试或可复现人工验收；这是需求覆盖，不等于代码行覆盖率。
+只有用户明确要求最终检查、完整交付或准备提交时：
 
-### 中途需求修订
+1. 确认所有场景已有诚实结果，执行 `delivery.py route`。
+2. 先执行 `android-review-diff`，合并脚本候选和七类 `confirmed_impacts`。
+3. 按 `specialist_tasks` 逐项执行质量、稳定性、测试、API 和独立 UI 等适用专项。
+4. 修复改变 diff 后重新 route；相同输入复用，变化超过默认三轮时阻断，人工确认后才可 `route --new-session`。
+5. 基于最后一次修复后的代码重跑必需命令，优先用 `delivery_gate.py assemble --manifest` 组装并立即 validate。
+6. 输出 `FULL_PASS`、`LOCAL_PASS_DEVICE_PENDING`、`INCOMPLETE` 或 `BLOCKED` 对应的中文结论和剩余风险。
 
-- `<requirement_dir>/test-cases/requirement-revision.json` 由 `init/check-env` 针对普通新增、修改和未变化场景生成；`confirm-requirement-update` 校验调用前完整清单，不静默覆盖。
-- 同一需求逐项使用 `ADDED/CHANGED/REMOVED/UNCHANGED/SUPERSEDED`；决策使用 `CONFIRMED/PENDING/REJECTED/CONFLICT`。`PENDING/CONFLICT` 只保存候选且不推进版本，`REJECTED` 不进入当前总需求。
-- 删除或改号不会被自动确认；必须用 `--revision-file` 明确 `REMOVE_IMPLEMENTATION/KEEP_COMPATIBILITY/STOP_UNFINISHED_WORK`，替代关系必须指向同轮新增 BDD。
-- 只在聊天中确认的变化先同步到 `requirement_file`。用户确认后，后续编码、测试、route 和最终报告重新读取当前需求和机器产物，确认前旧聊天理解不得作为执行依据。
-- `confirm-requirement-update` 只更新最近确认正文、修订号、有效义务和修订历史，不读取或修改 Git。重复 `check-env` 只复用当前起点；新的串行需求必须完成当前需求并获得用户明确确认后，在干净工作区执行 `check-env --new-requirement`。
+存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则只能说明“代码与自动测试完成，UI 验收待执行”。
 
-### 聊天事实收件箱
+## 完成条件
 
-- 聊天不是正式需求事实源。对“还要支持空数组”这类可能改变行为的补充，不猜测用户是否已经正式下单，先登记到 `<requirement_dir>/.state/fact-inbox.json`：
-
-  ```bash
-  python3 ai-skills/android-delivery-skills/scripts/fact_inbox.py add \
-    --config <配置> --text "还要支持空数组" \
-    --missing scope --missing expected_result
-  ```
-
-- `PENDING` 表示已捕获但不能开发；`DISCUSSION` 表示明确只是讨论；`CONFIRMED` 表示用户确认了方向，但仍需补齐范围和验收结果；`REJECTED` 不进入正式需求。机器只追问会改变实现或验收的缺失边界，不追问“你是不是认真的”。
-- 用户确认方向并补齐边界后，将事实写回 `requirement_file`，重新执行 `init`，再执行：
-
-  ```bash
-  python3 ai-skills/android-delivery-skills/scripts/fact_inbox.py resolve \
-    --config <配置> --id FACT-001 --status CONFIRMED --clear-missing
-  python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
-  ```
-
-- 只有 `confirm-requirement-update` 成功后，事实才绑定当前需求 `revision` 和 `requirement_file` 摘要。只改收件箱、只在聊天确认、只改需求但跳过 `init`，或重复确认没有形成新的需求修订，都不能继续 `confirm-plan`、`init-test-mapping`、`route` 或最终 gate。最终 gate 还会重新读取收件箱，防止旧流程缓存绕过该约束。
-
-## 影响面识别与路由
-
-需求理解阶段必须先判断本次需求影响面，并在“当前需求理解”中输出：
-
-- UI：是否涉及页面布局、资源、文案、状态展示、交互、Adapter、Compose/XML。
-- 接口契约：是否涉及 endpoint、请求参数、响应字段、DTO、mapper、Repository 网络层、缓存字段。
-- 业务逻辑：是否涉及规则判断、状态流转、排序筛选、权限判断、计费、实验开关、数据计算、入口条件。
-- 数据存储：是否涉及数据库、缓存、DataStore、SharedPreferences、文件、迁移或旧数据兼容。
-- 系统能力：是否涉及权限、通知、后台任务、文件、WebView、DeepLink、系统版本兼容。
-
-如果某一类影响面明确未涉及，编码后不得强行调用对应专项审查，只需在最终报告中说明“未涉及，已跳过”。
-
-编码后的 `route` 另行输出 UI、接口、数据、系统、构建、架构和测试七类工程候选，并在 `.state/route-impact.json` 写入 `specialist_tasks`。任务清单只登记待执行专项，不直接调用 Skill；专项执行者完成后必须把结果绑定到对应 gate，最终交付门禁逐项检查清单中的任务是否有当前版本结果。API 候选增加 `android-verify-api-contract`；数据、系统、构建、架构和测试候选进入既有 diff、质量、稳定性和测试职责，不为它们新增万能 Skill，也不由脚本直接下业务结论。文档和测试文本不作为生产 data/system 候选来源。
-
-第二轮条件能力继续由现有 Skill 承载：OpenAPI 归接口契约，动态泄漏/性能/运行时安全归稳定性，迁移和自动化 A11y 归测试，视觉与人工 A11y 归独立 UI 验收。每项记录触发依据、适用性、工具、执行证据、能力损失和结论；详细边界见 `references/conditional-capability-gates.md`。
-
-### 自动化测试路由与证据状态
-
-- 需求确认后只记录 BDD、影响类别、预期文件、测试层和可执行前置条件；`BLOCKED` 只表示缺少继续实现或验证所必需的输入。
-- 编码前只生成测试映射和必要测试骨架，不提前运行设备或 Journey；编码后由实际 diff、调用链和影响类别决定自动化测试与条件专项。
-- 最终 route 使用脚本候选与 Diff Reviewer 的 `confirmed_impacts` 并集登记专项；每个适用类别必须有当前版本的执行证据，无法执行时标记 `UNVERIFIED` 或 `BLOCKED`，不得用主观判断跳过。
-- **UI 验收前置预警**：需求理解或计划确认阶段若识别出本次涉及 UI 变更（页面/布局/资源/文案/交互），且 `android-verify-ui` profile 配置了设计稿或截图基准，必须在该阶段就告知用户“最终交付前需要运行 `android-verify-ui`，建议提前准备截图基准/设计稿”，而不是等到 route 阶段才提示。无设计基准时 route 仍登记 UI 专项任务，但允许最终结果明确为 `SKIPPED`，必须附中文原因和复核证据，不得静默省略。
-- 编码后根据最终 diff、调用链、variant 和可执行前置条件复核。发现额外影响时追加对应测试或专项；只有证据证明影响收敛时才移除不适用候选，并在实施计划和最终报告中说明原因。
-- 选择能够证明每个 BDD 场景的最低且足够测试层；UI 与业务混合需求必须拆层，任何单一工具通过都不能覆盖它没有断言的结果。
-
-### 轻量 diff 触发规则
-
-进入最终交付时基于实际 diff 快速复核影响面（`delivery.py route` 的 `classify_route_impacts` 以路径候选为主，并保留必要的 UI/API/架构内容信号），不做全量矩阵分析，只判断是否触发专项审查。触发规则：UI 相关文件（res/Activity/Fragment/Adapter/Composable）登记 `android-verify-ui` 任务；有设计基准时必须完成独立 UI 验收，无基准时必须留下 `SKIPPED` 中文原因和复核证据；接口层（Api/Service/DTO/mapper/网络 Repository/缓存）触发 `android-verify-api-contract`；数据层（Entity/Dao/Database/DataStore/SharedPreferences）触发数据兼容；系统能力（Manifest/权限/通知/后台/WebView/DeepLink/文件）触发版本兼容；构建（Gradle/version catalog/R8/build-logic）触发依赖解析和模块方向，不自动升级版本；DI Module/模块 API 边界触发架构检查，测试文件复核断言有效性；纯 if/when/状态计算/排序/权限/开关逻辑按业务路径处理。脚本候选与 Diff Reviewer 的 `confirmed_impacts` 取并集，需求判断与实际 diff 不一致时重新标记并说明原因。详细路由顺序和条件能力映射见下方"路由规则"。
-
-### 路由规则
-
-- 仅业务逻辑变更：
-  - 必须关注：`android-review-diff`、`android-test-and-fix`、`android-audit-stability`、`android-review-code-quality`。
-  - 默认跳过：`android-verify-ui`、`android-verify-api-contract`。
-  - 除非业务逻辑改变了 UI 状态展示，否则不做 UI 还原验证。
-  - 除非业务逻辑改变了接口字段、请求参数、DTO、mapper、Repository 网络行为或缓存结构，否则不做接口契约审查。
-- UI 变更：
-  - route 必须登记独立 `android-verify-ui` 任务；该任务由独立 Skill 执行，route 不直接调用。缺少设计基准时只能输出 `UNVERIFIED/BLOCKED`，并附中文原因和复核证据，不得用静态 UI 检查替代真机截图对比。
-  - 有设计基准时，UI Skill 先执行共享设备预检；只有 `device_check.status=READY`、`kind=PHYSICAL` 且截图成功，才允许输出 UI `PASS`。无设备时继续其他自动化，但最终只能保留设备待验状态。
-  - 由 `android-test-and-fix` 根据业务需求、已确认 BDD 和实际 diff 自动判断 Journey 适用性，不向用户询问测试工具选择。只有布局、颜色、字号、间距或资源变化时标记 `SKIPPED_VISUAL_ONLY`；涉及点击、输入、导航、可见状态流转或系统交互时，按 BDD 场景聚合 `FULL/PARTIAL/NONE`，只为 Journey 可稳定覆盖的部分生成并执行用例。
-  - 如果只是 UI 展示，不涉及接口字段或请求逻辑，跳过 `android-verify-api-contract`。
-- 接口 / 数据契约变更：
-  - 必须包含 `android-verify-api-contract`。
-  - 如果接口变更影响 UI 状态展示，提示单独运行 `android-verify-ui`。
-- 数据存储 / 缓存变更：
-  - 必须额外关注旧数据兼容、迁移、默认值、清缓存、降级路径和回滚风险。
-- 系统能力变更：
-  - 必须额外关注 Android 版本兼容、权限降级、生命周期和设备验证。
-
-## 完整工作流
-
-这是一个由 `delivery.py` 三阶段命令编排器驱动的闭环交付工作流。它只持久化当前需求 Git 基线，不维护通用状态机。不得在测试或审查失败后只输出报告并结束。
-
-### 执行手册
-
-请严格按照以下三个阶段、通过运行 Python 脚本推进流程。**每次运行脚本后，必须严格遵循终端输出中带有“👉 AI 指令”的提示内容。**
-
-#### 开始下一个串行需求
-
-只有用户明确确认上一需求已经完成或取消并要求开始新需求时，才执行工作区轮换。同一需求的补充、修改、删除和局部重测继续使用当前目录。新需求文件必须先放在当前 `requirement_dir` 之外；先运行不带 `--confirm` 的命令向用户展示中文预览：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/requirement_workspace.py next \
-  --title "新需求中文名称" \
-  --requirement-file /path/to/new-requirement.docx \
-  --previous-title "上一需求中文名称" \
-  --previous-outcome 已完成
-```
-
-用户确认预览后，使用完全相同的命令追加 `--confirm`。脚本要求 Android 项目工作区干净，保留上一需求，创建 `REQ-日期-序号-中文名称` 目录及 `docs/需求说明.md`，并只更新本机配置中的活动需求路径；不操作 Android 源码或 Git。轮换完成后继续执行下方阶段 1，确认新需求理解后，阶段 2 使用 `check-env --new-requirement` 建立新基线。不得直接跳到 `check-env --new-requirement`。
-
-查看当前目录和回收候选使用 `requirement_workspace.py status`。历史需求和 `tempfile` 只有状态明确、不是活动需求且同时超过最近保留数量和保留天数时才成为候选；`next` 预览会明确列出候选，同一命令追加 `--confirm` 后才随轮换回收。也可以单独执行 `prune` 预览，再用 `prune --confirm` 回收。确认写操作使用单写锁；另一个窗口正在轮换或回收时停止，绝不覆盖其配置、锁或目录。轮换成功但回收失败时，新需求目录和配置仍然有效；明确告诉用户只需修复权限或路径后单独重试 `prune`，不得再次执行 `next` 制造重复需求。
-
-#### 阶段 1：初始化需求理解
-
-首次使用时从 `workspace_root` 安装依赖：
-
-```bash
-python3 -m pip install -r ai-skills/android-delivery-skills/requirements.txt
-```
-
-然后运行：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py init
-```
-
-**AI 动作**：脚本会输出需求上下文。先形成初步需求理解；随后只读、定向检查目标项目规则、本次相关实现、调用方、接口/存储边界和已有测试，不修改代码或运行构建/设备任务。为每个独立触发编写稳定 `BDD-###` Given/When/Then 场景，检查主流程、异常、恢复和非功能边界，记录影响类别、预期文件、测试层和前置条件，并输出最小修改预览。场景数量服从真实需求，不为凑数量脑补。
-
-完整需求理解最前面固定输出“请优先确认：已上线业务影响”，按自然中文分为：
-
-- **本次明确修改**：当前需求明确允许改变的已有业务，BDD 场景以 `【修改已上线业务】` 开头，并写清修改前和修改后行为。
-- **必须保持不变**：可能被本次实现波及、但当前需求没有允许改变的已有业务，BDD 场景以 `【保护已上线业务】` 开头，只记录有代码、测试、契约或用户确认支持的可观察行为。
-- **暂时无法确认**：无法确定是否允许改变的已有行为；作为待定/冲突项阻断确认，不把当前代码表现或疑似旧 Bug 擅自固化。
-- **明确不修改范围**：本次确认不会触及的相邻业务和公共边界。
-
-完全没有识别到已有业务关联时只写“当前确认需求未登记需要修改或重点保护的已上线业务；编码后仍按最终 diff 复核”，不得宣称绝对没有影响。上述影响说明与完整需求只确认一次，不增加独立审批回合。
-
-首次确认前，用户每次新增、修改、删除、纠正或改变旧业务处置时：先用自然中文列出本轮新增、修改、删除和保留摘要；将结果合并为最新完整需求并同步到 `requirement_file`；重新执行 `delivery.py init` 读取文件；只重新分析受影响代码、调用方、测试和旧业务；最后展示本轮变化摘要、最新 `requirement_file` 路径、更新后的影响说明和待确认点，默认不在聊天重贴完整需求，再等待确认。用户回复同时包含“确认”和新变化时仍按变化处理，禁止直接执行 `check-env`。只有用户已经收到最新 `requirement_file` 路径与变更摘要，并作出不带新变化的明确确认，才进入阶段 2。
-
-同一需求编码中途再次运行 `init` 时，比较当前需求事实源和最近确认修订，输出增改删候选并绑定当前正文 SHA；正文再次变化后必须重新 `init` 才能确认。保留未变化的 BDD ID；普通新增和修改由脚本生成清单，删除或替代要求显式处置。`init` 和 `confirm-requirement-update` 均不修改 Git 基线。
-**DoR (准备就绪) 门禁**：如果需求缺少继续实现所必需的业务含义、边界条件或报错证据，列出缺口并暂停请求补充；能够明确表达一个真实场景时，不得仅因条目少而阻塞。
-
-最小修改预览中的每个新增或改动组件必须附轻量架构边界卡片：`组件/文件 | 职责 | 输入 | 输出 | 依赖方向 | 复用点 | 明确不修改范围`。同一组件的相关文件可以合并一行；卡片服从目标项目现有架构，不用于强推分层、拆模块或技术迁移。
-
-只有需求规模或依赖关系预计跨会话，或者包含多个可独立验收链路时，才在实施计划中把 BDD 场景编排为带依赖关系的纵向交付切片；每个切片必须贯穿其实际涉及的 UI、业务、数据和测试并能独立编译、验证。普通需求不增加切片、Ticket 或新文件，只追加实际影响类别要求的最小专项。
-
-架构边界卡片必须落实到真实包、文件和构造依赖，不能只写文档。多职责功能没有既有分层时，按共享规则建立最小功能内分层并集中装配具体依赖；同时为核心 Kotlin/Java 类型和生命周期、并发、缓存、重试、索引等不直观逻辑补充必要 KDoc/注释，不要求给样板代码逐行加注释。
-输出完毕后，**必须立即结束当前回合，等待用户确认**。绝不能直接开写代码。
-
-#### 阶段 2：拆分测试、确认计划与增量实现
-
-在用户已经收到最新 `requirement_file` 路径与变更摘要，并明确回复不带任何新增、修改、删除或纠正的“确认”“可以开始做”之后，运行以下命令：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py check-env
-```
-
-**AI 动作**：环境检查只在目标分支和代码工作区干净、需求事实源包含完整 BDD 场景且“待确认”为“无”时建立当前需求 Git 基线与需求起点；已有起点时安全复用。随后直接执行确认命令，普通新增和修改会自动生成 `requirement-revision.json`：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-requirement-update
-```
-
-退出码 `0` 只表示最新版需求已确认，不表示允许编码；删除、替代或冲突时提供显式 `--revision-file`。确认后把全部 BDD 映射为真实测试清单，将唯一实施计划写到 `<requirement_dir>/docs/实施计划.md`，并生成 `<requirement_dir>/test-cases/impact-radius.json`。影响半径必须登记当前需求基线以来的 ADDED/CHANGED/REMOVED/SUPERSEDED；计划必须包含“实现范围、已上线业务影响、预计修改文件、测试方案、影响半径摘要、明确不修改范围”。此时保持只读，展示计划后等待用户确认。
-
-用户明确确认已经展示的计划后运行：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py confirm-plan
-```
-
-退出码 `0` 才允许编码。该命令生成 `<requirement_dir>/test-cases/implementation-plan-receipt.json`，绑定当前需求修订、需求摘要、计划摘要和影响半径摘要，并同步刷新 `docs/续接指南.md`、`docs/需求修订说明.md`、`docs/测试映射说明.md`（存在时）和 `docs/需求测试追溯.md`；不修改业务文件或 Git。需求语义必须先写入 `requirement_file`，计划变化必须先写入同一份 `docs/实施计划.md`，相关人读 Markdown 同步成功后才允许进入编码。需求、计划或影响半径变化后旧收据自动失效；必须更新受影响的测试映射、同一份 `docs/实施计划.md` 和 `test-cases/impact-radius.json`，再次展示并确认后才能继续受影响编码。没有改变计划六类内容或影响半径的实现细节完善不重复确认。编码中途只有业务行为、边界或验收结果变化时才重复 `init → 用户确认 → 更新修订清单 → confirm-requirement-update → 更新影响半径和计划 → confirm-plan`；两种情况都保留最初 Git 基线。计划确认后遵守以下规约：
-1. **BDD + TDD**：先把全部已确认 BDD 映射到真实测试，再逐场景执行 `Red -> Green -> Refactor`。Red 必须由业务断言失败证明，并由自动生成的 `.state/tdd-cycle.json` 保存 Red receipt、Green receipt、代码快照、测试源码快照和 BDD/testcase 关系；Green 后再重构并重跑受影响测试。一个 BDD 可以由 Unit、集成、UI 或人工证据共同覆盖，但任何工具不得越过自己的断言边界。
-2. **主动检索与共享边界保护**：动笔前，主动寻找同类组件、Base 类和测试范式，并复核拟修改共享边界的每个已上线业务调用方已归入“明确修改、必须保护、暂时无法确认”。新发现项按中途需求修订同步确认；未明确授权且旧行为有可靠依据时默认保护，依据不足或与新需求冲突时暂停。按上一条先运行或补齐保护测试，闭环前不得修改共享边界；能够局部实现时优先新增语义明确的入口、overload 或策略，保持旧入口默认语义不变。
-3. **Figma UI 分流与接管 (最小化修改)**：先根据目标项目真实代码确认 XML View、Compose 或混合实现，不因设计链接擅自换技术栈。已确认的 Figma + XML View 部分调用 `figma-android-xml` 生成纯 UI 资源和 XML；Compose 部分沿用项目既有结构，不调用 XML 生成 Skill。生成后只检查本轮产物并执行交接门禁：固定用户文案资源化，动态预览数据只用 `tools:text`；装饰图片使用空语义，功能/信息图片使用有需求依据的描述，语义不明时暂停确认；资源命名和复用服从目标项目。外部阶段不得新增 Kotlin/Java 业务代码，随后由本 Skill 接管必要的 Kotlin/Java、ViewBinding/DataBinding、Adapter、状态和业务连线。
-4. **首次验证**：执行实施计划、CI、README、项目脚本、用户确认或前序文件中已经确认的验证命令；确认后后续阶段只读取对应文件复用，不重新探测。真实命令仍缺失时，由负责该验证的具体模块补齐来源；总入口不猜任务名、不做项目任务发现。
-5. **自修复**：任一项失败，按“统一故障处理与 AI 接管”保存证据并分类，确认根因后只修改对应的生产代码、测试或环境配置，再重跑失败项及相关回归集。禁止删测试、弱化断言、跳过任务或用假数据掩盖失败。
-6. **循环上限**：同一根因连续 3 轮未关闭才进入 `BLOCKED`；报告失败分类、原专项能力/工具、命令、退出码、关键日志、AI 替代与能力损失、已尝试修改和所需输入。
-7. **刷新机器产物**：编码和验证后更新测试映射、执行收据和最终证据；追溯表由脚本自动重绘，不手工补字段。
-
-#### 编码后局部迭代
-
-首次实现后，用户继续要求完善、修改、删除或修复某个点时，先做一次语义判断：
-
-- **验收语义不变**：不执行 `init`、`confirm-requirement-update`、`route`、全部专项 Reviewer 或最终报告。只检查本轮修改落点和调用方，确认仍落在已确认 `impact-radius.json` 内，做最小代码修改，更新对应测试，并调用 `android-test-and-fix` 的局部迭代模式运行受影响测试；生产代码变化时追加能够发现引用或签名错误的最小编译，删除代码时必须先检查调用方。
-- **验收语义变化**：把用户确认的变化同步到 `requirement_file`；如果补充内容改变已有业务的“修改/保护”处置，同时更新置顶影响说明和对应 BDD 场景。只对受影响场景执行需求修订与确认，同步同一份实施计划和 `impact-radius.json` 并重新获得确认，再按上一条进入局部迭代；未变化的 BDD 场景、代码和测试不得重做。
-- **影响类别扩大**：如果本轮修改触及数据库迁移、公共 API、支付、鉴权、安全、权限、生命周期或其他已识别边界，只追加能够验证该类别的最小专项，不机械运行全部专项。
-- **局部结果边界**：只向用户报告本轮修改、执行的测试/最小编译、结果和剩余风险；不得生成新的整体通过结论，也不得把旧 `docs/交付结论.md` 当成当前代码的最终报告。
-
-局部迭代可以重复多次。仅因代码写完不得自动进入阶段 3；用户当前或最初请求明确包含“最终检查、完整交付、准备提交”等意图时，才进入最终交付。如果之前已经生成过最终结果，任何后续代码、测试、资源或构建配置变化都会使其失效，但不要求在每次局部迭代后立刻重跑完整门禁。
-
-#### 阶段 3：审查、自修复与交付门禁
-
-确认用户已要求最终检查、完整交付或准备提交后，基于当前最终代码运行：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery.py route
-```
-
-**AI 动作**：脚本先校验符合 `references/implementation-plan-receipt.schema.json` 的计划确认收据，再只分析 `check-env` 记录的当前需求 Git 基线之后的代码 diff（排除 `document/` 交付证据）；diff 超出已确认影响半径时立即阻断。路由候选合并实际 diff 与 profile 声明的 API 契约来源，并在项目外生成符合 `references/route-impact.schema.json` 的影响快照。快照绑定需求正文、已确认实施计划、已确认影响半径、配置声明的 UI/API 链接、本地资料摘要和 route 收敛状态；这些输入变化后必须重新确认并 route。逐个调用，每项输出必须进入闭环，而不是止于报告。
-- Git 分支、工作区、committed/staged/unstaged/untracked、`A/M/D/R` 状态、真实修改片段和最终代码摘要由 `scripts/git_changes.py` 只读收集；`delivery.py` 只消费结果并编排路由，不得在任一脚本中混入对方职责。
-- 一次只查一项。
-- 不要自行脑补脚本未列出的审查项。
-- `android-review-diff` 必须按 `specialist-result.schema.json` v4 对 UI、API、数据、系统、构建、架构和测试七类影响逐项输出 `confirmed_impacts`。适用项绑定项目相对路径和原因，不适用项也说明需求/diff 依据；该语义结果与脚本候选取并集，新增的条件能力必须继续执行，不能因文件名或正则漏检而省略。
-- `android-review-diff` 还必须用最终 diff 复核已确认的旧业务影响。发现未登记的已有业务调用方或可观察行为变化时，立即暂停最终交付，按以下固定顺序只恢复受影响需求，不重新执行完整编码前准备：
-  1. 把新影响作为“暂时无法确认”同步到 `requirement_file`，执行 `init`，展示置顶影响提醒、变更摘要和最新 `requirement_file` 路径，请用户选择修改或保护。
-  2. 用户补充处置时继续同步 `requirement_file` 并重新执行 `init`；只有用户收到最新 `requirement_file` 路径与变更摘要并作出不带新变化的明确确认，才继续下一步。
-  3. 更新受影响 BDD 并执行 `confirm-requirement-update`；删除或替代时提供显式修订文件，复用当前需求最初 Git 基线。
-  4. 确认命令退出码为 `0` 后更新受影响测试映射、实施计划和 `impact-radius.json`，向用户展示并执行 `confirm-plan`；计划确认后才按结果最小修改实现和测试，再重新执行 `route`。不得只在最终报告追加说明或复用变化前的证据。
-- 最终 diff 中出现不在已确认 `impact-radius.json` 的代码文件时，完整通过必须阻断；只能把新增影响写回需求/计划/影响半径并重新确认，或移除无关改动，不能由 AI 在最终报告中口头豁免。
-- 已确认需求范围内的 P0/P1 技术问题发现后立即修复，并从受影响的最小测试集开始重跑；计划外已上线业务影响、需求冲突或业务预期不明确即使评为 P0/P1 也必须先重新确认。非阻断 P2/P3 可修复时一并关闭。
-- 修复导致 diff 变化时重新执行 `route`。route 在 `.state/route-impact.json` 记录七类候选、`route_input_sha256`、`route_round`、`route_session` 和 `convergence_status`；默认 `route.max_rounds: 3`，相同输入标记 `STABLE` 并复用候选/任务，变化轮次超过上限标记 `BLOCKED` 并阻断最终门禁。需求/计划/影响半径上下文变化自动开启新会话；原范围内确需继续时，人工确认后使用 `delivery.py route --new-session`，不得自动放大上限。
-- 最后按 `.state/route-impact.json` 的 `specialist_tasks` 逐项执行；`android-test-and-fix` 负责完整回归门禁，UI 变更时由独立 `android-verify-ui` 任务负责视觉与人工验收。route 不直接调用任何 Skill，最终门禁检查每项任务的当前结果。
-- `android-test-and-fix` 在此阶段根据最终 diff、影响类别和测试映射选择测试层，再按 BDD 场景聚合 Journey `FULL/PARTIAL/NONE`；Journey 通过也不能替代未分配给它的证据。
-- 根据 route 输出建立第二轮条件能力矩阵；逐项记录适用/不适用、主责 Skill、设备类型、命令、证据和未验证能力。缺少真机时继续执行全部本地与模拟器可覆盖门禁。
-- 完成声明前，必须基于最后一次修复后的最终代码重新执行所有必需命令；修改前或中间轮次的通过结果只能作为过程记录，不能作为最终门禁证据。
-- `route` 或 Diff Reviewer 语义确认的 OpenAPI、迁移、UI/A11y 和安全隐私候选由最终门禁机器强制出现；UI/A11y 触发后不能使用 `SKIPPED` 绕过真机截图对比，必须由 `android-verify-ui` 输出通过、失败、未验证或受阻结果。其他确实不适用的条件能力才使用 `required=false + SKIPPED`，同时填写需求/diff 原因和复核证据。
-- 最终命令必须通过 `scripts/execution_evidence.py --id <证据ID> --gate <gate-id> --report <报告> -- <命令参数>` 执行；一份收据只证明一个 gate，同 ID 重跑保留独立 attempt。测试和迁移自动收据必须包含实际执行数大于零的本轮 JUnit；每个 BDD 只关联其 CURRENT mapping 登记且本次真实通过的 testcase。普通自动收据不能直接代替接口、UI/A11y、安全、泄漏或性能专项结论。
-- 命令或机器报告真实失败时，自动收据只能在 `INCOMPLETE/BLOCKED` 中绑定同一 `FAIL` gate；不得绑定 BDD 自动覆盖或 `PASS` gate。
-- 核心审查和条件接口审查按 `references/specialist-result.schema.json` 输出机器结果；`android-audit-stability` 必须记录必需静态语义能力、七项静态检查，以及动态泄漏、性能和安全隐私的 `PASS/FAIL/SKIPPED/UNVERIFIED/BLOCKED`。先用 `scripts/specialist_result.py path --config <配置>` 获取外部目录，再校验结果；P0/P1 或必需能力未关闭时不得写 `PASS`。
-- 业务、迁移、安全等人工覆盖必须填写执行人、带时区时间、环境、逐步操作、预期、实际结果和产物或无产物原因；UI 视觉验收不走通用人工覆盖，只提交 `android-verify-ui` 的 `device_check`、Figma 链接、真机截图/差异图链接、动态区域说明和 PASS/FAIL。UI `PASS` 的 `device_check` 必须是物理设备且截图命令成功；`LOCAL_PASS_DEVICE_PENDING` 必须登记真实设备待验项并引用同能力的未验证证据；`FULL_PASS` 不允许待验或 `UNVERIFIED/BLOCKED` 项。
-- 最终中文摘要必须把 `【修改已上线业务】` 和 `【保护已上线业务】` 义务置顶分组展示；任一必需保护项缺少新鲜证据时，沿用现有义务门禁阻断完整通过。
-
-所有必需项完成后，获取当前确认修订、有效义务、Git 基线和最终代码摘要，生成 `<requirement_dir>/test-results/delivery-result.json`。**优先用 `assemble` 自动组装**（消除手填 sha/字段摩擦），只在 assemble 不适用时才手写：
-
-通过结论必须包含并通过核心 gate：`android-review-diff`、`android-review-code-quality`、`android-audit-stability`、`android-test-and-fix`、`android-build`、`android-lint`；接口、迁移、UI/A11y 和安全隐私条件 gate 由最新 route 快照与 Diff Reviewer 的 `confirmed_impacts` 并集要求，不能由最终报告自行决定是否出现。
-
-**方式一（推荐）：assemble 自动组装**。跑完测试/审查后，写一份 YAML 产物清单（只声明业务事实，不算指纹），再执行：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
-  --config <配置> --manifest <产物清单.yaml>
-```
-
-`obligations` 的覆盖状态和证据映射是业务判断，必须由 agent 逐项提供；缺少覆盖状态时 assemble 保守标记为 `UNVERIFIED`，不得默认自动覆盖。UI 视觉专项使用 `specialists` 中的 `android-verify-ui` 结果，不再用通用 `MANUAL` 收据承载截图；`device_check` 记录设备预检和截图成功状态，`visual_review` 仅保留 Figma 链接、真机截图/差异图链接和动态区域说明。两者都不绑定 APK、versionCode 或截图 SHA-256。其余字段（`snapshot_sha256`、各 `obligation_sha256`、`receipt_sha256`、`obligation_test_cases`、`specialist_result_sha256`）由 assemble 自动填充，组装完立即 validate 并回显错误。产物清单完整字段、示例和职责分工见 `references/assemble-manifest.md`。
-
-**方式二（向后兼容）：手写后 validate**。若 assemble 不适用（如需特殊字段），按 `references/delivery-result.schema.json` 手写 `delivery-result.json`，再执行：
-
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py validate
-```
-
-校验命令在机器结果结构可信后同步生成 `<requirement_dir>/docs/交付结论.md`；无论结论是通过、未完成还是受阻，最终回复都必须优先展示并链接这份中文摘要，`delivery-result.json` 只作为机器附件。只有退出码为 0 才允许使用通过结论。`INCOMPLETE/BLOCKED` 可以诚实保存并生成摘要，但不会被当成交付通过。机器文件是一次性交付结果，不是 phase/state 状态机。
-
-### Definition of Done
-
-只有同时满足以下条件才可声明交付完成：
-
-- 每个 BDD 场景均映射到实现及 JUnit 中真实通过的 testcase、Agent Journey 中实际执行的 action/check，或结构完整的实际人工收据；计划人工执行但尚未执行时不得写成已覆盖。
-- 需求修订状态为 `CONFIRMED`，不存在 `PENDING/CONFLICT`；最终报告的 obligation ID、必需性和语义摘要与当前有效 Then 集合完全一致。
-- 当前 `docs/实施计划.md` 和 `test-cases/impact-radius.json` 已由用户确认，计划收据仍与需求修订、需求摘要、计划摘要和影响半径摘要一致；需求、计划或影响半径变化后没有复用旧确认或旧证据。
-- 当前需求快照、测试映射和最终结果绑定同一修订，覆盖全部必需 BDD 场景；机器生成追溯视图显示每个场景的测试、实际人工验收和证据状态。
-- 受影响自动测试、构建和 lint 实际执行通过；不得把“未执行”写成通过。
-- 必需命令在最后一次代码或测试修复后重新执行，最终报告记录命令、退出码、测试数、关键输出和报告/产物路径。
-- OpenAPI、迁移、泄漏、性能、UI/A11y、安全隐私均已记录适用性；所有明确验收所必需的条件能力有新鲜通过证据。
-- 所有 P0/P1 已关闭；无豁免的测试失败为 0。
-- 代码质量专项已逐项通过 `architecture-layering`、`responsibility-cohesion`、`source-documentation` 和 `dependency-testability`；无 Kotlin/Java 变更时也必须明确说明不适用依据，不能省略检查。
-- UI/设备/外部环境无法验证时明确列出未验证项，但不得掩盖本可本地执行的失败。
-- 专项能力降级后，只有等价重验覆盖了同一 BDD 和风险才可计入通过；必需门禁能力缺失时结论必须是“未完成/受阻”。
-- 存在 UI 变更和可对比基准时，必须附上独立 `android-verify-ui` 报告或用户明确豁免；否则结论只能是“代码与自动测试完成，UI 验收待执行”。
-- 最终报告包含变更、测试命令与结果、自修复记录、失败分类、专项能力/工具降级、AI 替代、能力损失、所需用户输入、未验证项和剩余风险。
-- 所有用户可见结论均使用自然中文；英文机器枚举只保留在 JSON、Schema 和原始证据中，并通过统一呈现模块转换为包含原因和下一步的中文说明。
-- 没有真机但不涉及真机必需验收时，结论只能是“代码与本地门禁完成，真机专项待验证”；真机是明确验收条件时保持“未完成/受阻”，但不否定其他已完成范围。
-- `<requirement_dir>/test-results/delivery-result.json` 已通过独立最终门禁，且需求文件、已确认计划、已确认影响半径、UI/API 输入摘要、Git 基线、最终代码摘要和所有引用证据仍一致；同时已生成并向用户展示 `docs/交付结论.md`。
-
-任一必需门禁未满足时只能声明“未完成/受阻”，不得使用“交付完成”“全部通过”。Git 提交仅在用户明确要求时执行，不得把自动提交作为完成条件。
-
-## 资料缺失降级边界
-
-资料缺失时先区分是否会影响正式生产契约：
-
-1. 已确认需求足以明确业务语义时，即使正式接口或设计稿尚未提供，也继续完成可独立闭环的业务范围；在需求说明和最终报告中标记“根据需求推导，待正式资料对齐”。
-2. 接口资料未到时，在主代码中优先建立稳定的领域模型和 Repository / DataSource 抽象；Mock、Fake 和 sampledata 只进入 `debug`、Preview 或测试范围，不创建猜测性正式 DTO、Endpoint、序列化字段或运行时 `TODO()`。
-3. UI 资料未到时，可以依据已确认需求和项目现有组件完成主代码中的页面结构、交互与状态；没有可比设计基准时不得声明视觉或像素级验收通过。
-4. `Unknown`、nullable/default 只沿用项目或正式契约已有的兼容策略，不代替需求已经明确的业务字段，也不得用于掩盖金额、权限、安全、持久化或关键业务分支的语义缺口。
-5. 正式接口或 UI 资料到达后，先对比现有实现；只改变传输字段或视觉参数时按同一需求做局部完善，修改 DTO、Mapper、正式 DataSource、资源或表现层并重跑受影响测试。改变业务语义时才物化需求修订并更新相关 BDD / 测试用例。
-6. 需求说明、局部结果和最终回复分别列出业务实现、正式接口、UI 视觉和自动化测试状态，以及未接入部分、临时实现位置、未验证项和恢复正式接入所需资料；最终交付复用现有 API 门禁原因并引用独立 UI 验收报告，不新增机器状态。不得把“业务已跑通”写成“正式联调或像素级验收已通过”。
+只有当前需求和计划已确认、影响半径未越界、所有必需 BDD 有 CURRENT 映射和新鲜证据、非零测试真实通过、适用专项已完成、P0/P1 已关闭且最终 gate 通过时，才可声明交付完成。设备或外部条件缺失必须保留未验证项；任一必需门禁未满足时只能声明“未完成/受阻”。

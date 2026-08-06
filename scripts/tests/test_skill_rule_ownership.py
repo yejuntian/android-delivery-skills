@@ -17,13 +17,28 @@ from pathlib import Path
 import re
 import unittest
 
+import yaml
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY_AGENT_RULES = REPOSITORY_ROOT.parent / ".agents" / "AGENTS.md"
 SHARED_RULES = REPOSITORY_ROOT / "_shared" / "android-global-rules.md"
 SKILL_FILES = sorted(REPOSITORY_ROOT.glob("*/SKILL.md"))
-RUNTIME_RULE_FILES = [SHARED_RULES, *SKILL_FILES]
 SHARED_RULE_REFERENCE = "../_shared/android-global-rules.md"
+SKILL_CATALOG = REPOSITORY_ROOT / "references" / "skill-catalog.yaml"
+
+
+def catalog_entries() -> dict[str, dict]:
+    """读取机器可校验的 Skill 角色，避免按目录名猜调用策略。"""
+    payload = yaml.safe_load(SKILL_CATALOG.read_text(encoding="utf-8")) or {}
+    return {item["id"]: item for item in payload.get("skills", [])}
+
+
+CATALOG = catalog_entries()
+RUNTIME_SKILL_FILES = [
+    path for path in SKILL_FILES if CATALOG.get(path.parent.name, {}).get("runtime") is True
+]
+RUNTIME_RULE_FILES = [SHARED_RULES, *RUNTIME_SKILL_FILES]
 FIVE_STEP_FLOW = "确认需求 → 拆分测试与确认计划 → 实现验证 → 变更后增量循环 → 最终交付"
 DOCUMENTATION_SYNC_RULE = "职责对应的运行时来源、设计依据和测试"
 LEGACY_CONSTRAINT_PROTECTION_RULE = "旧约束保护清单"
@@ -80,12 +95,14 @@ def normalized_long_rule_lines(path: Path) -> list[str]:
 class SkillRuleOwnershipTests(unittest.TestCase):
     """验证 AI 维护入口、规则单一来源和脚本职责说明保持同步。"""
 
-    def test_every_skill_reads_shared_rules_once(self) -> None:
-        """验证每个 Skill 仍且只引用一次跨 Skill 共享规则。"""
+    def test_shared_rules_follow_catalog_role(self) -> None:
+        """验证运行时 Skill 读取共享规则，导航和 setup 不加载执行期规则。"""
         self.assertTrue(SKILL_FILES, "未发现任何 SKILL.md")
+        self.assertEqual({path.parent.name for path in SKILL_FILES}, set(CATALOG))
         for skill_file in SKILL_FILES:
             with self.subTest(skill=skill_file.parent.name):
-                self.assertEqual(1, read_text(skill_file).count(SHARED_RULE_REFERENCE))
+                expected = 1 if CATALOG[skill_file.parent.name]["runtime"] else 0
+                self.assertEqual(expected, read_text(skill_file).count(SHARED_RULE_REFERENCE))
 
     def test_five_step_flow_has_one_runtime_owner(self) -> None:
         """验证用户可见五步只由总入口定义，不在共享规则中复制。"""

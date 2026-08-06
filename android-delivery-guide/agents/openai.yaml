@@ -1,0 +1,6 @@
+interface:
+  display_name: "Android 交付导航"
+  short_description: "根据任务类型选择正确的 Android 交付或专项 Skill"
+  default_prompt: "使用 $android-delivery-guide 判断当前 Android 任务应该进入哪个 Skill 和流程。"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,61 @@
+version: 1
+skills:
+  - id: android-delivery-guide
+    role: guide
+    invocation: user
+    runtime: false
+    description: 只选择主入口和后续流程，不修改交付状态。
+  - id: android-delivery-setup
+    role: setup
+    invocation: user
+    runtime: false
+    description: 首次发现项目能力并在确认后创建项目侧配置。
+  - id: android-implement-and-verify
+    role: orchestrator
+    invocation: model
+    runtime: true
+    description: 唯一完整 Android 需求交付编排器。
+  - id: android-review-diff
+    role: specialist
+    invocation: model
+    runtime: true
+    description: 最终 diff 范围和业务回归审查。
+  - id: android-review-code-quality
+    role: specialist
+    invocation: model
+    runtime: true
+    description: 架构一致性、质量和可维护性审查。
+  - id: android-test-and-fix
+    role: specialist
+    invocation: model
+    runtime: true
+    description: 测试物化、执行、证据和失败自修复。
+  - id: android-verify-api-contract
+    role: specialist
+    invocation: model
+    runtime: true
+    description: Android 网络层和接口契约核验。
+  - id: android-verify-ui
+    role: specialist
+    invocation: model
+    runtime: true
+    description: 独立真机视觉和无障碍表现验收。
+  - id: android-audit-stability
+    role: specialist
+    invocation: model
+    runtime: true
+    description: 稳定性、性能、安全隐私和兼容性审计。
+integrations:
+  - id: figma-android-xml
+    role: implementation-provider
+    invocation: conditional
+    runtime: false
+    optional: true
+    conditions:
+      - 已确认需求包含可访问的 Figma 链接或结构化设计资料
+      - 目标页面使用 XML View 或混合项目中的 XML 页面
+      - 实施计划和影响半径已经确认
+    returns_to: android-implement-and-verify
+    validators:
+      - android-test-and-fix
+      - android-verify-ui

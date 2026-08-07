@@ -123,12 +123,16 @@ def _replace_block(content: str, block: str) -> str:
 
 
 def render_documents(root: Path | None = None) -> dict[Path, str]:
-    repo = root or repository_root()
-    delivery_root = repo / "ai-skills" / "android-delivery-skills"
+    """从结构化流程契约渲染 FLOW 文档的自动同步区块。
+
+    文档基准以 skill 仓为准：FLOW 文档跟 skill 绑定，放在 skill 仓的 docs/ 下，
+    不放在多 skill 共用的仓库根 doc/。
+    """
+    delivery_root = skill_root()
     flow, catalog = load_contracts(delivery_root)
     targets = {
-        repo / "doc" / "FLOW_OVERVIEW.md": _overview_block(flow, catalog),
-        repo / "doc" / "FLOW_DIAGRAMS.md": _diagram_block(flow, catalog),
+        delivery_root / "docs" / "FLOW_OVERVIEW.md": _overview_block(flow, catalog),
+        delivery_root / "docs" / "FLOW_DIAGRAMS.md": _diagram_block(flow, catalog),
     }
     rendered: dict[Path, str] = {}
     for path, block in targets.items():

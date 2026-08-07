@@ -198,7 +198,9 @@ def extract_bdd_scenarios(content: str) -> list[dict[str, Any]]:
     ranges = _scenario_ranges(content)
     if not ranges:
         raise BddScenarioError(
-            "需求事实源至少需要一个 `### BDD-001 场景名称`，并包含 Given/When/Then"
+            "需求事实源至少需要一个 `### BDD-001 场景名称`，并包含 Given/When/Then\n"
+            "👉 下一步：这一步该由 AI 完成，不需要你手写 BDD。请让 AI 根据需求正文，"
+            "把可观察行为拆成 BDD-001 形式（Given/When/Then），写回需求事实源后重跑 init。"
         )
     scenarios: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -227,15 +229,28 @@ def extract_bdd_scenarios(content: str) -> list[dict[str, Any]]:
 
 
 def validate_requirement_readiness(content: str) -> list[dict[str, Any]]:
-    """Require complete scenarios and an explicit empty pending section before confirmation."""
+    """Require complete scenarios and an explicit empty pending section before confirmation.
+
+    待确认分级交给 agent 判断（见 SKILL/global-rules），机器只保证“有显式空待确认段”：
+    含实现级待确认时由 AI 主动清空或标注，不靠关键词猜测，避免误判。
+    """
     scenarios = extract_bdd_scenarios(content)
     pending_match = PENDING_HEADING_RE.search(content)
     if not pending_match:
-        raise BddScenarioError("需求缺少 `## 待确认`；确认前请明确写为 `- 无`")
+        raise BddScenarioError(
+            "需求缺少 `## 待确认`；确认前请明确写为 `- 无`\n"
+            "👉 待确认分级由 AI 判断：需求级（产品行为/范围/验收）必须解决，"
+            "实现级（命名/实现方式/数据结构）可写明并推迟到计划阶段，确认时写 `- 无`。"
+        )
     tail = content[pending_match.end():]
     next_heading = NEXT_MAJOR_HEADING_RE.search(tail)
     pending = tail[:next_heading.start()] if next_heading else tail
     normalized = re.sub(r"[\s\-。.]", "", pending)
     if normalized != "无":
-        raise BddScenarioError("需求仍有待确认内容，不能建立或确认需求版本")
+        raise BddScenarioError(
+            "需求仍有待确认内容，不能建立或确认需求版本。\n"
+            "👉 请由 AI 判断每一项：需求级（产品行为/范围/验收）必须先与用户解决；"
+            "实现级（实现方式/命名/数据结构等）可推迟到计划阶段——确认时把待确认段写为 `- 无`，"
+            "实现级细节移到实施计划或代码注释，不留在需求事实源阻断确认。"
+        )
     return scenarios

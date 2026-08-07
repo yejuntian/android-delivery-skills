@@ -129,8 +129,18 @@ class BddScenarioTests(unittest.TestCase):
         scenario = "### BDD-001 密码错误\nGiven 前置\nWhen 操作\nThen 结果"
         with self.assertRaisesRegex(BddScenarioError, "缺少"):
             validate_requirement_readiness("# 需求\n\n" + scenario)
+        # 待确认分级交给 agent：机器只保证“显式写 - 无”，非空的待确认一律阻断
         with self.assertRaisesRegex(BddScenarioError, "仍有待确认"):
             validate_requirement_readiness(requirement(scenario, pending="- 错误码待确认"))
+
+    def test_nonempty_pending_blocks_until_resolved(self) -> None:
+        """待确认非空时机器统一阻断；分级（需求级/实现级）由 agent 判断后清空。"""
+        scenario = "### BDD-001 密码错误\nGiven 前置\nWhen 操作\nThen 结果"
+        # 实现级待确认在机器层同样阻断，需 agent 判断后写 - 无
+        with self.assertRaisesRegex(BddScenarioError, "仍有待确认"):
+            validate_requirement_readiness(
+                requirement(scenario, pending="- 登录态占位的具体实现方式计划阶段定")
+            )
 
     def test_final_scenario_excludes_later_requirement_sections(self) -> None:
         content = requirement(

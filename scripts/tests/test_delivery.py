@@ -403,34 +403,29 @@ class UserInstructionTests(unittest.TestCase):
     """验证终端交给其他 AI 的需求阶段指令与主流程保持一致。"""
 
     def test_bdd_instruction_includes_existing_business_safety_rules(self) -> None:
-        """验证确认前只读检查和基线复用等核心约束仍在精简指令中。"""
+        """精简指令保留核心约束：综合资料、BDD-001、Given/When/Then、产品决策才问用户。"""
         output = io.StringIO()
 
         with redirect_stdout(output):
             print_bdd_instruction()
 
         text = output.getvalue()
-        self.assertIn("先形成初步需求理解", text)
-        self.assertIn("资料已足够时不要重复提问", text)
-        self.assertIn("只有改变产品行为、范围或验收的决定才询问用户", text)
+        self.assertIn("综合已知资料", text)
+        self.assertIn("能查到的技术事实直接查", text)
+        self.assertIn("只有产品决策才问用户", text)
         self.assertIn("BDD-001", text)
         self.assertIn("Given/When/Then", text)
-        self.assertIn("确认后不得编码", text)
 
     def test_bdd_instruction_converges_changes_before_first_confirmation(self) -> None:
-        """验证首次确认前多轮增删改先汇总到文件的核心约束仍在精简指令中。"""
+        """精简指令保留'写回事实源 + 等用户确认'核心；细节规则归 SKILL.md，不在 init 刷屏。"""
         output = io.StringIO()
 
         with redirect_stdout(output):
             print_bdd_instruction()
 
         text = output.getvalue()
-        self.assertIn("先展示本轮变化摘要", text)
-        self.assertIn("合并写回 requirement_file", text)
-        self.assertIn("重新 init 读取", text)
-        self.assertIn("纯确认", text)
-        self.assertIn("先写实施计划和影响半径等待确认", text)
-        self.assertIn("不得编码", text)
+        self.assertIn("写回事实源", text)
+        self.assertIn("等用户确认", text)
 
     def test_route_instruction_excludes_business_decisions_from_auto_fix(self) -> None:
         """验证 P0/P1 自动修复授权不会越过未确认的旧业务处置。"""
@@ -1293,7 +1288,8 @@ class RequirementSnapshotTests(unittest.TestCase):
         self.assertNotIn("COVERED_AUTOMATED", text)
         self.assertIn("当前正文：存在未确认变化", text)
         self.assertNotIn("可直接进入编码", text)
-        self.assertIn("新增、修改、删除、未变化", text)
+        # 续接展示变化分类（增改删），文案来自 init 续接提示而非 print_bdd_instruction
+        self.assertIn("增改删", text)
         self.assertIn("check-env --new-requirement", text)
 
     def test_confirm_command_never_changes_git_baseline(self) -> None:

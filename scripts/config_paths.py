@@ -90,29 +90,112 @@ def _md_filename_for_dir(requirement_dir: Path) -> str:
     return f"{slug}.md"
 
 
+def _today_stamp() -> str:
+    """返回今天的 ``YYYY-MM-DD``。
+
+    单独抽出便于测试注入；脚本运行时无法访问系统时钟时由调用方传入。
+    """
+    import datetime as _dt
+
+    return _dt.date.today().isoformat()
+
+
+def _derive_requirement_dir(
+    project_path: Path | None,
+    requirement_name: str | None,
+    today_stamp: str | None = None,
+) -> Path | None:
+    """项目内通道缺省推导：project_path/document/<日期>-<需求名>。
+
+    没有 project_path 或 requirement_name 时返回 None，由调用方决定报错还是降级。
+    """
+    if not project_path or not requirement_name:
+        return None
+    stamp = today_stamp or _today_stamp()
+    slug = _sanitize_dir_segment(requirement_name)
+    return (project_path / "document" / f"{stamp}-{slug}").resolve()
+
+
+_DIR_SEGMENT_PATTERN = re.compile(r"[^\w.-]+", re.UNICODE)
+
+
+def _sanitize_dir_segment(name: str) -> str:
+    """把需求名收敛成安全的目录段：保留字母数字下划线点短横（含中文等 unicode 字），其余折叠为单短横。"""
+    cleaned = _DIR_SEGMENT_PATTERN.sub("-", name.strip()).strip("-")
+    return cleaned or "requirement"
+
+
+def _derive_requirement_paths(
+    config: dict[str, Any],
+    config_path: str | Path,
+) -> tuple[Path, Path | None, Path | None]:
+    """统一推导 workspace_root / requirement_dir / project_path，缺省时自动补全。
+
+    解析基准保持与原逻辑一致：workspace_root 相对配置目录，project_path /
+    requirement_dir 相对 workspace。缺省推导只在字段未配置时生效：
+    - workspace_root 缺失 → project_path（若已配置），否则配置目录。
+    - requirement_dir 缺失 → project_path/document/<今天>-<requirement_name>，
+      需要 project_path 与 requirement_name 才能推导；都没有时退回 workspace。
+    """
+    resolved_config = Path(config_path).expanduser().resolve()
+    config_dir = resolved_config.parent
+
+    # 1. workspace_root：填了相对配置目录；未填暂置空，待 project_path 解析后再补。
+    workspace_value = config.get("workspace_root")
+    workspace = _resolve(workspace_value, config_dir) if workspace_value else None
+
+    # 2. project_path：相对 workspace（若有）或配置目录。
+    project_path = _resolve(config.get("project_path"), workspace or config_dir)
+
+    # 3. workspace_root 缺省推导：用 project_path；都没有则配置目录。
+    if workspace is None:
+        workspace = project_path or config_dir
+
+    # 4. requirement_dir：填了相对 workspace；未填则按项目内通道推导。
+    requirement_dir_value = config.get("requirement_dir")
+    if requirement_dir_value:
+        requirement_dir = _resolve(requirement_dir_value, workspace) or workspace
+    else:
+        requirement_name = config.get("requirement_name")
+        derived = _derive_requirement_dir(project_path, requirement_name)
+        requirement_dir = derived or workspace
+    return workspace, requirement_dir, project_path
+
+
 def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> ConfigPaths:
     """按 config目录 -> workspace -> requirement_dir 的固定层级解析配置。
+
+    缺省推导：requirement_dir / workspace_root 未配置时自动按项目内通道推导
+    （见 ``_derive_requirement_paths``），用户只需配置 project_path 与 requirement_name。
 
     事实源优先 md：如果 requirement_file 指向 docx，但 ``docs/<需求名>.md``
     已存在，自动切换到该 md（init 转写后的后续命令全部读 md，不再绑 docx）。
     """
     resolved_config = Path(config_path).expanduser().resolve()
-    config_dir = resolved_config.parent
-    workspace = _resolve(config.get("workspace_root"), config_dir) or config_dir
-    requirement_dir = _resolve(config.get("requirement_dir"), workspace) or workspace
+    workspace, requirement_dir, project_path = _derive_requirement_paths(config, resolved_config)
     requirement_file_value = config.get("requirement_file")
+    resolved_file_value = requirement_file_value
     # 事实源优先 md：docx 已转写 md 后，所有命令统一读 md。
-    if isinstance(requirement_file_value, str) and requirement_file_value.lower().endswith(".docx"):
+    if isinstance(resolved_file_value, str) and resolved_file_value.lower().endswith(".docx"):
         md_name = _md_filename_for_dir(requirement_dir)
         md_candidate = requirement_dir / "docs" / md_name
         if md_candidate.is_file():
-            config = {**config, "requirement_file": (Path("docs") / md_name).as_posix()}
+            resolved_file_value = (Path("docs") / md_name).as_posix()
+    requirement_path = _resolve(resolved_file_value, requirement_dir)
+    # 缺省推导 requirement_file：未配置且 requirement_dir 已推导（≠workspace）时，
+    # 默认约定名 requirement.docx（new-requirement 挪入名）。显式配置或 md 切换优先。
+    if (
+        requirement_path is None
+        and requirement_file_value is None
+        and requirement_dir != workspace
+    ):
+        requirement_path = (requirement_dir / "requirement.docx").resolve()
     return ConfigPaths(
         config_path=resolved_config,
         workspace_root=workspace,
-        project_path=_resolve(config.get("project_path"), workspace),
+        project_path=project_path,
         requirement_dir=requirement_dir,
-        requirement_path=_resolve(config.get("requirement_file"), requirement_dir),
+        requirement_path=requirement_path,
     )
 
 

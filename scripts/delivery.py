@@ -327,6 +327,25 @@ def parse_args(argv=None):
     parser = ChineseArgumentParser(description="Android 需求交付流程命令")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # 阶段零：new-requirement (一句话开需求：自动建目录、挪 docx、探测工程、生成配置)
+    parser_new = subparsers.add_parser(
+        "new-requirement",
+        help="一句话开需求：自动建目录、挪 docx、探测分支/模块、生成配置",
+    )
+    parser_new.add_argument("name", help="需求名（用于推导目录 document/<日期>-<需求名>）")
+    parser_new.add_argument("--project", default=None, help="Android 项目根目录；缺省读已生成配置")
+    parser_new.add_argument("--docx", default=None, help="需求 docx 路径，自动挪进需求目录改名 requirement.docx")
+    parser_new.add_argument(
+        "--module",
+        default=None,
+        help="目标 Android 模块名（不带冒号）；多模块且无 app 时必须指定，由 AI 对话问用户后传入",
+    )
+    parser_new.add_argument(
+        "--config",
+        default=DEFAULT_CONFIG_PATH,
+        help="生成配置的落点（默认 skill 仓库 profiles/local.yaml）",
+    )
+
     # 阶段一：init (需求分析阶段)
     parser_init = subparsers.add_parser("init", help="读取或刷新需求理解")
     parser_init.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="配置文件路径")
@@ -471,15 +490,9 @@ def read_requirement(path):
 
 
 def print_bdd_instruction():
-    """打印中文需求验收指令（精简版），机器编号保留但不要求用户理解英文术语。"""
-    print("👉 AI 指令：先形成初步需求理解并综合已知资料；资料已足够时不要重复提问，也不要立即编码。")
-    print("能从代码、配置、测试和契约查明的技术事实直接查明；只有改变产品行为、范围或验收的决定才询问用户。")
-    print("把独立触发和结果拆成 BDD-001 形式的场景；每个场景包含 Given/When/Then。")
-    print("检测到变化时面向用户只展示：新增、修改、删除、未变化。决策只展示：已确认、待确认、已撤回、冲突。")
-    print("首次确认前每次补充/修改/删除/纠正，先展示本轮变化摘要，再合并写回 requirement_file，重新 init 读取。")
-    print("用户纯确认（不带新变化）才执行 check-env 和 confirm-requirement-update。确认后不得编码，先写实施计划和影响半径等待确认。")
-    print("普通新增和修改由脚本生成修订清单；删除、替代或冲突才需要显式修订文件。")
-    print("输出完毕必须停止，等待用户确认！")
+    """打印中文需求验收指令（精简版）。"""
+    print("👉 AI 指令：综合已知资料形成需求理解；能查到的技术事实直接查，只有产品决策才问用户。")
+    print("把可观察行为拆成 BDD-001（Given/When/Then）写回事实源；输出完毕停止，等用户确认。")
 
 
 def print_confirmed_fact_sources(
@@ -1765,10 +1778,136 @@ def cmd_init_test_mapping(args):
     return 0
 
 
+def _detect_git_branch(project_path):
+    """探测 project_path 当前 git 分支；非 git 目录或失败时返回 None。"""
+    try:
+        from .git_changes import current_branch, GitInspectionError
+    except ImportError:
+        return None
+    try:
+        return current_branch(project_path)
+    except (GitInspectionError, Exception):
+        return None
+
+
+def _detect_modules(project_path):
+    """从 settings.gradle(.kts) 读 include 的模块名；探测不到返回 []。"""
+    try:
+        from .android_project_capabilities import discover_modules
+    except ImportError:
+        return []
+    try:
+        modules = discover_modules(Path(project_path), [])
+    except Exception:
+        return []
+    return [m.lstrip(":") for m in modules]
+
+
+def _pick_primary_module(modules: list[str]) -> str:
+    """从探测到的模块里选主模块；多义时不猜，抛错让 AI 通过对话问用户。
+
+    - 优先 app/application（Android application 主模块惯例）。
+    - 无 app 但只有单模块：直接用该模块。
+    - 无 app 且多模块：不替用户猜，抛 DeliveryError 让调用方报错指路。
+    - 都没有：默认 app。
+    """
+    if not modules:
+        return "app"
+    for preferred in ("app", "application"):
+        if preferred in modules:
+            return preferred
+    if len(modules) == 1:
+        return modules[0]
+    raise DeliveryError(
+        f"检测到多个模块且无明确主模块: {', '.join(modules)}。\n"
+        "请通过 --module <名称> 指定要写代码的模块，或在对话里告诉 AI。"
+    )
+
+
+def cmd_new_requirement(args):
+    """一句话开需求：自动建目录、挪 docx、探测分支/模块、生成极简配置。
+
+    生成配置只写关键字段（project_path / requirement_name / branch / testing.module），
+    其余字段（requirement_dir / requirement_file / workspace_root 等）由
+    config_paths 缺省推导补全，用户无需手填。
+    """
+    name = (args.name or "").strip()
+    if not name:
+        raise DeliveryError("需求名不能为空，例如: delivery.py new-requirement videoFeed")
+
+    # 解析 project_path：命令 --project 优先，否则读已有配置，再否则报错并指路。
+    project_raw = args.project
+    if not project_raw:
+        try:
+            existing = load_config(args.config)
+            project_raw = existing.get("project_path")
+        except DeliveryError:
+            project_raw = None
+    if not project_raw:
+        raise DeliveryError(
+            "缺少 project_path。请提供项目根目录，例如:\n"
+            f"  delivery.py new-requirement {name} --project /path/to/android-project"
+        )
+    project_path = Path(project_raw).expanduser().resolve()
+    if not project_path.is_dir():
+        raise DeliveryError(f"project_path 不是有效目录: {project_path}")
+
+    # 探测 git 分支和模块（失败优雅降级，不阻断）。
+    branch = _detect_git_branch(project_path)
+    modules = _detect_modules(project_path)
+    # --module 显式指定优先；否则按惯例探测（多义时不猜，抛错让 AI 对话问用户）。
+    if args.module:
+        primary_module = args.module.lstrip(":")
+    else:
+        primary_module = _pick_primary_module(modules)
+
+    # 生成配置：只写关键字段，其余交给 config_paths 推导。
+    config = {"project_path": str(project_path), "requirement_name": name}
+    if branch:
+        config["branch"] = branch
+    config["testing"] = {"journey_harness": {"module": primary_module, "variant": "debug"}}
+
+    config_path = Path(args.config).expanduser().resolve()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    import yaml
+    write_text_atomic(config_path, yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
+
+    # 解析推导后的 requirement_dir，建目录 + 挪 docx。
+    paths = resolve_paths(config, config_path)
+    requirement_dir = paths.requirement_dir
+    requirement_dir.mkdir(parents=True, exist_ok=True)
+    (requirement_dir / "docs").mkdir(exist_ok=True)
+    (requirement_dir / "test-cases").mkdir(exist_ok=True)
+    (requirement_dir / "test-results").mkdir(exist_ok=True)
+
+    docx_target = requirement_dir / "requirement.docx"
+    if args.docx:
+        docx_src = Path(args.docx).expanduser().resolve()
+        if not docx_src.is_file():
+            raise DeliveryError(f"--docx 指定的文件不存在: {docx_src}")
+        if docx_src.resolve() != docx_target.resolve():
+            docx_target.write_bytes(docx_src.read_bytes())
+
+    print("=== new-requirement 完成 ===")
+    print(f"📌 需求名: {name}")
+    print(f"📌 项目路径: {project_path}")
+    print(f"📌 需求目录: {requirement_dir}")
+    print(f"📌 探测分支: {branch or '（未探测到，后续 check-env 会核对）'}")
+    print(f"📌 探测模块: {primary_module}")
+    print(f"📌 配置已生成: {config_path}")
+    print(f"📌 requirement_dir / requirement_file / workspace_root 未写，将由各命令自动推导。")
+    if args.docx:
+        print(f"📌 docx 已就位: {docx_target}")
+    print("👉 AI 指令：现在执行 delivery.py init 读取需求；UI/接口资料由用户对话提供，AI 固定到需求目录。")
+    return 0
+
+
 def main(argv=None):
     """执行命令，并把可预期错误转换成简洁、可操作的提示。"""
     try:
         args = parse_args(argv)
+        if args.command == "new-requirement":
+            return cmd_new_requirement(args)
         if args.command == "init":
             cmd_init(args)
         elif args.command == "check-env":

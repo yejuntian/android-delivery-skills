@@ -142,6 +142,11 @@ class BddScenarioTests(unittest.TestCase):
                 requirement(scenario, pending="- 登录态占位的具体实现方式计划阶段定")
             )
 
+    def test_missing_bdd_requires_clarification_before_generation(self) -> None:
+        """没有 BDD 时必须先澄清并等待用户，不能把错误提示当成拆分指令。"""
+        with self.assertRaisesRegex(BddScenarioError, "不是继续拆分的许可"):
+            validate_requirement_readiness("# 需求\n\n## 需求说明\n\n播放视频")
+
     def test_final_scenario_excludes_later_requirement_sections(self) -> None:
         content = requirement(
             "### BDD-001 密码错误\nGiven 用户位于登录页\nWhen 用户提交错误密码\n"

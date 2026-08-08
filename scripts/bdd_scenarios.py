@@ -198,9 +198,11 @@ def extract_bdd_scenarios(content: str) -> list[dict[str, Any]]:
     ranges = _scenario_ranges(content)
     if not ranges:
         raise BddScenarioError(
-            "需求事实源至少需要一个 `### BDD-001 场景名称`，并包含 Given/When/Then\n"
-            "👉 下一步：这一步该由 AI 完成，不需要你手写 BDD。请让 AI 根据需求正文，"
-            "把可观察行为拆成 BDD-001 形式（Given/When/Then），写回需求事实源后重跑 init。"
+            "当前需求事实源还没有 BDD；这不是继续拆分的许可。\n"
+            "👉 必须先完成需求澄清：AI 先根据已读资料列出已查明事实、产品级歧义和缺失事实，"
+            "一次只询问当前最高优先级问题，并停止等待用户回答。\n"
+            "用户回答后，先写回 requirement_file 并重新执行 init；只有产品行为、范围和验收口径"
+            "均已确认，且 `## 待确认` 为 `- 无` 时，AI 才能生成 `BDD-001`（Given/When/Then）。"
         )
     scenarios: list[dict[str, str]] = []
     seen: set[str] = set()

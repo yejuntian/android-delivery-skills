@@ -167,6 +167,22 @@ class RequirementPathTests(unittest.TestCase):
             requirement, (requirement_dir / "docs" / "登录拦截.md").resolve()
         )
 
+    def test_inferred_requirement_prefers_existing_markdown(self) -> None:
+        """验证极简配置在 init 转写后让所有命令读取同一 Markdown 事实源。"""
+        project = self.root / "android-app"
+        requirement_dir = project / "document" / "2026-08-08-videoFeed"
+        markdown = requirement_dir / "docs" / "videoFeed.md"
+        markdown.parent.mkdir(parents=True)
+        markdown.write_text("# 已转写需求\n", encoding="utf-8")
+        config = {
+            "project_path": str(project),
+            "requirement_name": "videoFeed",
+        }
+
+        _, requirement = resolve_config_paths(config, self.config_path)
+
+        self.assertEqual(requirement, markdown.resolve())
+
     def test_delivery_snapshot_exclusions_are_shared(self) -> None:
         """验证 route 和 final 共用同一组交付文档排除路径。"""
         project = self.root / "project"

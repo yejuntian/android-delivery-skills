@@ -182,14 +182,16 @@ def resolve_config_paths(config: dict[str, Any], config_path: str | Path) -> Con
         if md_candidate.is_file():
             resolved_file_value = (Path("docs") / md_name).as_posix()
     requirement_path = _resolve(resolved_file_value, requirement_dir)
-    # 缺省推导 requirement_file：未配置且 requirement_dir 已推导（≠workspace）时，
-    # 默认约定名 requirement.docx（new-requirement 挪入名）。显式配置或 md 切换优先。
+    # 缺省推导 requirement_file：转写后的 Markdown 是事实源，否则回退到初始 docx。
     if (
         requirement_path is None
         and requirement_file_value is None
         and requirement_dir != workspace
     ):
-        requirement_path = (requirement_dir / "requirement.docx").resolve()
+        md_candidate = requirement_dir / "docs" / _md_filename_for_dir(requirement_dir)
+        requirement_path = (
+            md_candidate if md_candidate.is_file() else requirement_dir / "requirement.docx"
+        ).resolve()
     return ConfigPaths(
         config_path=resolved_config,
         workspace_root=workspace,

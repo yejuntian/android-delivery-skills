@@ -32,6 +32,12 @@ checks:
       - "## 来源"
       - "## 冲突与处置"
       - "## 待确认问题"
+  - name: 流程目录区分唯一契约记录与原始证据
+    path: "docs/FLOW_OVERVIEW.md"
+    contains:
+      - "收到 API 资料时创建或更新：契约、来源、冲突与未知项"
+      - "原始 JSON/OpenAPI/YApi 导出、截图和抓包等原形证据"
+      - "不生成重复契约摘要"
   - name: 旧的不生成本地 API 文档规则已移除
     paths:
       - "_shared/android-global-rules.md"

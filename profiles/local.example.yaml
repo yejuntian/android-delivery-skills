@@ -1,7 +1,7 @@
 # Android Delivery Skills 本机配置（极简版）
 #
 # 设计：约定优于配置。大多数字段由 new-requirement 命令自动生成 + config_paths 缺省推导。
-# 用户只需关注 project_path；UI/接口资料不写在这里，通过对话提供给 AI，AI 固定到需求目录。
+# 用户只需关注 project_path；UI/API 资料可通过对话或可选配置提供。收到 API 资料后，AI 统一生成或更新需求目录的 docs/api.md。
 #
 # 推荐用法：一句话开需求（AI 替你跑命令，你不用手填这个文件）
 #   delivery.py new-requirement videoFeed --project /path/to/android-project --docx ~/xxx.docx
@@ -15,7 +15,8 @@
 #   testing.module   → 探测 settings.gradle 的 include
 #   mode/keep_completed/cache_retention/route.max_rounds → 用默认值
 #
-# UI/API 链接不再写在这里：对话里发给 AI，AI 存到 <requirement_dir>/ui/ 和 api/。
+# UI/API 资料可以直接在对话里发送；需要长期复用链接时也可写入下方可选配置。
+# AI 生成的 docs/api.md 和用户提供的稳定契约文件登记到 api.files，用于输入摘要和证据新鲜度校验。
 
 # 必填：当前 Android 项目根目录（含 settings.gradle）。
 project_path: "/absolute/path/to/android-project"
@@ -27,6 +28,7 @@ requirement_name: "your-requirement"
 # ui:
 #   links: []
 
-# 可选：接口契约链接。不写在这里，对话发给 AI 即可。
+# 可选：接口契约链接。可以写在这里长期复用，也可以直接在对话中提供。
 # api:
 #   links: []
+#   files: []

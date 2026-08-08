@@ -13,6 +13,7 @@ checks:
     contains:
       - "生成或增量更新唯一 `api/api.md`"
       - "`requirement_file` 仍是唯一需求事实"
+      - "API 契约是例外，固定为 `<requirement_dir>/api/api.md`"
   - name: API 专项不得重复询问或覆盖其他 operation
     path: "android-verify-api-contract/SKILL.md"
     contains:
@@ -53,3 +54,4 @@ checks:
       - "不强制生成本地 API 文档"
       - "不额外生成本地 API 文档"
       - "docs/api.md"
+      - "所有人工 Markdown 放在 `<requirement_dir>/docs/`"

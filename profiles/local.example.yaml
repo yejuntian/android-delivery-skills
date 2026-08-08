@@ -1,34 +1,19 @@
-# Android Delivery Skills 本机配置（极简版）
-#
-# 设计：约定优于配置。大多数字段由 new-requirement 命令自动生成 + config_paths 缺省推导。
-# 用户只需关注 project_path；UI/API 资料可通过对话或可选配置提供。收到 API 资料后，AI 统一生成或更新需求目录的 api/api.md。
-#
-# 推荐用法：一句话开需求（AI 替你跑命令，你不用手填这个文件）
-#   delivery.py new-requirement videoFeed --project /path/to/android-project --docx ~/xxx.docx
-# 命令会自动：建 document/<日期>-<需求名>/、挪 docx、探测 git 分支和模块、生成本文件。
-#
-# 下列字段缺省时自动推导（无需手填）：
-#   workspace_root   → project_path（项目内通道）
-#   requirement_dir  → project_path/document/<今天>-<requirement_name>
-#   requirement_file → requirement.docx（约定名）
-#   branch           → 探测当前 git 分支
-#   testing.module   → 探测 settings.gradle 的 include
-#   mode/keep_completed/cache_retention/route.max_rounds → 用默认值
-#
-# UI/API 资料可以直接在对话里发送；需要长期复用链接时也可写入下方可选配置。
-# AI 生成的 api/api.md 和用户提供的稳定契约文件登记到 api.files，用于输入摘要和证据新鲜度校验。
+# Android Delivery 单需求配置示例。
+# 单需求可复制为 profiles/local.yaml；并行需求分别复制为有意义的 profiles/<需求>.yaml。
+# 本机配置必须被 Git 忽略。
 
-# 必填：当前 Android 项目根目录（含 settings.gradle）。
+# 必填：Android Git 项目根目录。
 project_path: "/absolute/path/to/android-project"
 
-# 需求名：用于推导 requirement_dir。通常由 new-requirement 命令写入，不必手填。
-requirement_name: "your-requirement"
+# 必填：稳定需求名，用于首次推导工作目录。
+requirement_name: "feature-name"
 
-# 可选：UI 设计链接。不写在这里，对话发给 AI 即可。
+# 可选：省略时 Agent 先复用唯一匹配的 document/*-<requirement_name>/；
+# 多个匹配时由用户选择；没有匹配才推导日期目录，随后写回绝对路径。
+# requirement_dir: "/absolute/path/to/android-project/document/YYYY-MM-DD-feature-name"
+
+# 可选：长期复用的 UI/API 链接；本轮聊天提供的输入同样有效。
 # ui:
 #   links: []
-
-# 可选：接口契约链接。可以写在这里长期复用，也可以直接在对话中提供。
 # api:
 #   links: []
-#   files: []

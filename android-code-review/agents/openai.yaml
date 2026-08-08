@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android 代码审查"
+  short_description: "对照规格审查 Android diff、质量、稳定性和回归风险"
+  default_prompt: "使用 $android-code-review 对照已确认规格审查当前 Android diff。"

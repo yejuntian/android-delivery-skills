@@ -1,4 +1,0 @@
-interface:
-  display_name: "Android 代码质量审查"
-  short_description: "检查 Android 架构一致性、可维护性、依赖边界、资源规范和重复逻辑"
-  default_prompt: "使用 $android-review-code-quality 审查这次 Android 代码的质量、架构和可维护性。"

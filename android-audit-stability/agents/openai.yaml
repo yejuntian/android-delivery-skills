@@ -1,4 +1,0 @@
-interface:
-  display_name: "Android 稳定性、性能与安全审计"
-  short_description: "检查崩溃、泄漏、性能、安全隐私与 Android 版本兼容风险"
-  default_prompt: "使用 $android-audit-stability 审计这次 Android 改动的稳定性、性能、安全隐私和兼容性风险。"

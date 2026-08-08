@@ -1,623 +1,341 @@
-# Android Delivery Skills 完整流程图
+# Android Delivery Skills 当前流程图
 
-<!-- android-delivery-flow:generated:start -->
-## 自动同步的状态机
-
-> 由结构化流程契约生成；契约摘要 `6349db7c7eec31a7ebd3c6dab61cd538f8d3dd3dd6d73cb466285e7b51271dd7`。增量更新是跨阶段回退，不是可跳过的线性尾声。
-
-```mermaid
-flowchart LR
-    DRAFT_REQUIREMENT["DRAFT_REQUIREMENT"] -->|"用户确认已经写回事实源的需求"| REQUIREMENT_CONFIRMED["REQUIREMENT_CONFIRMED"]
-    REQUIREMENT_CONFIRMED["REQUIREMENT_CONFIRMED"] -->|"用户确认实施计划和影响半径"| PLAN_CONFIRMED["PLAN_CONFIRMED"]
-    PLAN_CONFIRMED["PLAN_CONFIRMED"] -->|"测试映射建立且先观察 Red"| IMPLEMENTING["IMPLEMENTING"]
-    IMPLEMENTING["IMPLEMENTING"] -->|"最小实现 Green 且受影响验证完成"| VERIFIED["VERIFIED"]
-    VERIFIED["VERIFIED"] -->|"用户明确要求最终交付并完成最终影响路由"| ROUTED["ROUTED"]
-    ROUTED["ROUTED"] -->|"所有适用专项和最终门禁形成诚实结论"| DELIVERED["DELIVERED"]
-    REQUIREMENT_SEMANTICS_CHANGED{"需求语义变化"} -.-> DRAFT_REQUIREMENT
-    PLAN_OR_RADIUS_CHANGED{"实施计划或影响半径变化"} -.-> REQUIREMENT_CONFIRMED
-    FIGMA_VISUAL_SOURCE_CHANGED{"Figma 只改变已确认范围内的视觉资料"} -.-> PLAN_CONFIRMED
-    IMPLEMENTATION_DETAIL_CHANGED{"已确认范围内的实现细节变化"} -.-> IMPLEMENTING
-    FIGMA_BEHAVIOR_CHANGED{"Figma 新增状态、交互、文案语义或业务规则"} -.-> DRAFT_REQUIREMENT
-```
-
-<!-- android-delivery-flow:generated:end -->
-
-
-> 每个阶段 = 简述 + 流程图 + 怎么执行（你做什么/AI 做什么/你看什么/命令），一体看完。
-> 本文同步 [FLOW_OVERVIEW.md](./FLOW_OVERVIEW.md) 的仓库、命令、产物、门禁和维护信息；流程图以当前 Skill 和脚本实现为准。
-> 当前事实源：`docs/<需求名>.md`；维护验证入口：`python3 scripts/validate_maintenance.py`，结果以当次输出为准。
-> 具体业务说明、产物清单、门禁细则和脚本职责见 `FLOW_OVERVIEW.md`；本文只承载可视化流程和图旁的最小执行说明。
-> 状态语义：`STALE` = 已失效、待重新回填；`CURRENT` = 已与当前需求义务和测试结果对齐。
+> 本文是 [FLOW_OVERVIEW.md](FLOW_OVERVIEW.md) 的图形索引，只描述当前轻量流程，不代表额外状态机或脚本门禁。
 
 ## 目录
 
-1. [角色分工](#fd-roles)
-2. [一、五步总览](#fd-overview)
-3. [二、阶段一：确认需求与基线](#fd-stage-one)
-4. [三、阶段二：拆分测试、确认计划与实现](#fd-stage-two)
-5. [四、阶段三：测试执行](#fd-stage-three)
-6. [五、阶段四：最终交付](#fd-stage-four)
-7. [六、增量闭环](#fd-incremental)
-8. [七、STALE（已失效待重新回填）联动机制](#fd-stale)
-9. [八、多需求并行](#fd-parallel)
-10. [九、开始下一个独立需求](#fd-resume)
-11. [十、docx → md 事实源切换](#fd-docx)
+1. [完整主流程](#diagram-main)
+2. [需求模糊时的决策树前沿](#diagram-clarify)
+3. [Figma 与 API 输入](#diagram-inputs)
+4. [纵向切片与紧反馈](#diagram-feedback)
+5. [增量变化分流](#diagram-incremental)
+6. [最终验证路由](#diagram-final)
+7. [多需求并行](#diagram-parallel)
+   1. [合并规则（git worktree）](#diagram-merge)
+8. [新窗口恢复](#diagram-resume)
+9. [文档与代码落点](#diagram-layout)
 
-<a id="fd-roles"></a>
-## 角色分工
+<a id="diagram-main"></a>
+## 一、完整主流程
 
-| 角色 | 干什么 |
-|---|---|
-| **你（用户）** | 说需求 → 确认需求 → 确认计划 → 要求最终交付 |
-| **AI** | 执行脚本命令 → 改代码 → 改测试 → 写文档 → 跑回归 → 报告 |
-| **脚本** | 校验门禁 → 刷新 md → 标记 `STALE`（已失效，待回填）→ 拦 gate |
+流程说明：
 
-执行环境：在仓库的 `ai-skills/android-delivery-skills/` 目录执行，每条命令带 `--config profiles/<需求>.yaml`。
-
----
-
-<a id="fd-overview"></a>
-## 一、五步总览
-
-### 五步总览摘要
-
-1. **用户看到五步**：确认需求、拆分测试与确认计划、实现验证、变更后增量循环、最终交付。
-2. **内部执行四阶段**：需求确认、计划与实现、测试执行、最终交付；技术细节不改变用户可见流程。
-3. **变化统一回流**：任何阶段发现需求漏洞都先写回需求事实源；计划或影响半径变化时重新展示并等待用户确认。
+1. 先读取项目、需求配置、Git、代码、测试和 UI/API 来源，已有改动或缺失引用先让用户决定处置。
+2. 只澄清会改变行为、范围或验收的问题；未知清空后才形成一份 `draft spec.md`。
+3. 用户确认最新完整规格后改为 `confirmed`，再按 BDD 逐个完成纵向切片。
+4. 日常实现只跑受影响验证；用户明确要求最终交付时才执行一次完整检查。
+5. 最终结果按 BDD 写入 `docs/result.md`；提交、推送和集成仍分别需要用户授权。
 
 ```mermaid
 flowchart TD
-    S1["① 确认需求<br/>含已上线业务影响"] --> S2["② 拆分测试与确认计划<br/>实施计划 + 影响半径"]
-    S2 --> S2C{"用户确认计划？"}
-    S2C -- "否：继续修改计划" --> S2
-    S2C -- "是：confirm-plan 成功" --> S3["③ 实现验证<br/>init-test-mapping<br/>Red → 最小实现 → Green"]
-    S3 --> S3A["③.5 测试执行（编码后必做）<br/>写测试计划 → 按文档逐条测 → 回填结果"]
-    S3A --> S4{"下一步？"}
-    S4 -- "需求/实现继续变化" --> S1
-    S4 -- "需求增量（语义变化）<br/>⬇ 可在任何阶段触发" --> S5["增量闭环<br/>改需求→重新确认计划→改代码→改测试→回归"]
-    S5 --> S3
-    S4 -- "最终检查 / 完整交付" --> S6["④ 最终交付<br/>route + 全部门禁 + 中文报告"]
-    S6 -- "发现技术问题" --> S3
-    S6 -- "发现计划外业务影响" --> S1
-    S6 --> S7["用户决定是否提交<br/>push / PR 另行授权"]
+    START["收到 Android 需求"] --> FACTS["读取项目、当前需求配置、Git、代码、测试、UI/API 来源"]
+    FACTS --> DIRTY{"已有改动或引用缺失需要用户决定？"}
+    DIRTY -- "是" --> DECIDE["说明事实并等待处置决定"]
+    DECIDE --> FACTS
+    DIRTY -- "否" --> FRONTIER["建立需求决策树并询问当前前沿"]
+    FRONTIER --> UNKNOWN{"仍有会改变行为或验收的未知？"}
+    UNKNOWN -- "是" --> FRONTIER
+    UNKNOWN -- "否" --> SPEC["写一份 draft spec.md：BDD、范围、来源、决策、测试边界"]
+    SPEC --> CONFIRM{"用户确认最新完整规格？"}
+    CONFIRM -- "否或提出变化" --> FRONTIER
+    CONFIRM -- "是" --> CONFIRMED["spec.md = confirmed"]
+    CONFIRMED --> SLICE["纵向切片：失败测试 -> 最小实现 -> 受影响验证"]
+    SLICE --> MORE{"还有已确认 BDD？"}
+    MORE -- "是" --> SLICE
+    MORE -- "否" --> FINAL{"用户明确要求最终检查或准备提交？"}
+    FINAL -- "否" --> WAIT["保留当前代码和真实局部测试结果"]
+    FINAL -- "是" --> VERIFY["完整 diff 审查 + 一次适用测试、Lint 和专项"]
+    VERIFY --> CHANGED{"修复后代码又变化？"}
+    CHANGED -- "是" --> VERIFY
+    CHANGED -- "否" --> RESULT["按 BDD 写 docs/result.md 和中文结论"]
+    RESULT --> GIT{"用户授权 Git 操作？"}
+    GIT -- "否" --> END["交付当前状态"]
+    GIT -- "是" --> AUTHORIZED["仅执行已授权的提交、推送或集成"]
 ```
 
-1. **确认需求**：先综合已知资料并区分事实、决定、推导和假设；资料足够时不重复提问。每个接受的答案写回唯一需求文件，纯确认后进入计划准备。
-2. **拆分测试与确认计划**：把行为映射为测试；复杂需求在同一计划中按可独立验证结果纵向拆分，小需求一行直通。`confirm-plan` 核对 BDD、预期文件和测试与影响半径对应，用户确认后才能编码。
-3. **实现验证**：按一个可观察行为完成 Red → 最小实现 → Green，只报告本轮实现和验证结果。
-4. **变更后增量循环**：需求增量后自动改需求、计划、代码、测试、证据并执行受影响回归。
-5. **最终交付**：只有用户明确要求时，才基于最终 diff 执行完整审查、回归、构建、Lint、条件专项和中文报告。
+<a id="diagram-clarify"></a>
+## 二、需求模糊时的决策树前沿
 
----
+流程说明：
 
-<a id="fd-stage-one"></a>
-## 二、阶段一：确认需求与基线
-
-### 阶段一摘要
-
-1. **读取事实源**：执行 `init`，优先读取 `docs/<需求名>.md`；没有 md 时才把 docx 转写为 md。
-2. **确认业务边界**：分析相关代码和测试，展示已上线业务影响、BDD、主流程和异常边界；用户补充内容先写回需求文件。
-3. **建立确认基线**：用户纯确认后执行 `check-env`，再执行 `confirm-requirement-update`，形成当前需求版本和 Git 基线。
-4. **刷新机器产物**：自动更新续接指南、修订说明、测试映射说明和需求测试追溯；需求事实确认后才能进入阶段二。
+1. Agent 先查代码、文件和链接，能自行证明的事实不转问用户。
+2. 把真正需要产品决定的问题组织成决策树，每轮只处理前置条件已明确的当前前沿。
+3. 同一轮列出全部互不依赖问题；用户可以回答其中一个、多个或同时纠正旧需求。
+4. 完整吸收本轮变化后重新计算前沿，不重复已解决问题，也不丢失未回答问题。
+5. `待确认` 清空并获得纯确认后才写 BDD、标记 `confirmed` 和进入实现。
 
 ```mermaid
 flowchart TD
-    A["读取配置和需求资料<br/>profiles/local.yaml"] --> B["delivery.py init"]
-    B --> B1{"requirement_file<br/>是 docx？"}
-    B1 -- "是，已有 docs/<需求名>.md" --> B2["优先读 md（事实源切换）"]
-    B1 -- "是，无 md" --> B3["自动按正文顺序转写 docs/<需求名>.md<br/>保留结构和链接；图片留核对标记<br/>图片型 → 模板骨架"]
-    B1 -- "是 md/txt" --> B4["直接读"]
-    B2 --> C
-    B3 --> C
-    B4 --> C
-    C["只读分析相关代码、调用方和已有测试"] --> D["置顶展示已上线业务影响<br/>【修改/保护/待确认/不修改】"]
-    D --> E["拆分 REQ / BDD / 原子 Then<br/>每个功能：用户故事→AC→主流程/异常边界"]
-    E --> F{"业务含义和验收<br/>是否足以确认？"}
-    F -- "否" --> NEED["列出最小缺口并暂停<br/>不脑补"]
-    NEED -- "资料补齐" --> A
-    F -- "用户有新变化" --> G["分类本轮新增/修改/删除"]
-    G --> G1["合并写回 docs/<需求名>.md"]
-    G1 --> G2["重新 init 读取"]
-    G2 --> G3["展示变化摘要 + 路径"]
-    G3 --> C
-    F -- "纯确认（无新变化）" --> H["delivery.py check-env"]
-    H --> ENV{"分支 + worktree claim + 代码工作区检查<br/>（文档改动已忽略，只检查代码）"}
-    ENV -- "否" --> ENVFAIL["说明问题<br/>不自动 stash/commit/clean"]
-    ENVFAIL -- "用户处理后" --> H
-    ENV -- "代码干净" --> REV["confirm-requirement-update"]
-    REV --> REV2{"修订确认有效？"}
-    REV2 -- "待定/冲突" --> REVFIX["修正清单或继续澄清"]
-    REVFIX --> C
-    REV2 -- "确认（首次确认 / 增量修订）" --> FACTS["机器自动：<br/>✅ 刷新 docs/续接指南.md<br/>✅ 刷新 docs/需求修订说明.md<br/>✅ 刷新 docs/测试映射说明.md（存在时）<br/>✅ 标记 STALE（已失效，待回填）<br/>✅ 刷新 docs/需求测试追溯.md"]
-    FACTS --> STAGE1["阶段一完成：需求事实已确认"]
+    INPUT["汇总用户输入、代码事实、Figma/API 和已有实现"] --> TREE["建立会影响行为、范围和验收的决策树"]
+    TREE --> FIND["选择前置事实已经明确的问题"]
+    FIND --> GROUP["同轮列出全部互不依赖问题：Q1、Q2..."]
+    GROUP --> ANSWER["用户回答任意一个或多个问题，也可纠正旧需求"]
+    ANSWER --> MERGE["完整吸收所有答案，以最新明确表述替换冲突旧内容"]
+    MERGE --> LEFT{"当前前沿还有问题？"}
+    LEFT -- "是" --> GROUP
+    LEFT -- "否" --> DEPENDENT{"答案是否解锁后续依赖问题？"}
+    DEPENDENT -- "是" --> FIND
+    DEPENDENT -- "否" --> RESTATE["复述共同理解并写 draft spec.md"]
+    RESTATE --> CONFIRM{"用户纯确认最新完整规格？"}
+    CONFIRM -- "否" --> TREE
+    CONFIRM -- "是" --> BDD["写入 confirmed；此后才允许实现"]
 ```
 
-### 怎么执行
+<a id="diagram-inputs"></a>
+## 三、Figma 与 API 输入
 
-**你做什么**：把需求文档（docx/md）放进当前 profile 的 `requirement_dir`；项目内通道通常是 `document/<日期-英文名>/`，本机串行通道由 `requirement_workspace.py next` 创建。告诉 AI 开始后，补充/纠正需求并等待 AI 复述理解，纯确认（不带新变化）后才推进。
+流程说明：
 
-**AI 做什么**：
-1. 跑 `init` 读需求（docx 自动转 `docs/<需求名>.md`），读代码分析影响面，输出"当前需求理解"给你看
-2. 你补充/纠正 → AI 改 `docs/<需求名>.md` → 重新 `init` 读 → 再给你看变化摘要
-3. 反复直到你纯确认
-4. 跑 `check-env`：校验分支、原子占用当前物理 worktree 和代码工作区干净（文档改动不拦）→ 建 Git 基线
-5. AI 把你确认的义务写成 `requirement-revision.json` → 跑 `confirm-requirement-update`
-6. 机器自动：版本号从"初始"变成"首次确认"，刷新 `docs/` 下的人读追溯视图
-
-**你看什么**：终端输出"需求修订已确认：xxx 首次确认"，续接指南显示当前义务清单。
-
-```bash
-python3 scripts/delivery.py init --config profiles/<需求>.yaml
-python3 scripts/delivery.py check-env --config profiles/<需求>.yaml
-python3 scripts/delivery.py confirm-requirement-update --config profiles/<需求>.yaml
-```
-
----
-
-<a id="fd-stage-two"></a>
-## 三、阶段二：拆分测试、确认计划与实现
-
-### 阶段二摘要
-
-1. **定义实施边界**：编写 `docs/实施计划.md` 和 `test-cases/impact-radius.json`，登记 BDD、预期文件、预期测试和明确不修改范围；复杂需求只在计划中纵向拆分，小需求不增加产物。
-2. **确认计划**：展示计划和影响半径，用户确认后执行 `confirm-plan`，生成绑定需求、计划和影响半径的收据。
-3. **建立测试映射**：执行 `init-test-mapping`，登记真实测试 ID 和业务断言，先确认 Red，再按原子 Then 做最小实现和 Green。
-4. **处理需求变化**：验收语义变化时先更新需求、计划和影响半径，重新确认后再重建映射和继续实现。
+1. 链接、截图、导出文件、文档和聊天都是有效输入，但只记录实际可证明的内容。
+2. Figma 输入先确认 XML View 或 Compose；XML 页面在规格确认后调用 `figma-android-xml`。
+3. 生成 XML、构建 APK 或页面能打开都不代表 UI 通过，仍需真实截图和交互验收。
+4. API 输入立即创建或增量更新唯一 `api/api.md`，并与需要留存的原始资料共置。
+5. 来源冲突或未知会改变 DTO、序列化、业务行为或验收时询问用户，不自行猜测。
 
 ```mermaid
 flowchart TD
-    STAGE1["阶段一输出：需求事实已确认"] --> PC["写 docs/实施计划.md<br/>+ test-cases/impact-radius.json<br/>（6 个必需标题）"]
-    PC --> CHECK["confirm-plan 低成本交叉校验<br/>BDD ↔ expected_files ↔ expected_tests"]
-    CHECK --> USER_PLAN{"用户确认计划？"}
-    USER_PLAN -- "否：继续澄清/修改计划" --> PC
-    USER_PLAN -- "是" --> PCR["delivery.py confirm-plan<br/>生成收据（三重 sha256 绑定）"]
-    PCR --> MAP["init-test-mapping<br/>生成测试映射骨架（STALE：已失效，待回填）"]
-    MAP --> MAP2["AI 填 test_ids + 业务断言<br/>确认 Red 后回填 CURRENT：已对齐"]
-    MAP2 --> MAP3["映射校验 / 最终 gate<br/>CURRENT 必须包含 expected_tests；允许额外测试"]
-    MAP3 --> CODE{"开始编码"}
-    CODE -- "首次" --> RED["按原子 Then：<br/>Red → 最小实现 → Green"]
-    CODE -- "增量" --> INCR["增量闭环铁律（见第六节）"]
-    RED --> J{"编码后下一步？"}
-    INCR --> J
-    J -- "实现完善（验收不变）" --> NEXTSTAGE["→ 进入阶段三：测试执行"]
-    J -- "需求语义变化" --> K["改 docs/<需求名>.md<br/>→ init → 用户确认 → confirm-requirement-update"]
-    K --> K1["更新 docs/实施计划.md<br/>+ impact-radius.json<br/>旧计划收据失效"]
-    K1 --> K2["重新展示计划并等待 confirm-plan"]
-    K2 --> K3["confirm-plan 成功后<br/>重建映射并继续受影响闭环"]
-    K3 --> INCR
+    INPUT["链接、截图、导出文件、文档或聊天"] --> READ["读取实际可访问事实并保留来源"]
+    READ --> KIND{"资料类型"}
+    KIND -- "Figma/UI" --> STACK{"项目是 XML View 还是 Compose？"}
+    STACK -- "XML View 且规格已确认" --> XML["调用 figma-android-xml 生成 XML/资源"]
+    STACK -- "Compose" --> COMPOSE["沿用项目 Compose 实现，不调用 XML Skill"]
+    XML --> UI["真实页面截图、状态、交互和 A11y 验收"]
+    COMPOSE --> UI
+    KIND -- "API" --> APIMD["创建或增量更新唯一 api/api.md"]
+    APIMD --> CONFLICT{"来源冲突或未知会改变实现？"}
+    CONFLICT -- "是" --> ASK["询问用户采用决定"]
+    CONFLICT -- "否" --> IMPLEMENT["按已证明契约实现并测试"]
+    ASK --> APIMD
 ```
 
-### 怎么执行
+<a id="diagram-feedback"></a>
+## 四、纵向切片与紧反馈
 
-**你做什么**：看计划摘要和影响半径 → 说"确认" → AI 才能执行 `confirm-plan` 并开始编码。
+流程说明：
 
-**AI 做什么**：
-1. 写 `docs/实施计划.md` 和 `test-cases/impact-radius.json`（计划必须含六个标题，并让 BDD、预期文件、预期测试相互对应）
-2. 展示计划和影响半径，等待你确认
-3. 跑 `confirm-plan` 生成收据（绑定需求、计划和影响半径 sha256）
-4. 跑 `init-test-mapping`，填 `test_ids`，使 `CURRENT` 映射包含 `expected_tests`，再用业务断言确认 Red；人工验收时保留空 `expected_tests` 并填写原因
-5. 开始编码：按一个原子 Then 做 Red → 最小实现 → Green，做完一个做下一个
-
-**你看什么**：终端输出"实施计划已确认…你已获准开始编码"。
-
-```bash
-# AI 先写 docs/实施计划.md + test-cases/impact-radius.json，并展示等待确认
-python3 scripts/delivery.py confirm-plan --config profiles/<需求>.yaml
-python3 scripts/delivery.py init-test-mapping --config profiles/<需求>.yaml
-# AI 先确认 Red，再编码并回填 CURRENT
-```
-
----
-
-<a id="fd-stage-three"></a>
-## 四、阶段三：测试执行（编码后、route 前的必做环节）
-
-### 阶段三摘要
-
-1. **准备真实测试载体**：确认或生成 Unit、集成、插桩测试、Journey XML 或人工验收记录，并登记到测试映射。
-2. **选择适用验证层**：按 BDD、影响半径和风险选择测试、构建、Lint、安装、Journey、截图、日志或人工验收，不机械执行无关长链路。
-3. **收集真实证据**：保存执行收据、JUnit/XML/SARIF、Journey 结果和必要的人读摘要；`docs/测试结果.md` 不作为机器事实源。
-4. **完成诚实结果**：每个 BDD 都有 `PASS`、`FAIL` 或明确 `UNVERIFIED`，UI 验收先完成物理设备预检。
-5. **发现需求漏洞**：停止当前验证，进入增量闭环；所有场景有结果后才能进入阶段四的 `route + gate`。
+1. 每次只选择一个已确认 BDD，并选取最高可观察、足够快速的测试边界。
+2. 先实际确认测试因缺少目标行为而失败，再编写最小实现使其通过。
+3. 当前测试转绿后只追加直接受影响模块测试和必要编译，再进入下一个 BDD。
+4. 疑难 Bug、偶发故障和性能回归必须先建立可重复命中准确症状的紧反馈入口。
+5. 无法复现或同一根因连续三轮没有进展时，报告证据和阻塞条件，不猜因修改。
 
 ```mermaid
 flowchart TD
-    CODE_DONE["编码完成"] --> TP1["① 确认/生成真实测试载体<br/>项目 src/test 或 src/androidTest / Journey XML / 人工验收<br/>init-test-mapping 登记真实 ID"]
-    TP1 --> TP2["② AI 按 BDD 与风险选择最小命令"]
-    TP2 --> SELECT{"按 BDD 与风险选择验证层"}
-    SELECT --> TP2A["Unit / 集成测试<br/>真实测试 ID + 业务断言"]
-    SELECT --> TP2B["构建 / Lint<br/>适用时执行"]
-    SELECT --> TP2C["安装 / Journey<br/>需要设备时执行"]
-    TP2C --> TP2C1["Journey 可选壳：复制到需求 .state/journey-runtime/<br/>只读共享模板，不共享可写目录"]
-    TP2C1 --> TP3
-    SELECT --> TP2D["UI 截图 / Figma 对比<br/>需要真实画面时执行"]
-    TP2D --> TP2D1["UI 真机预检<br/>adb devices -l + get-state + screencap"]
-    TP2D1 --> TP3
-    SELECT --> TP2E["日志 / 人工验收<br/>按对应证据规则执行"]
-    TP2E --> TP3
-    TP2A --> TP3
-    TP2B --> TP3
-    TP2D --> TP3
-    TP3["③ 收集真实证据<br/>执行收据 / JUnit/XML/SARIF / Journey 结果<br/>可选生成或回填人读摘要"]
-    TP3 --> TP4{"所有 BDD<br/>都有诚实结果？"}
-    TP4 -- "否（有未测）" --> TP2
-    TP4 -- "测试中发现<br/>需求漏洞" --> INCR["增量闭环（见第六节）"]
-    INCR --> TP1
-    TP4 -- "全部有结果<br/>（PASS / FAIL / 明确 UNVERIFIED）" --> NEXT["→ 进入阶段四：route + gate"]
+    BDD["选择一个已确认 BDD"] --> BOUNDARY["选择最高可观察且足够快的测试边界"]
+    BOUNDARY --> RED["写失败测试并实际确认 Red 原因"]
+    RED --> MIN["编写刚好满足行为的最小实现"]
+    MIN --> GREEN["重跑当前测试并确认 Green"]
+    GREEN --> IMPACT["运行直接受影响模块测试和必要编译"]
+    IMPACT --> NEXT{"下一个 BDD？"}
+    NEXT -- "是" --> BDD
+    NEXT -- "否" --> READY["等待最终交付时一次完整验证"]
+
+    BUG["疑难 Bug、偶发故障或性能回归"] --> LOOP{"能建立可重复命中准确症状的紧反馈入口？"}
+    LOOP -- "否" --> BLOCK["报告尝试、缺少条件和阻塞；不猜因修改"]
+    LOOP -- "是" --> REPRO["复现 -> 最小修复 -> 失败测试 -> 受影响回归"]
+    REPRO --> PROGRESS{"同一根因三轮内有进展？"}
+    PROGRESS -- "是" --> REPRO
+    PROGRESS -- "否" --> BLOCK
 ```
 
-### 怎么执行
+<a id="diagram-incremental"></a>
+## 五、增量变化分流
 
-**你做什么**：等 AI 完成测试执行并报告结果。如果测试中发现需求遗漏，补充需求后按第六节先确认需求和计划，再继续受影响闭环。
+流程说明：
 
-**AI 做什么**：
-1. 根据 BDD、实际 diff 和项目结构创建或更新真实测试代码、Journey XML 或人工验收记录；执行 `init-test-mapping` 登记真实测试 ID，并核对 `CURRENT` 映射包含影响半径的 `expected_tests`，允许额外测试
-2. 按 BDD、影响半径和实际影响类别直接选择并执行最小验证：Unit、集成、构建、Lint、安装、Journey、截图、日志或人工验收；不机械运行不适用的长链路
-3. 可选回填 `docs/测试结果.md` 人读摘要（命令、退出码、测试数、收据/报告、PASS/FAIL/UNVERIFIED 和未验证原因）；内容必须来自真实证据
-4. 让机器映射和覆盖结论绑定真实收据；测试步骤保留在测试代码或 Journey XML 中，机器 gate 不以人读摘要单独判定通过
-5. 如果测试中发现需求漏洞 → 触发增量闭环（改需求→改代码→改测试→改文档→重测）
-
-测试代码落盘规则：
-
-1. Unit/JVM 测试写入 `<project_path>/<module>/src/test/java/` 或 `<project_path>/<module>/src/test/kotlin/`。
-2. Android 插桩测试写入 `<project_path>/<module>/src/androidTest/java/` 或 `<project_path>/<module>/src/androidTest/kotlin/`。
-3. 变体 source set 或自定义测试目录只沿用项目已有约定；`test-cases/` 只保存映射、修订、影响半径和 Journey XML。
-
-Journey 运行时补充规则：
-
-1. 正式 XML 读取 `<requirement_dir>/test-cases/journeys/<需求作用域>/`。
-2. 可选壳复制到 `<requirement_dir>/.state/journey-runtime/<scope-key>/` 后才允许发现任务、暂存 XML、构建和收集报告。
-3. `$XDG_CACHE_HOME/android-delivery-skills/gradle/`（默认 `~/.cache/android-delivery-skills/gradle/`）只放共享 Gradle 依赖缓存，不放用例、构建产物或最终证据。
-4. 需求目录位于目标项目 worktree 内时，`check-env`/Journey 自动登记项目 Git 的 `<git-common-dir>/info/exclude`；只排除 `.state/` 机器状态，不排除正式文档、测试用例和最终报告。
-
-**你看什么**：可选的 `docs/测试结果.md` 人读摘要，以及最终自动生成的 `docs/交付结论.md`；机器事实仍以执行收据、JUnit/XML/SARIF、Journey 结果和 `delivery-result.json` 为准，具体测试步骤看测试代码或 Journey XML。
-
-```bash
-# AI 先确认真实测试代码或 Journey XML，再按 BDD 和风险直接选择适用命令
-# 示例：具体测试任务、构建/Lint、设备 Journey 或人工验收由实施计划决定
-# 普通自动化/人工业务结果绑定对应收据；UI 先完成物理设备预检，再回填 Figma、真机截图/差异图链接和动态说明
-```
-
----
-
-<a id="fd-stage-four"></a>
-## 五、阶段四：最终交付（route + gate）
-
-### 阶段四摘要
-
-1. **进入阶段四**：阶段三所有场景已有真实结果后，执行 `delivery.py route`。
-2. **route 校验与收敛**：校验需求、计划、影响半径和完整输入摘要；相同输入复用，输入变化按轮次推进，超过默认 3 轮标记 `BLOCKED`。
-3. **影响复核与专项**：先执行 `android-review-diff`，再按 `specialist_tasks` 逐项执行专项；route 只登记任务，不直接调用 Skill。
-4. **发现问题后的分流**：范围或需求问题进入增量闭环；代码或专项问题最小修复，改变 diff 后必须重新 route；只缺证据时局部补证和重验。
-5. **最终验证与门禁**：完成必要回归并收集证据后，优先执行 `assemble --manifest`，不适用时手写结果再 `validate`。
-6. **交付结果**：门禁根据实际证据输出 `FULL_PASS`、`LOCAL_PASS_DEVICE_PENDING`、`INCOMPLETE` 或 `BLOCKED`，最后由用户决定是否提交。
+1. 行为、业务语义或验收变化时，把规格改回 `draft`，只确认和重做受影响部分。
+2. 模块、依赖、公共接口或测试边界变化时，暂时回到 `draft` 并只确认范围变化。
+3. 颜色、间距、资源或内部实现细节不改变行为时保持 `confirmed`，只做最小验证。
+4. 最终验证后代码再变化时，旧结果不能证明新代码，必须重跑受影响项并重新汇总。
+5. 未受影响的 BDD、代码和测试保留，不因局部增量重复完整流程。
 
 ```mermaid
 flowchart TD
-    TEST_DONE["阶段三输出：测试全部执行完成"] --> ROUTE["delivery.py route"]
-    ROUTE --> PRECHECK{"route 前置校验<br/>sha256 / 计划收据 / 影响半径 / 完整输入摘要"}
-    PRECHECK -- "计划收据失效" --> REPLAN["重新展示并 confirm-plan"]
-    REPLAN --> ROUTE
-    PRECHECK -- "diff 超出影响半径" --> INCR_SCOPE["增量闭环：更新需求与影响半径<br/>confirm-requirement-update → confirm-plan"]
-    PRECHECK -- "校验通过" --> CONVERGENCE{route 收敛状态？<br/>比较输入摘要、轮次和候选集合}
-    CONVERGENCE -- "BLOCKED" --> BLOCK_REASON{判断阻断原因}
-    BLOCK_REASON -- "需求/计划/影响半径扩大" --> INCR_SCOPE
-    BLOCK_REASON -- "原范围内继续" --> NEW_SESSION["人工确认后 route --new-session<br/>新会话从第 1 轮开始"]
-    NEW_SESSION --> ROUTE
-    CONVERGENCE -- "INITIAL / CHANGED / STABLE" --> TASK_LIST["生成或复用 specialist_tasks<br/>脚本候选 ∪ confirmed_impacts"]
-    TASK_LIST --> DIFF_REVIEW["先执行 android-review-diff<br/>复核最终 diff 与已确认业务影响"]
-    DIFF_REVIEW --> NEW_IMPACT{发现未登记的业务影响？}
-    NEW_IMPACT -- "是" --> INCR_IMPACT["增量闭环（见第六节）<br/>先改需求 → 重新确认计划 → 再实现/测试"]
-    INCR_IMPACT --> STAGE3["回到阶段三：重新测试并收集结果"]
-    STAGE3 --> ROUTE
-    NEW_IMPACT -- "否" --> SPECIALISTS["逐项执行剩余专项并回填当前结果<br/>route 只登记，不直接调用 Skill"]
-    SPECIALISTS --> SPECIAL_RESULT{专项发现什么？}
-    SPECIAL_RESULT -- "范围/需求问题" --> INCR_IMPACT
-    SPECIAL_RESULT -- "P0/P1 或技术问题" --> FIX["保存证据，最小修复一个根因"]
-    SPECIAL_RESULT -- "无须修复" --> REGRESSION["按任务清单、BDD、影响半径和影响类别<br/>执行必要回归"]
-    FIX --> DIFF_CHANGED{修复是否改变最终 diff？}
-    DIFF_CHANGED -- "是：必须重 route" --> ROUTE
-    DIFF_CHANGED -- "否：只重跑受影响专项/测试" --> SPECIALISTS
-    REGRESSION --> EVIDENCE["收集执行收据与专项证据<br/>未验证能力明确记录"]
-    EVIDENCE --> ASSEMBLY{结果组装方式？}
-    ASSEMBLY -- "适用" --> ASSEMBLE["delivery_gate.py assemble --manifest<br/>组装并立即 validate"]
-    ASSEMBLY -- "不适用" --> VALIDATE["手写 delivery-result.json<br/>delivery_gate.py validate"]
-    ASSEMBLE --> GATE
-    VALIDATE --> GATE
-    GATE{最终门禁结果？<br/>义务 / sha256 / STALE / 证据 / 专项 / 追溯}
-    GATE -- "代码或专项失败" --> FIX
-    GATE -- "证据/映射缺失或过期" --> REFRESH["补齐或刷新受影响证据<br/>需求未变时不重 route"]
-    REFRESH --> REGRESSION
-    GATE -- "需求/影响半径变化" --> INCR_IMPACT
-    GATE -- "设备待验" --> DEVICE["LOCAL_PASS_DEVICE_PENDING"]
-    GATE -- "仍有未完成" --> INCOMPLETE["INCOMPLETE / BLOCKED"]
-    GATE -- "全部通过" --> PASS["FULL_PASS"]
-    DEVICE --> DECIDE["用户决定是否提交"]
-    INCOMPLETE --> DECIDE
-    PASS --> DECIDE
+    CHANGE["实现期间或最终验证后出现变化"] --> TYPE{"变化改变了什么？"}
+    TYPE -- "行为、业务语义或验收" --> DRAFT1["spec.md -> draft"]
+    DRAFT1 --> CONFIRM1["只澄清并确认变化部分"]
+    CONFIRM1 --> AFFECTED1["重做受影响 BDD、代码和测试"]
+
+    TYPE -- "模块、依赖、公共接口或测试边界" --> DRAFT2["spec.md 暂时 -> draft"]
+    DRAFT2 --> CONFIRM2["只确认范围或测试边界变化"]
+    CONFIRM2 --> AFFECTED2["更新受影响实现和验证"]
+
+    TYPE -- "颜色、间距、资源或内部实现细节" --> KEEP["保持 confirmed"]
+    KEEP --> LOCAL["只改受影响代码并跑最小验证"]
+
+    TYPE -- "最终验证后代码再次变化" --> RECHECK["旧结果失效：重跑受影响项并重新汇总"]
 ```
 
-### 怎么执行
+<a id="diagram-final"></a>
+## 六、最终验证路由
 
-**你做什么**：说"最终检查"或"完整交付"或"准备提交"。
+流程说明：
 
-**AI 做什么**：
-1. 跑 `route`：合并脚本路径候选和 Diff Reviewer 的 `confirmed_impacts`，生成 `.state/route-impact.json` 的 `specialist_tasks`
-2. 按任务清单逐项执行专项并回填对应结果；route 本身不直接调用 Skill
-3. 按 BDD、影响半径和实际影响类别执行自动化回归；没有可执行条件时明确标记未验证或阻塞
-4. 根据产物清单优先跑 `delivery_gate.py assemble --manifest`，由中文交付门禁组装结果并立即校验
-5. assemble 不适用时才手写 `delivery-result.json`，再跑 `delivery_gate.py validate`
-6. 输出中文交付结论（FULL_PASS / LOCAL_PASS / INCOMPLETE / BLOCKED）
-
-**你看什么**：终端输出结论 + `docs/交付结论.md`（强制含"未验证项"和"残留风险"段）。
-
-```bash
-python3 scripts/delivery.py route --config profiles/<需求>.yaml
-# 相同 route 输入会复用；超过默认 3 个变化轮次后先人工判断，确认原范围内继续时：
-# python3 scripts/delivery.py route --config profiles/<需求>.yaml --new-session
-python3 scripts/delivery_gate.py assemble \
-  --config profiles/<需求>.yaml --manifest <产物清单.yaml>
-# 仅在 assemble 不适用且已手写 delivery-result.json 时：
-# python3 scripts/delivery_gate.py validate --config profiles/<需求>.yaml
-```
-
----
-
-<a id="fd-incremental"></a>
-## 六、增量闭环（任何阶段需求变更都触发）
-
-### 增量闭环摘要
-
-1. **发现变化**：在需求、计划、编码、测试、route 或 gate 任一阶段发现需求漏洞或语义变化。
-2. **写回并确认需求**：更新唯一需求事实源，重新 `init`，等待用户确认后执行 `confirm-requirement-update`。
-3. **更新并确认计划**：同步实施计划和影响半径，重新展示 BDD、预期文件和预期测试，等待 `confirm-plan` 成功。
-4. **恢复实现链路**：重建测试映射，先确认 Red，再做最小实现、更新测试、回归和证据刷新。
-5. **回到原阶段**：按发现变化的阶段继续；需求或影响半径变化后不得复用旧 route、旧测试结果或旧最终报告。
+1. 只有用户明确要求最终检查、完整交付或准备提交时才进入最终验证。
+2. 先读取 `confirmed spec`、基线到当前 `HEAD` 的 diff 和未提交改动，确定真实影响。
+3. 执行一次适用的完整测试、构建和 Lint，再按 diff 候选调用代码、API、UI 或测试专项。
+4. 修复改变代码后重新执行受影响验证；空测试、全部 skipped 和旧报告不能支持通过。
+5. 每个 BDD 和适用专项都有真实结果后写 `docs/result.md`；缺少证据时标记失败或未验证。
 
 ```mermaid
 flowchart TD
-    TRIGGER["在任何阶段发现需求漏洞/变更<br/>（编码中 / 测试中 / 审查中 / gate 中 / 任何时刻）"]
-    TRIGGER --> CHANGE["① 改 docs/<需求名>.md<br/>（写回需求事实源）"]
-    CHANGE --> INIT["② 执行 delivery.py init<br/>重新读取当前需求"]
-    INIT --> USER_REQ{"用户确认需求修订？"}
-    USER_REQ -- "否：继续澄清并写回" --> CHANGE
-    USER_REQ -- "是" --> CONFIRM["③ confirm-requirement-update"]
-    CONFIRM --> PLAN["④ 更新 docs/实施计划.md<br/>+ test-cases/impact-radius.json<br/>登记新增/变更场景、允许路径、模块和测试"]
-    PLAN --> CHECK["confirm-plan 低成本交叉校验<br/>BDD ↔ expected_files ↔ expected_tests"]
-    CHECK --> USER_PLAN{"用户确认更新计划？"}
-    USER_PLAN -- "否：继续修改计划" --> PLAN
-    USER_PLAN -- "是：confirm-plan 成功" --> AUTO["⑤ init-test-mapping<br/>STALE（已失效）/新增场景登记真实测试 ID"]
-    AUTO --> RED["⑥ 先补业务断言并确认 Red"]
-    RED --> B1["⑦ 最小实现<br/>只改当前影响半径内的生产代码"]
-    B1 --> B2["⑧ 更新测试代码<br/>STALE（已失效）/新义务补断言"]
-    B2 --> B3["⑨ 更新真实测试载体<br/>受影响测试重测，新增场景补测试"]
-    B3 --> B4["⑩ 回填映射 CURRENT"]
-    B4 --> B5["⑪ 受影响模块回归<br/>含旧测试，确认无回归"]
-    B5 --> B6["⑫ 重跑受影响用例<br/>回填 PASS/FAIL/UNVERIFIED 与证据"]
-    B6 --> B7["⑬ 刷新最终证据并报告<br/>文件/测试/剩余风险"]
-    B7 --> DONE["增量完成，回到发现变更的阶段继续"]
+    FINAL["用户明确要求最终检查、完整交付或准备提交"] --> DIFF["读取 confirmed spec + baseline 到 HEAD + 未提交 diff"]
+    DIFF --> TESTS["执行一次适用的完整测试、构建和 Lint"]
+    DIFF --> CODE{"Kotlin/Java、生命周期或工程风险？"}
+    DIFF --> API{"endpoint、DTO、mapper 或缓存契约？"}
+    DIFF --> UI{"布局、状态、交互、文案或 A11y？"}
+    DIFF --> DEVICE{"测试失败、设备回归、Journey 或疑难 Bug？"}
+    CODE -- "是" --> REVIEW["android-code-review"]
+    API -- "是" --> APICHECK["android-verify-api-contract"]
+    UI -- "是" --> UICHECK["android-verify-ui：真实截图证据"]
+    DEVICE -- "是" --> FIX["android-test-and-fix"]
+    TESTS --> COLLECT["汇总真实命令、测试数量和证据"]
+    REVIEW --> COLLECT
+    APICHECK --> COLLECT
+    UICHECK --> COLLECT
+    FIX --> COLLECT
+    COLLECT --> COMPLETE{"每个 BDD 和适用专项都有真实结果？"}
+    COMPLETE -- "否" --> PARTIAL["失败或未验证；写明风险和解除条件"]
+    COMPLETE -- "是" --> PASS["docs/result.md：通过结论"]
 ```
 
-### 怎么执行
+<a id="diagram-parallel"></a>
+## 七、多需求并行
 
-**你做什么**：在任何阶段说"加一个 xxx 功能"或"改一下 xxx"或"发现 xxx 没考虑"；看到更新后的需求和计划后，分别确认需求修订与计划边界。
+流程说明：
 
-**AI 做什么**：
-1. 改 `docs/<需求名>.md`，执行 `init`，展示修订内容并等待用户确认
-2. 物化修订清单，执行 `confirm-requirement-update`
-3. 更新 `docs/实施计划.md` 和 `test-cases/impact-radius.json`，同步 BDD、预期文件和预期测试，展示变化并等待用户确认 `confirm-plan`
-4. 执行 `init-test-mapping`，为 `STALE`（已失效）/新增场景补真实测试 ID 和业务断言，`CURRENT` 映射包含对应 `expected_tests` 后再确认 Red；人工验收保留空列表并填写原因
-5. 只在当前影响半径内实现、更新真实测试载体、回填结果摘要和映射
-6. 跑受影响模块回归和受影响用例，绑定新鲜执行收据、截图、日志或人工证据
-7. 报告修改文件、测试结果和剩余风险；计划未确认前不得修改代码
-
-**你看什么**：续接指南"波及清单"、更新后的 `docs/实施计划.md`、测试代码或 Journey XML、结果摘要和 AI 报告。
-
-```bash
-# AI 改 docs/<需求名>.md 后先重新 init，并展示修订内容等待确认
-python3 scripts/delivery.py init --config profiles/<需求>.yaml
-# 用户确认需求后，AI 物化修订清单并执行
-python3 scripts/delivery.py confirm-requirement-update --config profiles/<需求>.yaml
-# AI 更新 docs/实施计划.md + test-cases/impact-radius.json，展示并等待用户确认
-python3 scripts/delivery.py confirm-plan --config profiles/<需求>.yaml
-# 用户确认计划后，继续映射、Red、最小实现、回归和证据刷新
-```
-
----
-
-<a id="fd-stale"></a>
-## 七、STALE（已失效，待重新回填）联动机制
-
-### STALE 联动摘要
-
-1. **需求义务变化**：需求修订后，义务摘要 sha256 发生变化。
-2. **测试映射失效**：机器自动把受影响映射标为 `STALE`，旧测试结果不能继续证明当前义务。
-3. **同步人读视图**：续接指南、映射说明和测试结果摘要同步显示待回填状态。
-4. **确认后重新验证**：计划或影响半径变化时重新 `confirm-plan`，然后补测试、回填 `CURRENT` 并重测。
-5. **门禁兜底**：`STALE` 未回填或证据不新鲜时，最终 gate 阻断通过。
+1. 只有互不冲突且可独立验收的需求进入并行；存在代码写入冲突或业务依赖时顺序完成。
+2. 每个并行需求使用独立 worktree、分支、配置和日期格式 `requirement_dir`。
+3. 每个窗口维护自己的 `spec.md`、代码和测试结果，不共享 `profiles/local.yaml` 或其他需求证据。
+4. 模拟器、真机、账号和不可并发后端数据仍作为共享资源串行使用。
+5. 大需求默认保持一份规格，不自动创建 Tickets；只有用户决定拆成独立需求时才进入并行流程。
 
 ```mermaid
 flowchart TD
-    REQ["需求改了<br/>BDD-002 加了深色模式"] --> CONFIRM2["confirm-requirement-update"]
-    CONFIRM2 --> HASH["义务 sha256 变化<br/>BDD-002: aaa → bbb"]
-    HASH --> STALE["test-mapping.json<br/>BDD-002 标 STALE（已失效，待回填）"]
-    STALE --> DOCS["同步人读文档<br/>续接指南：⏳ 测试待回填<br/>映射说明：待回填<br/>测试结果：相关用例需重测"]
-    DOCS --> PLAN["检查计划和影响半径<br/>有变化：更新并重新 confirm-plan<br/>无变化：沿用已确认边界"]
-    PLAN --> AI_FIX["确认后改测试代码<br/>补充深色模式断言"]
-    AI_FIX --> AI_FILL["回填 CURRENT"]
-    AI_FILL --> RETEST["重跑 BDD-002 用例<br/>回填新结果"]
-    RETEST --> GATE["delivery_gate 校验<br/>STALE（已失效）未回填则阻断"]
-    GATE --> GATE_PASS["gate 通过 ✅"]
+    CANDIDATES["多个可独立验收结果"] --> CONFLICT{"代码写入或业务依赖是否冲突？"}
+    CONFLICT -- "是" --> SERIAL["在一份规格内按依赖顺序完成"]
+    CONFLICT -- "否" --> SPLIT["用户决定作为多个需求并行"]
+    SPLIT --> A["需求 A：worktree A + branch A + config A + requirement_dir A"]
+    SPLIT --> B["需求 B：worktree B + branch B + config B + requirement_dir B"]
+    SPLIT --> C["需求 C：worktree C + branch C + config C + requirement_dir C"]
+    A --> RA["独立 spec、代码和测试结果"]
+    B --> RB["独立 spec、代码和测试结果"]
+    C --> RC["独立 spec、代码和测试结果"]
+    RA --> SHARED{"需要共享设备、账号或后端数据？"}
+    RB --> SHARED
+    RC --> SHARED
+    SHARED -- "是" --> RESOURCE["仅共享资源测试阶段串行"]
+    SHARED -- "否" --> PARALLEL["各需求继续并行"]
 ```
 
-### 怎么执行
+<a id="diagram-merge"></a>
+### 合并规则（git worktree）
 
-这个机制由 `confirm-requirement-update` 自动标记 `STALE`（已失效，待重新回填），但计划或影响半径变化时仍要先重新展示并等待用户确认。确认后，AI 才继续改测试、回填、重测和更新文档；你可在续接指南里看到“⏳ 测试待回填”→“✅ 测试已对齐”。
+合并规则说明：
 
----
-
-<a id="fd-parallel"></a>
-## 八、多需求并行（git worktree）
-
-### 并行协作摘要
-
-1. **独立通道**：每个需求使用独立 worktree、分支、profile 和 document 目录。
-2. **物理目录占用**：`check-env` 原子 claim 当前 worktree；同一物理目录被其他需求占用时阻断，不同 worktree 可以并行。
-3. **独立闭环**：每个窗口独立完成需求、计划、实现、测试、route 和 gate，route 与 gate 持续复核当前 claim。
-4. **单线合并**：私有分支合入前只做一次 `git rebase`，主分支使用 `git merge --ff-only`。
-5. **合入后复验**：主分支合入后重新执行受影响门禁；`integrate` 只汇总结论和释放通道，不代替 Git 合并。
+1. 各需求先在自己的 worktree、分支和配置中完成实现与验证；用户未授权集成时保持等待。
+2. 每次只处理一个需求分支：先把它 rebase 到最新目标分支，不能用旧基线直接合并。
+3. 发生冲突时先读取双方规格、相关代码、调用方和测试；兼容意图同时保留，不兼容时由用户决定。
+4. rebase 后先跑受影响验证，再在目标 worktree 使用 `git merge --ff-only`；不能 fast-forward 时停止并重新核对目标分支。
+5. 每次合入后都在集成代码上重跑受影响验证；还有其他需求时，以更新后的目标分支重复同一流程。
+6. 不静默改用 merge commit、改写目标分支历史，也不拿需求分支上的旧结果证明最终集成代码。
 
 ```mermaid
 flowchart TD
-    subgraph 主工作树
-        MAIN["MyApp/<br/>main 分支"]
-        MAIN_INDEX["document/需求总览.md<br/>（全局六列表）"]
-    end
-
-    subgraph 需求A
-        WTA["MyApp-req-login/<br/>feature/req-login"]
-        WTA_DOC["document/2026-07-25-login/<br/>docs/login.md + .state/"]
-    end
-
-    subgraph 需求B
-        WTB["MyApp-req-pay/<br/>feature/req-pay"]
-        WTB_DOC["document/2026-07-25-pay/<br/>docs/pay.md + .state/"]
-    end
-
-    MAIN --> WTA
-    MAIN --> WTB
-    WTA --> WTA_DOC
-    WTB --> WTB_DOC
-
-    WTA -- "独立闭环" --> WTA_DONE["需求A 交付"]
-    WTB -- "独立闭环" --> WTB_DONE["需求B 交付"]
-    WTA_DONE --> REBASE_A["需求A 私有分支 rebase main"]
-    REBASE_A --> MERGE_A["main: git merge --ff-only 需求A"]
-    MERGE_A --> REBASE_B["需求B 私有分支 rebase 最新 main"]
-    WTB_DONE --> REBASE_B
-    REBASE_B --> MERGE_B["main: git merge --ff-only 需求B"]
-    MERGE_B --> FINAL["最终代码重跑受影响 build/lint/test/gate"]
-    FINAL --> INTEGRATE["integrate 集成报告<br/>汇总结论并释放通道"]
-    INTEGRATE --> MAIN_INDEX
+    READY["一个或多个需求分支已独立完成并验证"] --> AUTH{"用户已授权集成？"}
+    AUTH -- "否" --> WAIT["保持各 worktree 和分支不变，等待授权"]
+    AUTH -- "是" --> PICK["按顺序选择一个待合入需求分支"]
+    PICK --> TARGET["确认最新目标分支和当前集成 Git 状态"]
+    TARGET --> REBASE["需求分支 rebase 到最新目标分支"]
+    REBASE --> CONFLICT{"发生冲突？"}
+    CONFLICT -- "是" --> INTENT["读取双方规格、代码、调用方和测试<br/>说明每侧必须保护的行为"]
+    INTENT --> COMPATIBLE{"双方意图兼容？"}
+    COMPATIBLE -- "是" --> RESOLVE["同时保留兼容意图并完成最小冲突解决"]
+    COMPATIBLE -- "否" --> USER["停止并由用户决定采用或放弃的行为"]
+    USER --> RESOLVE
+    CONFLICT -- "否" --> VERIFY["在 rebased 需求分支运行受影响验证"]
+    RESOLVE --> VERIFY
+    VERIFY --> PASS{"受影响验证通过？"}
+    PASS -- "否" --> FIX["只在已确认范围内修复并重跑"]
+    FIX --> VERIFY
+    PASS -- "是" --> FF["目标 worktree 执行 git merge --ff-only"]
+    FF --> FFOK{"fast-forward 成功？"}
+    FFOK -- "否" --> MOVED["停止：目标分支已变化或历史不匹配"]
+    MOVED --> TARGET
+    FFOK -- "是" --> INTEGRATED["在集成后的目标代码上重跑受影响验证"]
+    INTEGRATED --> INTEGRATEDPASS{"集成代码验证通过？"}
+    INTEGRATEDPASS -- "否" --> STOP["停止本批次，报告失败和已合入范围<br/>不继续合入下一需求"]
+    INTEGRATEDPASS -- "是" --> MORE{"还有待合入需求分支？"}
+    MORE -- "是" --> PICK
+    MORE -- "否" --> DONE["完成本批次集成并报告最终验证结果"]
 ```
 
-### 怎么执行
+<a id="diagram-resume"></a>
+## 八、新窗口恢复
 
-**你做什么**：开多个 Claude Code 窗口，每个窗口一个需求。
+流程说明：
 
-**AI 做什么**：每个窗口独立走阶段一→二→三→四，各用各的 profile + worktree。完成后按“rebase 私有分支 → 主分支 ff-only → 最终代码复验”合并；不同 worktree 的代码、基线、测试和证据互不覆盖。
-
-```bash
-# 每个窗口各自
-python3 scripts/delivery.py init --config profiles/req-login.yaml
-# ... 独立走完全流程 ...
-
-# 每个私有分支在准备合入时，先基于最新主分支 rebase
-git switch feature/req-login
-git rebase main
-git switch main
-git merge --ff-only feature/req-login
-
-# 主分支前进后，需求B再 rebase，避免 ff-only 失败
-git switch feature/req-pay
-git rebase main
-git switch main
-git merge --ff-only feature/req-pay
-
-# 在最终主工作树代码上重新跑受影响门禁后，汇总结论并释放通道
-python3 scripts/requirement_workspace.py integrate \
-  --main-worktree MyApp --channels <req-a-dir>,<req-b-dir> --batch 2026-07-25-批次1
-```
-
----
-
-<a id="fd-resume"></a>
-## 九、开始下一个独立需求
-
-### 续接摘要
-
-1. **仅用于本机串行轮换**：执行 `requirement_workspace.py next`，预览 `requirements-runtime/REQ-*` 新目录、旧目录状态和延迟回收结果；项目内 worktree 通道直接在各自 worktree 建 `document/<日期-英文名>/`，不运行 next。
-2. **用户确认后创建新目录**：本机串行通道追加 `--confirm`，脚本复制用户提供的新需求输入并更新 profile，不修改输入正文或自动添加关联关系。
-3. **重新读取和确认**：执行 `delivery.py init`，重新确认新需求理解，不复用旧需求的聊天状态。
-4. **建立新基线**：用户确认后执行 `check-env --new-requirement`，以当前 HEAD 建立新 Git 基线。
-5. **旧目录零污染**：旧需求目录、需求 ID、BDD、测试和证据保持原样，新需求进入正常计划、实现和交付流程。
+1. 新窗口先读取本总览、当前需求自己的配置、项目 `AGENTS.md` 和 Git 状态。
+2. 配置已有 `requirement_dir` 时直接复用；没有时先复用唯一同名日期目录，多个候选由用户选择，没有匹配才按首次启动日期创建并写回。
+3. 优先读取 `docs/spec.md`；旧目录只有唯一 `docs/<requirement_name>.md` 时把它作为兼容规格源，再一并读取 `api/api.md` 和已有 `docs/result.md`。
+4. `baseline_commit` 不再是当前历史祖先时停止 diff 比较，由用户决定新的审查起点。
+5. 根据规格状态继续澄清、纵向实现、等待最终交付或在代码变化后重新验证。
 
 ```mermaid
 flowchart TD
-    OLD["上一独立需求<br/>requirements-runtime/REQ-...-login/<br/>（原样不动）"]
-    PREVIEW["requirement_workspace.py next<br/>预览新目录与延迟回收"]
-    USER_NEXT{"用户确认轮换？"}
-    NEW["下一独立需求<br/>requirements-runtime/REQ-...-login-forgot-pwd/<br/>复制用户提供的新需求输入"]
-    INIT_NEW["delivery.py init<br/>读取并确认新需求理解"]
-    USER_REQ_NEW{"用户确认新需求？"}
-    NEW_ENV["check-env --new-requirement<br/>建当前 HEAD 新基线"]
-    PREVIEW --> USER_NEXT
-    USER_NEXT -- "否：不创建" --> OLD
-    USER_NEXT -- "是：追加 --confirm" --> NEW
-    NEW --> INIT_NEW
-    INIT_NEW --> USER_REQ_NEW
-    USER_REQ_NEW -- "否：继续澄清" --> INIT_NEW
-    USER_REQ_NEW -- "是" --> NEW_ENV
-    NEW_ENV --> NEW_CONFIRM["confirm-requirement-update<br/>全新义务/映射/收据"]
-    NEW_CONFIRM --> NEW_DONE["进入正常计划、实现和交付流程"]
-    NEW_DONE --> VERIFY{"旧目录验证"}
-    VERIFY -- "snapshot 未被碰" --> OK["✅ 续接零污染"]
+    NEW["新窗口接手"] --> GUIDE["读取本总览；规则以对应 Skill 为准"]
+    GUIDE --> CONFIG["读取当前需求自己的配置：project_path + requirement_name"]
+    CONFIG --> DIR{"配置已有 requirement_dir？"}
+    DIR -- "否" --> EXISTING{"已有同名日期目录？"}
+    EXISTING -- "唯一一个" --> REUSE["复用旧目录并把绝对路径写回配置"]
+    EXISTING -- "多个" --> SELECT["列出候选，由用户选择"]
+    SELECT --> REUSE
+    EXISTING -- "没有" --> DERIVE["按首次启动日期推导 document/YYYY-MM-DD-需求名<br/>创建目录并把绝对路径写回配置"]
+    DIR -- "是" --> PROJECT["复用已写回路径，读取项目 AGENTS.md、分支和 Git 状态"]
+    REUSE --> PROJECT
+    DERIVE --> PROJECT
+    PROJECT --> SPECFILE{"存在 docs/spec.md？"}
+    SPECFILE -- "是" --> SPEC["读取 spec.md、api/api.md 和已有 result.md"]
+    SPECFILE -- "否但有唯一 docs/需求名.md" --> LEGACY["把旧文件作为兼容规格源<br/>不复制第二份"]
+    LEGACY --> SPEC
+    SPEC --> BASELINE{"baseline_commit 仍是当前历史祖先？"}
+    BASELINE -- "否" --> ASK["停止 diff 比较，请用户决定新的审查起点"]
+    BASELINE -- "是" --> STATUS{"spec 状态"}
+    STATUS -- "draft" --> CLARIFY["继续决策树澄清，不编码"]
+    STATUS -- "confirmed 且 BDD 未完成" --> IMPLEMENT["继续下一个纵向切片"]
+    STATUS -- "confirmed 且等待最终交付" --> WAIT["等待用户明确触发最终验证"]
+    STATUS -- "已有 result 但代码变化" --> REVERIFY["重跑受影响验证并更新最终结果"]
 ```
 
-### 怎么执行
+<a id="diagram-layout"></a>
+## 九、文档与代码落点
 
-**你做什么**：明确说明上一需求已经完成或取消，并要求开始一个新的独立需求；同一需求的补充仍走增量闭环，不运行 next。
+流程说明：
 
-**AI 做什么**：
-1. 执行 `requirement_workspace.py next` 只预览轮换动作，等待你追加 `--confirm`
-2. 轮换确认后在 `<workspace_root>/requirements-runtime/REQ-日期-序号-名称/` 创建新目录，复制用户提供的新需求文件并更新 profile；不改写需求正文
-3. 先跑 `delivery.py init`，展示并等待你确认新需求理解
-4. 新需求确认后再跑 `check-env --new-requirement`（建当前 HEAD 新基线，不复用旧基线）
-5. 后续和正常需求一样走计划确认、实现、测试和交付
-
-**你看什么**：旧目录原样不动（零污染），新目录全新独立。
-
-```bash
-python3 scripts/requirement_workspace.py next \
-  --config profiles/<需求>.yaml --title "<新需求中文名>" \
-  --requirement-file <新需求文件> --previous-outcome 已完成
-# 用户确认预览后，在同一命令追加 --confirm
-python3 scripts/requirement_workspace.py next \
-  --config profiles/<需求>.yaml --title "<新需求中文名>" \
-  --requirement-file <新需求文件> --previous-outcome 已完成 --confirm
-python3 scripts/delivery.py init --config profiles/<新需求>.yaml
-python3 scripts/delivery.py check-env --new-requirement --config profiles/<新需求>.yaml
-```
-
----
-
-<a id="fd-docx"></a>
-## 十、docx → md 事实源切换
-
-### docx → md 摘要
-
-1. **初始输入**：用户提供 docx，执行 `init` 按正文顺序读取内容。
-2. **生成事实源**：文本型 docx 自动转写为 `docs/<需求名>.md`，保留标题、列表、表格和超链接，内嵌图片留下原文核对标记；图片型 docx 使用模板骨架创建空 md。
-3. **后续统一读取**：`check-env`、确认、计划、route 和 gate 都以当前 md 为事实源，并绑定其摘要。
-4. **保留原始文件**：docx 原样保留作初始记录，不作为后续事实源或回退来源。
+1. 当前需求配置首次只需要 `project_path + requirement_name`，Agent 推导日期目录并写回 `requirement_dir`。
+2. 新需求由 `docs/spec.md` 保存唯一需求事实；旧目录可沿用唯一 `docs/<requirement_name>.md`，但不得复制第二份；`docs/result.md` 只保存最终执行结果。
+3. API 契约和原始资料放 `api/`，UI 设计导出和验收截图按需放 `ui/`。
+4. Journey XML 由 Agent 根据已确认 BDD 创建在 `test-cases/journeys/<作用域>/`。
+5. 生产代码、资源和普通自动化测试仍放 Android 项目既有目录，需求目录不保存实现副本。
 
 ```mermaid
 flowchart TD
-    DOCX["docs/requirement.docx<br/>（用户给的初始需求）"]
-    DOCX --> INIT["delivery.py init"]
-    INIT --> CHECK{"docx 有正文？"}
-    CHECK -- "有（文本型）" --> WRITE_MD["自动转写为 docs/<需求名>.md"]
-    CHECK -- "无（图片型）" --> SKELETON["用模板骨架建空 docs/<需求名>.md<br/>AI 后续填充"]
-    WRITE_MD --> ALL["所有后续命令统一读 md<br/>（config_paths 自动切换）"]
-    SKELETON --> ALL
-    ALL --> CMD["check-env / confirm / route / gate<br/>全部绑定 md 的 sha256"]
-    CMD --> DOCX_KEEP["docx 原样保留<br/>仅作初始记录"]
+    CONFIG["当前需求独立配置<br/>project_path + requirement_name"] --> LOCATE["先复用唯一同名日期目录<br/>没有匹配才按当天创建并写回"]
+    LOCATE --> ROOT["requirement_dir"]
+    REQUIREMENT["Word、PDF、截图、聊天需求"] --> SPEC["新需求：requirement_dir/docs/spec.md<br/>旧目录：沿用唯一 docs/需求名.md"]
+    FIGMA["Figma 链接"] --> SPEC
+    FIGMA --> UIEVIDENCE["requirement_dir/ui/<br/>仅按需保存设计导出或验收截图"]
+    APIINPUT["API 网页、文件、截图或聊天契约"] --> APIMD["requirement_dir/api/api.md<br/>唯一归一化契约"]
+    APIINPUT --> APIRAW["requirement_dir/api/<原始资料><br/>需要留存时与契约共置"]
+    BDD["已确认核心 UI BDD"] --> JOURNEY["requirement_dir/test-cases/journeys/<作用域>/<场景>.xml<br/>Agent 自动创建"]
+
+    SPEC --> CODE["Android 项目既有 src/main<br/>生产代码与资源"]
+    SPEC --> TEST["Android 项目既有 src/test 或 src/androidTest<br/>自动化测试"]
+    ROOT --> SPEC
+    ROOT --> APIMD
+    ROOT --> UIEVIDENCE
+    ROOT --> JOURNEY
+    CODE --> REPORT["项目既有 build/report 输出"]
+    TEST --> REPORT
+    REPORT --> RESULT["requirement_dir/docs/result.md<br/>记录命令、数量、证据路径和结论"]
 ```
-
-### 怎么执行
-
-**你做什么**：把 docx 放进当前 profile 的 `requirement_dir` 并配置 `requirement_file`；项目内通道通常放在 `document/<日期-英文名>/docs/`，本机串行通道可由 `requirement_workspace.py next` 复制。
-
-**AI 做什么**：跑 `init` 时自动按正文顺序读取 docx，保留标题、列表、表格和超链接并为内嵌图片留下原文核对标记，再转写成 `docs/<需求名>.md`。以后所有命令（check-env/confirm/route/gate）统一读该 md。图片型 docx 用模板骨架创建 `docs/<需求名>.md`，AI 在后续沟通中填充；旧根目录 md 不作为回退事实源。
-
-**你看什么**：终端输出"已自动读取 docx 并转写为 docs/xxx.md（事实源）"，后续增量都在该 md 上改。

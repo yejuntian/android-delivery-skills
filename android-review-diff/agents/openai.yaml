@@ -1,4 +1,0 @@
-interface:
-  display_name: "Android Diff 范围与回归审查"
-  short_description: "对照需求检查 Git diff 是否改对、改多、漏改或引入业务回归"
-  default_prompt: "使用 $android-review-diff 审查这次 Android diff 的需求覆盖、修改范围和回归风险。"

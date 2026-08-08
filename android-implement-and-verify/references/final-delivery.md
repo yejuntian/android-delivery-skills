@@ -1,63 +1,93 @@
-# 最终路由、专项与交付门禁
+# 最终交付
 
-## 进入条件
+最终验证只在用户明确要求“最终检查”“完整交付”或“准备提交”时开始，并以开始时的当前 Git diff 为准。
 
-只有用户明确要求最终检查、完整交付或准备提交，且所有 BDD 已有诚实结果时进入。代码写完本身不触发最终交付。
+## 1. 审查范围
 
-## Route
+- 对照 `spec.md` 检查行为、范围、UI/API 来源和不在范围项。
+- 使用 `baseline_commit` 到当前 `HEAD` 的 diff，并合并未提交改动，检查是否漏实现、过度修改、破坏受保护旧业务或混入无关改动。
+- 规格不是 `confirmed`、仍有产品未知或出现范围外高风险改动时停止并询问用户。
 
-执行 `delivery.py route`。它校验计划收据和影响半径，只分析当前需求 Git 基线后的真实代码 diff，并绑定需求正文、计划、影响半径、UI/API 输入、本地资料和最终代码摘要。
+## 2. 一次完整验证
 
-- 最终 diff 超出已确认影响半径时立即阻断，只能更新并重新确认范围或移除无关改动。
-- 先执行 `android-review-diff`，要求 UI、API、数据、系统、构建、架构和测试七类 `confirmed_impacts`。
-- 脚本候选与语义影响取并集；route 只写 `specialist_tasks`，不直接调用 Skill。
-- route 记录 `route_input_sha256`、轮次、会话和收敛状态。相同输入复用；变化超过默认三轮时 `BLOCKED`，人工确认后才可 `route --new-session`。
-- 修复改变 diff 后必须重新 route；只补同一代码下缺失证据时局部重验即可。
+先使用项目已有命令，按实际影响选择：
 
-## 专项
+- 相关模块完整 Unit/Instrumentation 测试；
+- 必要构建和 Lint；
+- API 改动调用 `android-verify-api-contract`；
+- 可见 UI 改动调用 `android-verify-ui`；
+- Kotlin/Java 改动调用 `android-code-review`；
+- 测试失败或需要设备回归时调用 `android-test-and-fix`。
 
-按 route 清单逐项执行：
+按需求和实际 diff 选择条件检查：
 
-- `android-review-diff`：范围、旧业务影响和七类语义影响。
-- `android-review-code-quality`：架构、职责、文档和可测试性。
-- `android-audit-stability`：静态语义、生命周期、泄漏、性能、安全和兼容性。
-- `android-test-and-fix`：按 BDD、映射和最终 diff 选择完整回归。
-- `android-verify-api-contract`：只在 API/DTO/Repository/mapper/缓存契约变化时执行。
-- `android-verify-ui`：独立物理设备预检、Figma 与真机截图视觉验收；不得由 Figma XML 生成报告替代。
+| 触发变化 | 必查范围 |
+| --- | --- |
+| endpoint、DTO、请求响应或缓存契约 | API 契约与相关测试 |
+| Room、DataStore、SharedPreferences 或持久化格式 | 旧数据迁移、兼容与恢复；缺旧样本时标未验证 |
+| Activity/Fragment、监听器、协程、Flow、WebView、Camera、Media | 生命周期静态审查；项目已有能力时补动态泄漏验证 |
+| 启动、列表、图片、数据库、主线程、锁或明确性能验收 | 使用需求阈值或已有基线做 Trace/Benchmark；不发明指标 |
+| 布局、状态、控件、文案、图标或语义 | UI 截图对比、交互和 A11y |
+| 权限、导出组件、DeepLink、WebView、Token、日志或用户数据 | 安全隐私、信任边界和敏感信息检查 |
+| Gradle、依赖、签名、混淆或 release 行为 | 项目已有构建、依赖树、release/R8 检查 |
 
-最终汇总必须并列保留两条结论：`android-review-diff` 的“需求轴”回答是否做对、做全、越界和破坏旧业务；`android-review-code-quality` 的“工程轴”回答是否符合项目规范、架构和可维护性。两轴不能合并抵消，一轴失败时不得因另一轴通过而建议交付。
+性能、迁移、安全、真机和厂商 ROM 等检查仅在需求或 diff 触发时执行。不适用写明依据；适用但缺少工具、设备、契约、旧数据或基准时标记“未验证”，继续执行其他可用检查。
 
-范围或需求问题进入增量闭环；已确认范围内 P0/P1 技术问题最小修复并重验。适用但缺设备、契约或基准时标记 `UNVERIFIED/BLOCKED`，不影响其他可执行门禁继续。
+可以使用 `scripts/verify_results.py` 检查 JUnit XML 测试总数非零、至少一个测试实际执行、失败数为零且报告不早于当前代码和规格；全部 skipped 不能支持通过。它只核对结果，不决定需求、专项或生成流程状态。
 
-## 执行证据
+## 3. 变化后重验
 
-- 最终命令通过 `execution_evidence.py` 执行，一份收据只证明一个 gate；同 ID 重跑保留独立 attempt。
-- 自动测试和迁移收据必须包含本轮实际执行数大于零的报告；零测试、忽略失败或缺失 JUnit 不能判通过。
-- 每个 BDD 只关联 CURRENT mapping 中登记且本次真实通过的 testcase。
-- 普通构建或 Unit 收据不能代替接口、UI、安全、泄漏或性能专项。
-- 失败收据只能支持对应 FAIL/INCOMPLETE/BLOCKED，不能绑定自动覆盖或 PASS。
+修复导致代码变化时，先跑直接受影响测试；最终结论前重新执行被变化影响的完整检查。没有变化的外部事实不重复抓取，但旧测试报告不能证明新代码。
 
-## 结果组装
+## 4. 记录结果
 
-优先写 YAML 产物清单并执行：
+最终阶段创建或更新 `<requirement_dir>/docs/result.md`。它是输出，不是新的需求事实源；不得为了填写结果修改已确认规格。
 
-```bash
-python3 ai-skills/android-delivery-skills/scripts/delivery_gate.py assemble \
-  --config <配置> --manifest <产物清单.yaml>
+```markdown
+# 交付结果
+
+## 目录
+1. [版本与范围](#result-version)
+2. [BDD 验证](#result-bdd)
+3. [执行命令](#result-commands)
+4. [专项检查](#result-specialists)
+5. [未验证项与剩余风险](#result-risks)
+
+<a id="result-version"></a>
+## 版本与范围
+- baseline_commit:
+- current_head:
+- 未提交改动:
+
+<a id="result-bdd"></a>
+## BDD 验证
+| BDD | 实际自动测试或人工步骤 | 结果 | 证据 |
+| --- | --- | --- | --- |
+
+<a id="result-commands"></a>
+## 执行命令
+
+<a id="result-specialists"></a>
+## 专项检查
+
+<a id="result-risks"></a>
+## 未验证项与剩余风险
 ```
 
-assemble 自动计算代码、义务、收据和专项摘要并立即 validate。只有特殊字段无法表达时才按 schema 手写 `delivery-result.json` 后执行 validate。
+规格中的每个 BDD 必须在结果表中恰好出现一次。结果只使用“通过 / 失败 / 未验证”；人工步骤只有实际执行并记录环境与观察结果后才能写通过。
+目录必须与实际章节同步；没有内容的专项写明“不适用”及依据，不保留空标题。
 
-核心 gate 包含 diff、质量、稳定性、测试、build 和 lint；接口、迁移、UI/A11y、安全等条件 gate 来自 route 与 `confirmed_impacts` 并集。UI 视觉使用 `android-verify-ui` 的 `device_check` 和 `visual_review`，不使用通用人工收据或 Figma 生成结果。
+## 5. 中文结论
 
-## Definition of Done
+最终回复包含：
 
-- 需求为 CONFIRMED，无 PENDING/CONFLICT；计划收据与当前需求、计划和影响半径一致。
-- 所有必需 BDD 有 CURRENT 映射和真实通过证据；未执行不得写 PASS。
-- 必需命令在最后一次修复后执行，记录命令、退出码、测试数和报告路径。
-- 所有适用条件能力记录适用性、工具、证据、能力损失和残留风险；P0/P1 已关闭。
-- UI 有可比基准时必须有独立 `android-verify-ui` 报告或用户明确豁免，否则为 UI 验收待执行。
-- 最终报告、需求、计划、影响半径、输入、Git 基线、代码摘要和引用证据仍一致。
-- `delivery-result.json` 通过独立最终门禁，并生成向用户展示的 `docs/交付结论.md`。
+- 实现了哪些已确认行为；
+- 实际执行的命令、测试数量和结果；
+- 代码、UI、API 等适用专项结论；
+- 历史问题与本次新增问题的区分；
+- 未执行、失败或受环境限制的验证；
+- 当前是否可以提交，以及剩余风险。
 
-不满足任一必需项时只能输出 `LOCAL_PASS_DEVICE_PENDING`、`INCOMPLETE` 或 `BLOCKED` 的对应中文结论。Git 提交不是完成条件，仍需用户单独授权。
+只有每个 BDD、全部适用专项和必需验证真实通过，且没有未关闭高风险问题时才写“已通过”。缺少设备或外部资料时可以写“本地通过，专项待验证”，不能写成完整通过。
+
+提交、推送、发布仍需用户分别授权；提交信息遵守项目 `AGENTS.md`。

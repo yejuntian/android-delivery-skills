@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 需求实现与闭环验证"
   short_description: "理解需求、轻量拆分并闭环交付的 Android 总入口"
-  default_prompt: "使用 $android-implement-and-verify 综合需求资料并确认可观察结果；复杂需求按可验证结果拆分，小需求直接执行，然后完成 Android 实现与交付闭环。"
+  default_prompt: "使用 $android-implement-and-verify 综合需求资料，集中澄清关键决策并确认一份规格，然后按受影响范围完成 Android 实现与验证。"

@@ -1,4 +1,4 @@
 interface:
   display_name: "Android 测试与失败自修复"
-  short_description: "支持局部受影响测试与最终完整门禁的 Android 测试修复闭环"
-  default_prompt: "使用 $android-test-and-fix 处理这次 Android 改动：局部迭代只跑受影响测试和必要编译，最终交付再执行完整测试门禁。"
+  short_description: "执行受影响测试、AI Journey 与 Android 失败闭环"
+  default_prompt: "使用 $android-test-and-fix 选择并执行最小 Android 测试；核心用户路径由 Agent 创建并自动运行 AI Journey，失败时建立紧反馈循环并验证修复。"

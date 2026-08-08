@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 壳项目最小 Manifest。被测应用通过 JOURNEYS_CUSTOM_APP_ID 指向,Journey 会启动它。 -->
-<!--suppress XmlHighlighting -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application
-        android:allowBackup="false"
-        android:label="Journey Harness" />
-</manifest>

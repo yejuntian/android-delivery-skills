@@ -172,13 +172,14 @@ docs/
 │   ├── 需求测试追溯.md             ← 自动渲染（需求→测试→证据）
 │   ├── 交付结论.md                 ← 自动渲染（最终中文结论）
 │   ├── 协作待办.md                 ← blocker/待确认/草稿消息（AI 手写）
-│   ├── api.md                      ← 收到 API 资料时创建或更新：契约、来源、冲突与未知项
 │   ├── design-note.md              ← 按需创建：UI 状态、交互和资源对照
 │   ├── config-note.md              ← 按需创建：非密配置说明
 │   ├── 审查-<主题>.md               ← 按需创建，Diff+Context 双表
 │   ├── 决策-<主题>.md               ← 按需创建，MADR 轻量版
 │   └── 问题-<主题>.md               ← 按需创建，现象/根因/处置/证据
-├── api/                           ← 按需创建：原始 JSON/OpenAPI/YApi 导出、截图和抓包等原形证据；不生成重复契约摘要
+├── api/                           ← 收到 API 资料时按需创建，API 契约与原始证据共置
+│   ├── api.md                     ← 唯一归一化契约记录：来源、请求/响应、冲突与未知项
+│   └── <原始资料>                 ← 原始 JSON/OpenAPI/YApi 导出、截图和抓包等原形证据；不生成重复契约摘要
 ├── ui/                            ← 按需创建：UI 截图、设计稿和视觉证据
 ├── config/                        ← 按需创建：机器可读的非密配置元数据
 ├── issues/                        ← 按需创建：问题附件或机器结构化记录
@@ -358,7 +359,7 @@ python3 evals/runners/run_artifact_evals.py
 | result.md | 交付结论（强制未验证项 + 残留风险段） |
 | decision.md | 决策记录（MADR：Status 流转 + superseded） |
 | communications.md | 协作待办（4 表：待确认/阻塞/已发送/低风险） |
-| api.md | `docs/api.md` API 契约记录（来源 + 请求/响应 + 冲突 + 未知项） |
+| api.md | `api/api.md` API 契约记录（来源 + 请求/响应 + 冲突 + 未知项） |
 | issue.md | 问题台账（现象/根因/处置/证据） |
 | config-note.md | 配置说明（key 名/环境/owner/安全边界） |
 | design-note.md | `docs/design-note.md` 设计说明（页面状态/交互/资源对照） |

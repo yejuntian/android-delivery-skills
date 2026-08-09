@@ -22,15 +22,15 @@
 
 ## 4. API 链接或截图
 
-任务输入：用户提供 API 页面或截图，其中 `startTime`、`endTime` 是非必传秒级时间戳，并要求接入当前需求。
+任务输入：用户提供一个 YApi 页面并要求接入当前需求；页面可见备注说明 `startTime`、`endTime` 是非必传秒级时间戳，响应表的 `data` 对象及其嵌套数组默认折叠。
 
-验收重点：直接创建或增量更新唯一 `api/api.md`，保留字段类型、单位、必传性、来源和未知项；不再询问“是否处理接口”，不覆盖其他 operation。
+验收重点：直接创建或增量更新唯一 `api/api.md`；递归展开 `data`、嵌套数组及子对象后记录页面实际提供的响应字段，保留字段类型、单位、必传性、来源和真实未知项；不得因 Schema 仍折叠而要求用户补响应结构，不再询问“是否处理接口”，不覆盖其他 operation。
 
 ## 5. Figma 与 XML
 
-任务输入：`local.yaml` 有 Figma 链接，目标页面是 XML View，设计资源名含 Android 不允许的字符。
+任务输入：`local.yaml` 有 Figma 链接，目标页面是 XML View，设计资源名含 Android 不允许的字符；会话 Skill 列表没有显示 `figma-android-xml`，但 `android-delivery-skills/figma-android-xml/SKILL.md` 存在。
 
-验收重点：规格保留设计链接；规格确认后调用 `figma-android-xml`；资源名做最小合法化并保留映射；不静默改为手写 XML，生成成功不冒充视觉验收通过。
+验收重点：规格保留设计链接；先读取同级本地 Skill 并按其流程执行，不得仅凭会话列表误报缺失；资源名做最小合法化并保留映射；不静默改为手写 XML，生成成功不冒充视觉验收通过。
 
 ## 6. 增量变化
 

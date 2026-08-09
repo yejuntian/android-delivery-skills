@@ -5,6 +5,7 @@
 
 ## 目录
 
+0. [陌生项目首次接手](#flow-onboarding)
 1. [新窗口从这里开始](#flow-resume)
 2. [当前组成](#flow-components)
 3. [文档与文件布局](#flow-layout)
@@ -22,6 +23,13 @@
 7. [多需求并行与大需求](#flow-parallel)
 8. [授权和安全边界](#flow-safety)
 
+<a id="flow-onboarding"></a>
+## 陌生项目首次接手
+
+仅当用户明确表示首次接手、完全不了解或要求摸底现有 Android 项目时，先使用 `android-onboard-existing-project`：读取项目规则、Git、Gradle、模块、CI、测试和代表性链路，建立有证据的项目地图、验证基线、风险与未知项。默认不改生产代码、构建配置或依赖，也不创建需求 profile、日期需求目录、`spec.md`、BDD 或需求基线。
+
+项目事实需要跨需求复用或用户要求写入项目文档时，默认只创建 `<project_path>/document/project-context/overview.md`；内容确实独立后才按需拆分同目录文档，不预建空文件。接手完成后，具体需求再进入现有 `android-implement-and-verify` 六阶段流程，并以需求实际开始点记录 `baseline_commit`。普通新窗口、普通新需求或缺少项目上下文文档不触发全项目重扫。
+
 <a id="flow-resume"></a>
 ## 新窗口从这里开始
 
@@ -37,6 +45,7 @@
 
 ```text
 android-delivery-skills/
+├── android-onboard-existing-project/  前置入口：陌生项目地图、基线和风险边界
 ├── android-implement-and-verify/  主流程：澄清、规格、实现、增量和最终交付
 ├── android-test-and-fix/          测试、AI Journey、失败诊断和最小修复
 ├── android-code-review/           规格一致性与 Android 工程风险审查
@@ -47,7 +56,7 @@ android-delivery-skills/
 └── scripts/verify_results.py      可选：核对 JUnit XML 非空、非全跳过且不过期
 ```
 
-主入口是 `android-implement-and-verify`。其余四个 Skill 只在任务或最终 diff 触发时使用，不建立统一 route、状态机或脚本门禁。
+具体需求主入口是 `android-implement-and-verify`；`android-onboard-existing-project` 仅处理明确的陌生项目首次接手。其余四个 Skill 只在任务或最终 diff 触发时使用，不建立统一 route、状态机或脚本门禁。
 
 <a id="flow-layout"></a>
 ## 文档与文件布局
@@ -76,6 +85,15 @@ android-delivery-skills/
             └── <场景名>.xml      Agent 根据已确认 BDD 创建的官方 Journey 用例
 ```
 
+陌生项目接手文档与日期需求目录并列，默认只创建一个入口文件：
+
+```text
+<project_path>/document/project-context/
+└── overview.md                  项目地图、验证基线、风险、未知项和来源指针
+```
+
+项目已有等价文档时引用或最小更新，不创建第二份事实源；接手文档不保存需求 BDD、实现进度或最终验收结果。
+
 Android 生产代码和普通自动化测试仍落在业务项目自己的既有目录；需求级 Journey XML 是例外，固定放在 `requirement_dir`：
 
 ```text
@@ -88,6 +106,7 @@ Android 生产代码和普通自动化测试仍落在业务项目自己的既有
 
 | 输入或产物 | 固定落点 | 规则 |
 | --- | --- | --- |
+| 陌生项目接手上下文 | `<project_path>/document/project-context/overview.md` | 需要持久化时创建；只保存项目级结论、边界和来源指针，不替代当前代码或需求证据 |
 | 当前需求配置 | 用户指定的独立 profile；未指定时 `profiles/local.yaml` | 首次只需 `project_path` 和 `requirement_name`；配置不得包含敏感值 |
 | `requirement_dir` | `<project_path>/document/YYYY-MM-DD-<requirement_name>/` | 先复用唯一同名日期目录；没有匹配才由 Agent 创建并写回配置，后续窗口不随日期漂移 |
 | Word、PDF、截图或聊天需求 | 新需求记录到 `docs/spec.md`；旧目录可沿用唯一 `docs/<requirement_name>.md` | 不因输入格式创建平行事实源，也不复制旧规格制造第二份 |
@@ -100,6 +119,7 @@ Android 生产代码和普通自动化测试仍落在业务项目自己的既有
 | 测试报告、截图和日志 | 保留在实际工具输出位置；必要证据可放 `ui/` 或 API 原始资料旁 | `docs/result.md` 记录命令、路径、数量和结论，不复制大批构建产物 |
 
 - 新需求的 `spec.md` 是唯一需求事实源；旧目录只有唯一 `docs/<requirement_name>.md` 时继续把它作为兼容规格源，不自动创建第二份。
+- 项目上下文是跨需求索引；当前代码、Gradle、CI 或实际命令与它冲突时以当前一手证据为准，接手基线不得冒充需求 BDD 或最终交付证据。
 - `result.md` 是输出，不得反向改写已确认需求。
 - `spec.md`、`api.md` 和 `result.md` 都在标题后维护可点击目录和稳定锚点；说明按章节、编号列表和必要表格组织，增量更新时同步目录。
 - API 资料一旦提供给当前需求，就创建或更新 `api/api.md`，不再询问是否处理。
@@ -123,6 +143,7 @@ Android 生产代码和普通自动化测试仍落在业务项目自己的既有
 ### 1. 先查事实
 
 - 读取项目 `AGENTS.md`、相关代码、Gradle、测试、当前分支、Git 状态、当前需求配置及用户输入。
+- 存在 `document/project-context/overview.md` 时只读取当前需求相关来源；缺失时不阻塞普通需求或触发全项目重扫。
 - 能从文件、代码、工具或链接查到的事实由 Agent 自己查，不转问用户。
 - 开始需求时把当前提交写入 `spec.md` 的 `baseline_commit`。
 - 引用路径在当前分支不存在时保留原引用，说明查过的位置，并询问参考分支或替代来源；不擅自删除引用或切分支。

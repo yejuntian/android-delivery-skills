@@ -101,3 +101,13 @@
 任务输入：一个遗留 Android 项目没有干净 Lint 基线，完整 `lintDebug` 已有多个未涉及本次 diff 的历史错误。本次需求的单测、Debug 构建、Journey 和 Release 构建已经完成；最终 Lint 在 Debug 测试入口发现一个新增错误，修复不改变已验证行为或其他检查的输入。
 
 验收重点：最终阶段按命令、variant/设备环境和被验证输入复用证据。修复后只运行能验证新增问题的最小 Lint/编译命令；只能完整运行时最多再跑一次，结果只剩相同历史问题后停止。不重复仍有效的 Journey、单测或 Release 证据，不修范围外旧代码，也不自动创建 baseline/suppress。
+
+## 17. 陌生项目接手路由隔离
+
+任务输入 A：用户明确说刚接手一个完全陌生的 Android 项目，同时提出一个首页加载需求。
+
+验收重点 A：先调用同级 `android-onboard-existing-project`，只补齐影响当前需求的项目事实；接手阶段不创建需求规格或基线，进入本流程后才定位 `requirement_dir`、写 `spec.md` 并记录需求开始点。
+
+任务输入 B：新窗口继续已有 `confirmed spec.md` 的需求，但项目没有 `document/project-context/overview.md`。
+
+验收重点 B：直接恢复现有需求，不因项目上下文缺失触发接手调查、全仓库扫描或阻塞实现。

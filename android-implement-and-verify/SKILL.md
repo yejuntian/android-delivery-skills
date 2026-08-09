@@ -9,7 +9,8 @@ description: Android 需求实现与验证总入口。用于 Android 新功能�
 
 ## 按需读取
 
-- 新窗口首次接手、恢复流程或需要查看完整流程：先读取 `../docs/FLOW_OVERVIEW.md`；需要看阶段关系时再读取 `../docs/FLOW_DIAGRAMS.md`。
+- 新窗口续接已有需求、恢复流程或需要查看完整流程：先读取 `../docs/FLOW_OVERVIEW.md`；需要看阶段关系时再读取 `../docs/FLOW_DIAGRAMS.md`。
+- 用户明确表示首次接手、完全不了解或要求摸底现有 Android 项目时，先调用同级 `android-onboard-existing-project`；只补齐进入当前需求所需的项目事实，再回到本流程。普通新窗口、普通新需求或缺少项目上下文文档不触发。
 - 澄清需求或整理规格：读取 `references/clarify-and-spec.md`。
 - 编码、测试或处理增量变化：读取 `references/implement-and-test.md`。
 - 收到 Figma、API 链接、截图、文件或聊天契约：读取 `references/figma-and-api.md`。
@@ -25,6 +26,8 @@ description: Android 需求实现与验证总入口。用于 Android 新功能�
 ### 1. 先查事实
 
 读取当前项目的 `AGENTS.md`、相关代码、Gradle、测试、当前分支与 Git 状态，以及用户本轮输入和当前需求自己的配置；未显式指定配置时才读取 `profiles/local.yaml`。能从代码、文件、工具或链接查到的事实由 Agent 自己查，不转问用户。
+
+存在 `<project_path>/document/project-context/overview.md` 时按当前需求相关性读取；它只提供来源指针和历史基线，当前代码、Gradle、CI 或实际命令冲突时以当前一手证据为准。文件缺失不阻塞普通需求，也不触发全项目接手调查。
 
 首次启动当前需求时，如果配置没有 `requirement_dir`，先查找 `<project_path>/document/*-<requirement_name>/`：唯一匹配时复用并写回；多个匹配时列出候选让用户选择；没有匹配时才使用本地当天日期创建 `<project_path>/document/YYYY-MM-DD-<requirement_name>/` 并写回解析后的绝对路径。后续窗口必须复用已写回路径，不按新日期重新推导；缺少 `project_path` 或 `requirement_name` 时只询问缺失项，不要求用户手工拼目录。
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android 陌生项目接手"
+  short_description: "建立陌生 Android 项目的可信地图、验证基线与风险边界"
+  default_prompt: "使用 $android-onboard-existing-project 调查这个陌生 Android 项目，建立有证据的项目地图、验证基线和风险边界。"

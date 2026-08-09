@@ -4,6 +4,7 @@
 
 ## 目录
 
+0. [陌生项目首次接手](#diagram-onboarding)
 1. [完整主流程](#diagram-main)
 2. [需求模糊时的决策树前沿](#diagram-clarify)
 3. [Figma 与 API 输入](#diagram-inputs)
@@ -14,6 +15,26 @@
    1. [合并规则（git worktree）](#diagram-merge)
 8. [新窗口恢复](#diagram-resume)
 9. [文档与代码落点](#diagram-layout)
+
+<a id="diagram-onboarding"></a>
+## 零、陌生项目首次接手
+
+陌生项目接手是具体需求主流程之前的窄入口，不改变原六阶段交付流程。只清理进入当前需求所需的知识缺口；接手结果不能替代需求规格和验收证据。
+
+```mermaid
+flowchart TD
+    INPUT["收到 Android 工作请求"] --> UNKNOWN{"用户明确表示首次接手、完全不了解或要求摸底？"}
+    UNKNOWN -- "否" --> DELIVERY["android-implement-and-verify"]
+    UNKNOWN -- "是" --> ONBOARD["android-onboard-existing-project：只读调查与安全验证"]
+    ONBOARD --> MAP["项目地图、验证基线、风险与未知项"]
+    MAP --> SAVE{"项目事实需要跨需求复用或写入项目文档？"}
+    SAVE -- "是" --> CONTEXT["document/project-context/overview.md"]
+    SAVE -- "否" --> READY["保留当前接手结论"]
+    CONTEXT --> READY
+    READY --> REQUEST{"已有具体需求？"}
+    REQUEST -- "否" --> END["停止；不修改生产代码"]
+    REQUEST -- "是" --> DELIVERY
+```
 
 <a id="diagram-main"></a>
 ## 一、完整主流程
@@ -315,14 +336,16 @@ flowchart TD
 
 流程说明：
 
-1. 当前需求配置首次只需要 `project_path + requirement_name`，Agent 推导日期目录并写回 `requirement_dir`。
-2. 新需求由 `docs/spec.md` 保存唯一需求事实；旧目录可沿用唯一 `docs/<requirement_name>.md`，但不得复制第二份；`docs/result.md` 只保存最终执行结果。
-3. API 契约和原始资料放 `api/`，UI 设计导出和验收截图按需放 `ui/`。
-4. Journey XML 由 Agent 根据已确认 BDD 创建在 `test-cases/journeys/<作用域>/`。
-5. 生产代码、资源和普通自动化测试仍放 Android 项目既有目录，需求目录不保存实现副本。
+1. 陌生项目接手上下文需要持久化时放在 `document/project-context/overview.md`，与日期需求目录并列。
+2. 当前需求配置首次只需要 `project_path + requirement_name`，Agent 推导日期目录并写回 `requirement_dir`。
+3. 新需求由 `docs/spec.md` 保存唯一需求事实；旧目录可沿用唯一 `docs/<requirement_name>.md`，但不得复制第二份；`docs/result.md` 只保存最终执行结果。
+4. API 契约和原始资料放 `api/`，UI 设计导出和验收截图按需放 `ui/`。
+5. Journey XML 由 Agent 根据已确认 BDD 创建在 `test-cases/journeys/<作用域>/`。
+6. 生产代码、资源和普通自动化测试仍放 Android 项目既有目录，需求目录不保存实现副本。
 
 ```mermaid
 flowchart TD
+    ONBOARD["陌生项目接手结果"] --> PROJECTCONTEXT["document/project-context/overview.md<br/>按需创建的项目级索引"]
     CONFIG["当前需求独立配置<br/>project_path + requirement_name"] --> LOCATE["先复用唯一同名日期目录<br/>没有匹配才按当天创建并写回"]
     LOCATE --> ROOT["requirement_dir"]
     REQUIREMENT["Word、PDF、截图、聊天需求"] --> SPEC["新需求：requirement_dir/docs/spec.md<br/>旧目录：沿用唯一 docs/需求名.md"]

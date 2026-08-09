@@ -30,7 +30,9 @@ description: 为 Android 改动选择并执行受影响测试，建立紧反馈�
 </journey>
 ```
 
-需求级 Journey XML 始终以 `requirement_dir` 中的文件为准；业务项目支持官方 Journey Test 时复用项目执行配置，不把唯一用例迁成项目内另一份事实源。项目低于 AGP 9.0.0 时不得为测试升级构建系统：沿用原 Gradle 任务生成 APK，优先使用 Android CLI 对已安装应用执行 Journey；创建 Journey XML 不等于创建自定义 Harness、Schema 或运行脚本。Android CLI 不可用时改用项目已有 Instrumentation 或 UIAutomator，仍无法自动执行则报告阻塞，不降级为人工通过。
+在本交付流程中，`requirement_dir` 中的 Journey XML 是唯一事实源，只通过 Android CLI Journey 执行：Agent 读取 XML，使用 Android CLI 操作已安装应用，并逐步判断可见结果。不得为 Journey 新增或复用 Android Studio Journey Test、AGP 测试套件、独立 AGP 9 壳、Gradle 插件或 runner，也不得升级业务项目 AGP 或把用例迁入另一执行工程。沿用项目原有 Gradle 任务生成 APK；Android CLI 不可用时改用项目已有 Instrumentation 或 UIAutomator，仍无法自动执行则报告阻塞，不降级为人工通过。
+
+执行第一个 action 前，先根据待证明声明核对实际执行路径：确认入口、构建变体、目标功能、运行环境，以及影响该声明的关键依赖和数据来源。测试入口可以准备前置状态，但不得在未披露的情况下把待验证的生产路径或关键依赖替换为测试替身、固定数据或另一套实现。发现差异时先判断其影响范围：修正执行路径，或把结论收窄到证据实际覆盖的范围；无法证明声明所需对象一致时，将对应声明标记为“未验证”。不得用对象不一致的 Journey 步骤、截图或日志支持超出其覆盖范围的通过结论。验证记录只需包含足以复核本次声明的对象身份和差异，不强制项目具备特定页面架构、数据层类型或网络 endpoint。
 
 Agent 按 XML 顺序执行每个 action，以布局树、截图、应用状态和日志判断结果；动作无法完成、应用退出、崩溃、卡死或断言不满足时立即失败，未执行步骤标记跳过。仅将 Journey 用于当前稳定支持的点击、输入和滑动/滚动；双击、长按、多指、旋转、计数、条件分支和精确耗时改用确定性自动测试。
 

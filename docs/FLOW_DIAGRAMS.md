@@ -173,14 +173,14 @@ flowchart TD
 
 1. 只有用户明确要求最终检查、完整交付或准备提交时才进入最终验证。
 2. 先读取 `confirmed spec`、基线到当前 `HEAD` 的 diff 和未提交改动，确定真实影响。
-3. 执行一次适用的完整测试、构建和 Lint，再按 diff 候选调用代码、API、UI 或测试专项。
+3. 复用命令、variant/设备环境和被验证输入均未变化的证据，只补缺失或失效的完整测试、构建、Lint 与专项。
 4. 修复改变代码后重新执行受影响验证；空测试、全部 skipped 和旧报告不能支持通过。
 5. 每个 BDD 和适用专项都有真实结果后写 `docs/result.md`；缺少证据时标记失败或未验证。
 
 ```mermaid
 flowchart TD
     FINAL["用户明确要求最终检查、完整交付或准备提交"] --> DIFF["读取 confirmed spec + baseline 到 HEAD + 未提交 diff"]
-    DIFF --> TESTS["执行一次适用的完整测试、构建和 Lint"]
+    DIFF --> TESTS["复用有效证据，只补缺失或失效的测试、构建和 Lint"]
     DIFF --> CODE{"Kotlin/Java、生命周期或工程风险？"}
     DIFF --> API{"endpoint、DTO、mapper 或缓存契约？"}
     DIFF --> UI{"布局、状态、交互、文案或 A11y？"}

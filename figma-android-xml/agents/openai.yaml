@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma 转 Android XML"
+  short_description: "从 Figma 设计生成并验收高保真 Android XML 界面"
+  default_prompt: "使用 $figma-android-xml 将当前 Figma 设计还原为高保真 Android XML 和资源，并完成构建与布局审查。"

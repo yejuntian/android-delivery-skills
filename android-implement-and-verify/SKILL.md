@@ -13,7 +13,7 @@ description: Android 需求实现与验证总入口。用于 Android 新功能�
 
 ## 按需读取
 
-- 新窗口续接已有需求、恢复流程或需要查看完整流程：先读取 `../docs/FLOW_OVERVIEW.md`；需要看阶段关系时再读取 `../docs/FLOW_DIAGRAMS.md`。
+- 新窗口续接已有需求：读取 `references/implement-and-test.md` 的续接规则，再按当前工作加载资料。仅需了解完整流程时读取 `../docs/FLOW_OVERVIEW.md`，需要图解时读取 `../docs/FLOW_DIAGRAMS.md`。
 - 用户明确表示首次接手、完全不了解或要求摸底现有 Android 项目时，先调用同级 `android-onboard-existing-project`；只补齐进入当前需求所需的项目事实，再回到本流程。普通新窗口、普通新需求或缺少项目上下文文档不触发。
 - 澄清需求或整理规格：读取 `references/clarify-and-spec.md`。
 - 编码、测试或在任何阶段处理需求增量：读取 `references/implement-and-test.md`。

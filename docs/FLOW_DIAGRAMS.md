@@ -310,7 +310,7 @@ flowchart TD
 
 流程说明：
 
-1. 新窗口先读取本总览、当前需求自己的配置、项目 `AGENTS.md` 和 Git 状态。
+1. 新窗口按主 Skill 的续接规则读取当前需求配置、项目 `AGENTS.md` 和 Git 状态，不默认预读总览或图解。
 2. 配置已有 `requirement_dir` 时直接复用；没有时先复用唯一同名日期目录，多个候选由用户选择，没有匹配才按首次启动日期创建并写回。
 3. 优先读取 `docs/spec.md`；旧目录只有唯一 `docs/<requirement_name>.md` 时把它作为兼容规格源，再一并读取 `api/api.md`、已有 `docs/result.md` 和 `baseline_commit..HEAD` 的边界提交。
 4. `baseline_commit` 不再是当前历史祖先时停止 diff 比较，由用户决定新的审查起点。
@@ -318,7 +318,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    NEW["新窗口接手"] --> GUIDE["读取本总览；规则以对应 Skill 为准"]
+    NEW["新窗口接手"] --> GUIDE["按主 Skill 续接规则恢复；无需预读完整总览"]
     GUIDE --> CONFIG["读取当前需求自己的配置：project_path + requirement_name"]
     CONFIG --> DIR{"配置已有 requirement_dir？"}
     DIR -- "否" --> EXISTING{"已有同名日期目录？"}

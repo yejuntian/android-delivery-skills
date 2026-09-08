@@ -67,10 +67,38 @@ def _git_output(project: Path, *args: str) -> str:
     return result.stdout
 
 
-def _latest_input_time(project: Path, spec: Path) -> float:
-    """计算当前提交、未提交源码和规格中的最新修改时间。"""
+def _latest_input_time(project: Path, spec: Path, verified_head: str | None = None) -> float:
+    """核对已验证输入，或沿用未指定证据点时的保守时间检查。"""
     if not (project / ".git").exists():
         raise VerificationError(f"不是 Git 项目: {project}")
+    if verified_head is not None:
+        commit = _git_output(
+            project, "rev-parse", "--verify", "--end-of-options", f"{verified_head}^{{commit}}"
+        ).strip()
+        try:
+            _git_output(project, "merge-base", "--is-ancestor", commit, "HEAD")
+        except VerificationError as exc:
+            raise VerificationError("无法证明 verified_head 是当前 HEAD 的祖先") from exc
+        try:
+            spec_relative = spec.relative_to(project).as_posix()
+        except ValueError as exc:
+            raise VerificationError("使用 verified_head 时，规格必须位于项目内并纳入 Git") from exc
+        _git_output(project, "ls-files", "--error-unmatch", "--", spec_relative)
+        paths = ["."]
+        result_relative = spec.with_name("result.md").relative_to(project).as_posix()
+        if result_relative != spec_relative:
+            paths.append(f":(top,literal,exclude){result_relative}")
+        # Only this requirement's result is output; other files may affect the tests.
+        changed = _git_output(
+            project, "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z",
+            commit, "--", *paths,
+        )
+        untracked = _git_output(
+            project, "ls-files", "--others", "--exclude-standard", "-z", "--", *paths
+        )
+        if changed or untracked:
+            raise VerificationError("输入与 verified_head 不一致；不能复用该证据点的报告")
+        return float(_git_output(project, "show", "-s", "--format=%ct", commit).strip())
     head_time = float(_git_output(project, "show", "-s", "--format=%ct", "HEAD").strip())
     latest = max(head_time, spec.stat().st_mtime)
     status = _git_output(project, "status", "--porcelain=v1", "-z")
@@ -143,6 +171,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--project", required=True, type=Path)
     parser.add_argument("--spec", required=True, type=Path)
     parser.add_argument("--report", required=True, action="append", type=Path)
+    parser.add_argument("--verified-head", help="本次报告实际验证的代码提交；省略时保守检查当前 HEAD")
     return parser.parse_args(argv)
 
 
@@ -153,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     spec = args.spec.expanduser().resolve()
     try:
         _confirmed_spec(spec)
-        latest_input = _latest_input_time(project, spec)
+        latest_input = _latest_input_time(project, spec, args.verified_head)
         totals = _summarize(_report_files(args.report), latest_input)
     except (OSError, VerificationError) as exc:
         print(f"最终测试结果核验失败: {exc}", file=sys.stderr)

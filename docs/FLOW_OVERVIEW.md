@@ -33,6 +33,8 @@
 <a id="flow-resume"></a>
 ## 新窗口从这里开始
 
+普通续接直接使用主 Skill 的 [续接规则](../android-implement-and-verify/references/implement-and-test.md)，无需预读整份总览；以下仅作流程索引。
+
 1. 确认 Android 项目、当前分支、Git 状态和本需求自己的配置；未显式指定配置时才读取 `profiles/local.yaml`。
 2. 从配置读取 `project_path` 和 `requirement_name`；已有 `requirement_dir` 就直接复用，没有时先复用唯一同名日期目录，没有匹配才按首次启动日期创建并写回配置。
 3. 优先读取 `<requirement_dir>/docs/spec.md`；旧目录只有唯一 `docs/<requirement_name>.md` 时把它作为兼容规格源，不创建第二份；存在 `api/api.md`、`docs/result.md` 时一并读取。
@@ -291,7 +293,7 @@ baseline_commit: <需求开始提交>
 
 最终创建或更新 `docs/result.md`，每个 BDD 恰好对应一项结果；通过或失败必须有实际自动测试或已执行人工步骤，未验证则明确缺少的证据。审查范围可信、验证实际执行且工作区除结果外干净时，无论通过、部分通过还是失败都如实形成 `RESULT` 提交；只提交结果文档和项目约定的必要证据，不提交构建产物、原始大日志、敏感信息、本机绝对路径或无关截图。结果记录 `verified_head`，不记录会因报告自身提交而立即失效的 `current_head`；提交后以新的 `HEAD` 重做 `baseline_commit...HEAD` 整体审计并确认工作区干净。结论只使用“通过、失败、未验证、不适用”；缺少必要证据时不能声明完整通过。
 
-`scripts/verify_results.py` 只辅助检查 JUnit XML：报告必须晚于当前代码和规格、测试总数非零、至少一个测试实际执行且 failures/errors 为零。它不决定需求、专项或最终业务结论。
+`scripts/verify_results.py` 可用已有 `verified_head` 核对输入一致性，避免本需求结果文档提交使报告自动过期；非零、非全跳过和无失败门禁不变。用法及保守边界见 [最终验证说明](../android-implement-and-verify/references/final-delivery.md)，不替代需求、专项或环境核验。
 
 <a id="flow-parallel"></a>
 ## 多需求并行与大需求

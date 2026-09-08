@@ -1,0 +1,27 @@
+# Operating system and editors
+.DS_Store
+.idea/
+.vscode/
+
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Personal configuration and credentials
+.env
+.env.*
+!.env.example
+profiles/local.yaml
+profiles/*.local.yaml

@@ -19,7 +19,7 @@
 <a id="diagram-onboarding"></a>
 ## 零、陌生项目首次接手
 
-陌生项目接手是具体需求主流程之前的窄入口，不改变原六阶段交付流程。只清理进入当前需求所需的知识缺口；接手结果不能替代需求规格和验收证据。
+陌生项目接手是具体需求主流程之前的窄入口，不改变原交付流程。只清理进入当前需求所需的知识缺口；接手结果不能替代需求规格和验收证据。
 
 ```mermaid
 flowchart TD
@@ -38,6 +38,8 @@ flowchart TD
 
 <a id="diagram-main"></a>
 ## 一、完整主流程
+
+图中展示正常推进路径；任意节点均可进入 [增量闭环](#diagram-incremental)，收拢后回到受影响工作，不必从头重走。
 
 流程说明：
 
@@ -83,7 +85,7 @@ flowchart TD
 2. 把真正需要产品决定的问题组织成决策树，每轮只处理前置条件已明确的当前前沿。
 3. 同一轮列出全部互不依赖问题；用户可以回答其中一个、多个或同时纠正旧需求。
 4. 完整吸收本轮变化后重新计算前沿，不重复已解决问题，也不丢失未回答问题。
-5. `待确认` 清空并获得纯确认后才写 BDD、标记 `confirmed` 和进入实现。
+5. `待确认` 非空时不新增或改写任何 BDD，保留已有且未受影响的 BDD；清空后补齐 BDD 与计划验证，再请求规格确认，确认后才进入实现。
 
 ```mermaid
 flowchart TD
@@ -96,7 +98,7 @@ flowchart TD
     LEFT -- "是" --> GROUP
     LEFT -- "否" --> DEPENDENT{"答案是否解锁后续依赖问题？"}
     DEPENDENT -- "是" --> FIND
-    DEPENDENT -- "否" --> RESTATE["复述共同理解并写 draft spec.md"]
+    DEPENDENT -- "否" --> RESTATE["补齐受影响 BDD 与计划验证<br/>写入 draft spec.md 并复述"]
     RESTATE --> CONFIRM{"用户纯确认最新完整规格？"}
     CONFIRM -- "否" --> TREE
     CONFIRM -- "是" --> BDD["写入 confirmed；此后才允许实现"]
@@ -134,10 +136,10 @@ flowchart TD
 
 流程说明：
 
-1. 小需求把一个 BDD 作为隐式切片并使用其 `BDD-##`；复杂需求每次只选择一个已确认 `SLICE-##`，并选取最高可观察、足够快速的测试边界。
-2. 先实际确认测试因缺少目标行为而失败，再编写最小实现使其通过。
+1. Agent 根据交付结果、必要上下文和验证边界决定整体交付或显式切片；紧密相关的多条 BDD 可一起交付，需分组或依赖计划时使用 `SLICE-##`，不按数量、行数或累计 Token 判大小。
+2. 每个边界内逐条确认测试因缺少目标行为而失败，再编写最小实现使其通过。
 3. 当前测试转绿后只追加直接受影响模块测试和必要编译，再审查 staged、unstaged 和 untracked 内容。
-4. 自动形成一个中文语义原子提交，工作区重新干净后才能默认进入下一切片。
+4. 自动形成一个中文语义原子提交，工作区重新干净后才能默认进入下一切片；整片取消/替代按增量闭环收拢。
 5. 疑难 Bug、偶发故障和性能回归先建立紧反馈入口，再最小化失败；偶发问题用固定轮次统计复现率。
 6. 修复前通常列出 2–5 个有依据的可证伪假设；仅有一个合理候选时记录排除依据、不凑数，再用单假设、单变量探针证伪。
 7. 无法复现或同一根因连续三轮没有进展时，报告证据和阻塞条件，不猜因修改。
@@ -148,7 +150,9 @@ flowchart TD
     BOUNDARY --> RED["写失败测试并实际确认 Red 原因"]
     RED --> MIN["编写刚好满足行为的最小实现"]
     MIN --> GREEN["重跑当前测试并确认 Green"]
-    GREEN --> IMPACT["运行直接受影响模块测试和必要编译"]
+    GREEN --> BEHAVIORS{"当前边界还有待实现 BDD？"}
+    BEHAVIORS -- "是" --> BOUNDARY
+    BEHAVIORS -- "否" --> IMPACT["运行直接受影响模块测试和必要编译"]
     IMPACT --> SCOPE["审查 staged、unstaged、untracked；只保留当前 Slice"]
     SCOPE --> CHECKPOINT["自动形成带 BDD-## / SLICE-## 的原子提交<br/>并确认工作区干净"]
     CHECKPOINT --> NEXT{"下一个 Slice？"}
@@ -170,27 +174,28 @@ flowchart TD
 
 流程说明：
 
-1. 行为、业务语义或验收变化时，把规格改回 `draft`，只确认和重做受影响部分。
-2. 模块、依赖、公共接口或测试边界变化时，暂时回到 `draft` 并只确认范围变化。
-3. 颜色、间距、资源或内部实现细节不改变行为时保持 `confirmed`，只做最小验证。
-4. 最终验证后代码再变化时，旧结果不能证明新代码，必须重跑受影响项并重新汇总。
-5. 未受影响的 BDD、代码和测试保留，不因局部增量重复完整流程。
+本图可从任意阶段进入，不受当前检查是否通过限制；只读或授权不足时仅评估并报告。输入提交、同片续接、取消/替代和重验的门禁统一见 [增量闭环](../android-implement-and-verify/references/implement-and-test.md#incremental-loop)。
 
 ```mermaid
 flowchart TD
-    CHANGE["实现期间或最终验证后出现变化"] --> TYPE{"变化改变了什么？"}
-    TYPE -- "行为、业务语义或验收" --> DRAFT1["spec.md -> draft"]
-    DRAFT1 --> CONFIRM1["只澄清并确认变化部分"]
-    CONFIRM1 --> AFFECTED1["重做受影响 BDD、代码和测试"]
-
-    TYPE -- "模块、依赖、公共接口或测试边界" --> DRAFT2["spec.md 暂时 -> draft"]
-    DRAFT2 --> CONFIRM2["只确认范围或测试边界变化"]
-    CONFIRM2 --> AFFECTED2["更新受影响实现和验证"]
-
-    TYPE -- "颜色、间距、资源或内部实现细节" --> KEEP["保持 confirmed"]
-    KEEP --> LOCAL["只改受影响代码并跑最小验证"]
-
-    TYPE -- "最终验证后代码再次变化" --> RECHECK["旧结果失效：重跑受影响项并重新汇总"]
+    CHANGE["任何阶段收到或发现需求增量"] --> IMPACT["评估最早受影响内容与下游；保留同一 spec 和原基线"]
+    IMPACT --> TYPE{"首次确认完成且行为 / 范围 / 契约 / 验收与测试边界未变？"}
+    TYPE -- "否" --> DRAFT["draft：澄清并确认最新内容<br/>已确认需求只确认变化部分"]
+    TYPE -- "是" --> KEEP["保持 confirmed；补漏或调整细节 / 计划"]
+    DRAFT --> CURRENT["核对当前阶段与完整工作区"]
+    KEEP --> CURRENT
+    CURRENT --> OWNED{"改动归属可信且可隔离提交？"}
+    OWNED -- "否" --> STOP["保留现场并报告；不提交半成品或用户改动"]
+    OWNED -- "是" --> SPEC["输入有变化时只提交 SPEC<br/>当前切片继续沿用原起点"]
+    SPEC --> NEED{"当前有待收拢内容或失效验证？"}
+    NEED -- "是" --> FIX["补齐受影响内容或收拢明确取消项<br/>复查原发现点和失效下游检查"]
+    NEED -- "否" --> FINAL
+    FIX --> VALID{"验证通过且提交范围纯净？"}
+    VALID -- "否" --> STOP
+    VALID -- "是" --> COMMIT["完成必要边界提交；无实现 diff 不建空提交<br/>工作区干净后进入下一边界"]
+    COMMIT --> FINAL{"处于最终交付阶段？"}
+    FINAL -- "否" --> CONTINUE["按最新规格继续相应工作"]
+    FINAL -- "是" --> RESULT["复用有效证据、补失效检查、更新 RESULT<br/>审计 baseline...最新 HEAD"]
 ```
 
 <a id="diagram-final"></a>
@@ -309,7 +314,7 @@ flowchart TD
 2. 配置已有 `requirement_dir` 时直接复用；没有时先复用唯一同名日期目录，多个候选由用户选择，没有匹配才按首次启动日期创建并写回。
 3. 优先读取 `docs/spec.md`；旧目录只有唯一 `docs/<requirement_name>.md` 时把它作为兼容规格源，再一并读取 `api/api.md`、已有 `docs/result.md` 和 `baseline_commit..HEAD` 的边界提交。
 4. `baseline_commit` 不再是当前历史祖先时停止 diff 比较，由用户决定新的审查起点。
-5. 用提交标题中的 `BDD-##`、`SLICE-##` 或 `MIGRATE-*` 对照规格恢复进度，再继续澄清、下一边界、等待最终交付或在代码变化后重新验证。
+5. 用提交标题中的 `BDD-##`、`SLICE-##` 或 `MIGRATE-*` 定位，核对最新规格、实际代码、后续修复或回退和有效证据后恢复进度；旧 ID 或 RESULT 不能单独证明完成。未提交切片按增量闭环证明归属、授权和原起点后续接。
 
 ```mermaid
 flowchart TD
@@ -330,11 +335,12 @@ flowchart TD
     LEGACY --> SPEC
     SPEC --> BASELINE{"baseline_commit 仍是当前历史祖先？"}
     BASELINE -- "否" --> ASK["停止 diff 比较，请用户决定新的审查起点"]
-    BASELINE -- "是" --> STATUS{"spec 状态"}
+    BASELINE -- "是" --> EVIDENCE["核对最新规格、实际代码、后续回退与有效证据"]
+    EVIDENCE --> STATUS{"spec 状态与实际完成情况"}
     STATUS -- "draft" --> CLARIFY["继续决策树澄清，不编码"]
-    STATUS -- "confirmed 且边界未完成" --> IMPLEMENT["继续下一个 BDD / SLICE / MIGRATE 边界"]
+    STATUS -- "confirmed 且边界未完成" --> IMPLEMENT["核实并续接当前边界；无未完成改动才开始下一边界"]
     STATUS -- "confirmed 且等待最终交付" --> WAIT["等待用户明确触发最终验证"]
-    STATUS -- "已有 result 但代码变化" --> REVERIFY["重跑受影响验证并更新最终结果"]
+    STATUS -- "已有 result 但代码或验收变化" --> REVERIFY["重跑失效验证并更新最终结果"]
 ```
 
 <a id="diagram-layout"></a>

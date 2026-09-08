@@ -7,7 +7,14 @@ description: 审查 Android Git diff 是否符合已确认需求、项目架构�
 
 上下文没有给出 `requirement_dir` 和规格位置时，先读取当前需求自己的配置，并使用 `android-implement-and-verify` 的目录定位与旧规格兼容规则恢复上下文；不得猜路径或创建第二份规格。
 
-先确定审查基线，读取项目 `AGENTS.md`、已确认规格、相关代码和测试，再审查完整 diff。不要把未出现在 diff 中的历史问题冒充本次回归。
+先确定审查模式和固定点，读取项目 `AGENTS.md`、已确认规格、相关代码和测试，再审查完整范围。不要把未出现在审查范围中的历史问题冒充本次回归。
+
+## 审查范围
+
+- **切片审查**：固定点为 `slice_base_commit`。提交前覆盖 `git diff --cached`、`git diff` 和 `git status --short` 中的 untracked 文件；提交后检查 `slice_base_commit...HEAD` 并确认工作区干净。
+- **需求级最终审查**：固定点为 `baseline_commit`。先确认它仍是 `HEAD` 的历史祖先且工作区干净，再审查 `baseline_commit...HEAD`。
+- 大范围 diff 先读取 stat、name-status 和提交历史，按 `BDD-##`、`SLICE-##` 或 `MIGRATE-*` 逐段检查；单段仍过大时继续按模块、文件和 hunk 分块，并从 name-status 清单逐项销账，最后做整体一致性审查。不要首先把巨大 patch 一次性载入上下文，也不要把二进制或生成产物正文载入模型上下文。
+- 固定点缺失、不是当前历史祖先，或未提交内容的归属不明时停止并报告，不自行选择新基线，也不遗漏 staged、unstaged 或 untracked 内容。
 
 涉及生命周期、异步、资源、共享状态、Java/Kotlin 混合调用、生成代码或 release/R8 时，按需读取 `references/android-risk-checks.md`；没有对应候选时不要加载或机械展开。
 

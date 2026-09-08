@@ -41,17 +41,17 @@ flowchart TD
 
 流程说明：
 
-1. 先读取项目、需求配置、Git、代码、测试和 UI/API 来源，已有改动或缺失引用先让用户决定处置。
+1. 先读取项目、需求配置、Git、代码、测试和 UI/API 来源；已有改动先由用户在原工作区保存、提交或隔离，建立独立干净工作区后才记录基线，缺失引用则让用户决定来源。
 2. 只澄清会改变行为、范围或验收的问题；未知清空后才形成一份 `draft spec.md`。
-3. 用户确认最新完整规格后改为 `confirmed`，再按 BDD 逐个完成纵向切片。
-4. 日常实现只跑受影响验证；用户明确要求最终交付时才执行一次完整检查。
-5. 最终结果按 BDD 写入 `docs/result.md`；提交、推送和集成仍分别需要用户授权。
+3. 用户确认最新完整规格后改为 `confirmed`，先形成 `SPEC` 边界提交并恢复干净工作区；小需求按 `BDD-##`、复杂需求按 `SLICE-##` 逐个完成纵向切片。
+4. 每个切片只跑受影响验证，审查完整工作区后自动形成原子提交。
+5. 用户明确要求最终交付时才完整验证并审计 `baseline_commit...HEAD`；推送、集成和发布仍分别需要用户授权。
 
 ```mermaid
 flowchart TD
     START["收到 Android 需求"] --> FACTS["读取项目、当前需求配置、Git、代码、测试、UI/API 来源"]
     FACTS --> DIRTY{"已有改动或引用缺失需要用户决定？"}
-    DIRTY -- "是" --> DECIDE["说明事实并等待处置决定"]
+    DIRTY -- "是" --> DECIDE["用户在原工作区保存、提交或隔离已有改动<br/>缺失引用由用户决定来源"]
     DECIDE --> FACTS
     DIRTY -- "否" --> FRONTIER["建立需求决策树并询问当前前沿"]
     FRONTIER --> UNKNOWN{"仍有会改变行为或验收的未知？"}
@@ -59,19 +59,19 @@ flowchart TD
     UNKNOWN -- "否" --> SPEC["写一份 draft spec.md：BDD、范围、来源、决策、测试边界"]
     SPEC --> CONFIRM{"用户确认最新完整规格？"}
     CONFIRM -- "否或提出变化" --> FRONTIER
-    CONFIRM -- "是" --> CONFIRMED["spec.md = confirmed"]
-    CONFIRMED --> SLICE["纵向切片：失败测试 -> 最小实现 -> 受影响验证"]
-    SLICE --> MORE{"还有已确认 BDD？"}
+    CONFIRM -- "是" --> CONFIRMED["spec.md = confirmed；自动形成 SPEC 边界提交"]
+    CONFIRMED --> SLICE["BDD-## / SLICE-##：失败证据 -> 最小实现 -> 受影响验证 -> 工作区审查"]
+    SLICE --> COMMIT["自动形成带稳定 ID 的原子提交并恢复干净工作区"]
+    COMMIT --> MORE{"还有已确认切片？"}
     MORE -- "是" --> SLICE
     MORE -- "否" --> FINAL{"用户明确要求最终检查或准备提交？"}
-    FINAL -- "否" --> WAIT["保留当前代码和真实局部测试结果"]
-    FINAL -- "是" --> VERIFY["完整 diff 审查 + 一次适用测试、Lint 和专项"]
+    FINAL -- "否" --> WAIT["以 spec + 切片提交保留可恢复检查点"]
+    FINAL -- "是" --> VERIFY["分层审查 baseline...HEAD + 一次适用测试、Lint 和专项"]
     VERIFY --> CHANGED{"修复后代码又变化？"}
     CHANGED -- "是" --> VERIFY
-    CHANGED -- "否" --> RESULT["按 BDD 写 docs/result.md 和中文结论"]
-    RESULT --> GIT{"用户授权 Git 操作？"}
-    GIT -- "否" --> END["交付当前状态"]
-    GIT -- "是" --> AUTHORIZED["仅执行已授权的提交、推送或集成"]
+    CHANGED -- "否" --> RESULT["按 BDD 写 docs/result.md 并自动形成结果提交"]
+    RESULT --> AUDIT["对最新 HEAD 做最终整体审计并确认工作区干净"]
+    AUDIT --> END["交付结论；推送、集成或发布仍需单独授权"]
 ```
 
 <a id="diagram-clarify"></a>
@@ -134,21 +134,24 @@ flowchart TD
 
 流程说明：
 
-1. 每次只选择一个已确认 BDD，并选取最高可观察、足够快速的测试边界。
+1. 小需求把一个 BDD 作为隐式切片并使用其 `BDD-##`；复杂需求每次只选择一个已确认 `SLICE-##`，并选取最高可观察、足够快速的测试边界。
 2. 先实际确认测试因缺少目标行为而失败，再编写最小实现使其通过。
-3. 当前测试转绿后只追加直接受影响模块测试和必要编译，再进入下一个 BDD。
-4. 疑难 Bug、偶发故障和性能回归先建立紧反馈入口，再最小化失败；偶发问题用固定轮次统计复现率。
-5. 修复前通常列出 2–5 个有依据的可证伪假设；仅有一个合理候选时记录排除依据、不凑数，再用单假设、单变量探针证伪。
-6. 无法复现或同一根因连续三轮没有进展时，报告证据和阻塞条件，不猜因修改。
+3. 当前测试转绿后只追加直接受影响模块测试和必要编译，再审查 staged、unstaged 和 untracked 内容。
+4. 自动形成一个中文语义原子提交，工作区重新干净后才能默认进入下一切片。
+5. 疑难 Bug、偶发故障和性能回归先建立紧反馈入口，再最小化失败；偶发问题用固定轮次统计复现率。
+6. 修复前通常列出 2–5 个有依据的可证伪假设；仅有一个合理候选时记录排除依据、不凑数，再用单假设、单变量探针证伪。
+7. 无法复现或同一根因连续三轮没有进展时，报告证据和阻塞条件，不猜因修改。
 
 ```mermaid
 flowchart TD
-    BDD["选择一个已确认 BDD"] --> BOUNDARY["选择最高可观察且足够快的测试边界"]
+    BDD["工作区干净；选择 BDD-## / SLICE-##<br/>记录 slice_base_commit = HEAD"] --> BOUNDARY["选择最高可观察且足够快的测试边界"]
     BOUNDARY --> RED["写失败测试并实际确认 Red 原因"]
     RED --> MIN["编写刚好满足行为的最小实现"]
     MIN --> GREEN["重跑当前测试并确认 Green"]
     GREEN --> IMPACT["运行直接受影响模块测试和必要编译"]
-    IMPACT --> NEXT{"下一个 BDD？"}
+    IMPACT --> SCOPE["审查 staged、unstaged、untracked；只保留当前 Slice"]
+    SCOPE --> CHECKPOINT["自动形成带 BDD-## / SLICE-## 的原子提交<br/>并确认工作区干净"]
+    CHECKPOINT --> NEXT{"下一个 Slice？"}
     NEXT -- "是" --> BDD
     NEXT -- "否" --> READY["等待最终交付时一次完整验证"]
 
@@ -196,14 +199,16 @@ flowchart TD
 流程说明：
 
 1. 只有用户明确要求最终检查、完整交付或准备提交时才进入最终验证。
-2. 先读取 `confirmed spec`、基线到当前 `HEAD` 的 diff 和未提交改动，确定真实影响。
+2. 先确认基线仍是 `HEAD` 的祖先且工作区干净，再读取 stat、name-status 和提交历史，按 `BDD-##`、`SLICE-##` 或 `MIGRATE-*` 审查；单段仍过大时按模块、文件和 hunk 分块并从清单逐项销账，最后做整体一致性审计。
 3. 复用命令、variant/设备环境和被验证输入均未变化的证据，只补缺失或失效的完整测试、构建、Lint 与专项。
 4. 修复改变代码后重新执行受影响验证；空测试、全部 skipped 和旧报告不能支持通过。
-5. 每个 BDD 和适用专项都有真实结果后写 `docs/result.md`；缺少证据时标记失败或未验证。
+5. 范围可信、验证实际执行且工作区除结果外干净时，把通过、部分通过或失败如实写入 `docs/result.md` 并形成 `RESULT` 提交，再对最新 `HEAD` 完成最终审计；结果提交不夹带构建产物、原始大日志、敏感信息、本机绝对路径或无关截图。
 
 ```mermaid
 flowchart TD
-    FINAL["用户明确要求最终检查、完整交付或准备提交"] --> DIFF["读取 confirmed spec + baseline 到 HEAD + 未提交 diff"]
+    FINAL["用户明确要求最终检查、完整交付或准备提交"] --> CLEAN{"baseline 是 HEAD 祖先且工作区干净？"}
+    CLEAN -- "否" --> STOP["停止：处理基线或未提交内容，不产生范围外副作用"]
+    CLEAN -- "是" --> DIFF["stat + name-status + log -> 按稳定 ID 审查<br/>过大则按模块 / 文件 / hunk 分块销账 -> 整体审计"]
     DIFF --> TESTS["复用有效证据，只补缺失或失效的测试、构建和 Lint"]
     DIFF --> CODE{"Kotlin/Java、生命周期或工程风险？"}
     DIFF --> API{"endpoint、DTO、mapper 或缓存契约？"}
@@ -218,9 +223,10 @@ flowchart TD
     APICHECK --> COLLECT
     UICHECK --> COLLECT
     FIX --> COLLECT
-    COLLECT --> COMPLETE{"每个 BDD 和适用专项都有真实结果？"}
-    COMPLETE -- "否" --> PARTIAL["失败或未验证；写明风险和解除条件"]
-    COMPLETE -- "是" --> PASS["docs/result.md：通过结论"]
+    COLLECT --> TRUSTED{"范围可信、验证实际执行且<br/>工作区除结果外干净？"}
+    TRUSTED -- "否" --> STOP
+    TRUSTED -- "是" --> RESULT["docs/result.md 记录 verified_head 与真实结论<br/>形成 RESULT 提交"]
+    RESULT --> PASS["审计最新 HEAD；工作区干净后<br/>给出通过 / 部分通过 / 失败结论"]
 ```
 
 <a id="diagram-parallel"></a>
@@ -232,7 +238,7 @@ flowchart TD
 2. 每个并行需求使用独立 worktree、分支、配置和日期格式 `requirement_dir`。
 3. 每个窗口维护自己的 `spec.md`、代码和测试结果，不共享 `profiles/local.yaml` 或其他需求证据。
 4. 模拟器、真机、账号和不可并发后端数据仍作为共享资源串行使用。
-5. 大需求默认保持一份规格，不自动创建 Tickets；只有用户决定拆成独立需求时才进入并行流程。
+5. 大需求默认保持一份规格，以 `BDD-##` / `SLICE-##` 原子提交作为上下文检查点，不创建第二份 Tickets；宽范围迁移使用带 `MIGRATE-EXPAND`、`MIGRATE-##` 和 `MIGRATE-CONTRACT` 稳定 ID 的 expand-migrate-contract，并在 Contract 前核对实际发布兼容边界。
 
 ```mermaid
 flowchart TD
@@ -301,9 +307,9 @@ flowchart TD
 
 1. 新窗口先读取本总览、当前需求自己的配置、项目 `AGENTS.md` 和 Git 状态。
 2. 配置已有 `requirement_dir` 时直接复用；没有时先复用唯一同名日期目录，多个候选由用户选择，没有匹配才按首次启动日期创建并写回。
-3. 优先读取 `docs/spec.md`；旧目录只有唯一 `docs/<requirement_name>.md` 时把它作为兼容规格源，再一并读取 `api/api.md` 和已有 `docs/result.md`。
+3. 优先读取 `docs/spec.md`；旧目录只有唯一 `docs/<requirement_name>.md` 时把它作为兼容规格源，再一并读取 `api/api.md`、已有 `docs/result.md` 和 `baseline_commit..HEAD` 的边界提交。
 4. `baseline_commit` 不再是当前历史祖先时停止 diff 比较，由用户决定新的审查起点。
-5. 根据规格状态继续澄清、纵向实现、等待最终交付或在代码变化后重新验证。
+5. 用提交标题中的 `BDD-##`、`SLICE-##` 或 `MIGRATE-*` 对照规格恢复进度，再继续澄清、下一边界、等待最终交付或在代码变化后重新验证。
 
 ```mermaid
 flowchart TD
@@ -319,14 +325,14 @@ flowchart TD
     REUSE --> PROJECT
     DERIVE --> PROJECT
     PROJECT --> SPECFILE{"存在 docs/spec.md？"}
-    SPECFILE -- "是" --> SPEC["读取 spec.md、api/api.md 和已有 result.md"]
+    SPECFILE -- "是" --> SPEC["读取 spec.md、api/api.md、已有 result.md<br/>和 BDD / SLICE / MIGRATE 提交历史"]
     SPECFILE -- "否但有唯一 docs/需求名.md" --> LEGACY["把旧文件作为兼容规格源<br/>不复制第二份"]
     LEGACY --> SPEC
     SPEC --> BASELINE{"baseline_commit 仍是当前历史祖先？"}
     BASELINE -- "否" --> ASK["停止 diff 比较，请用户决定新的审查起点"]
     BASELINE -- "是" --> STATUS{"spec 状态"}
     STATUS -- "draft" --> CLARIFY["继续决策树澄清，不编码"]
-    STATUS -- "confirmed 且 BDD 未完成" --> IMPLEMENT["继续下一个纵向切片"]
+    STATUS -- "confirmed 且边界未完成" --> IMPLEMENT["继续下一个 BDD / SLICE / MIGRATE 边界"]
     STATUS -- "confirmed 且等待最终交付" --> WAIT["等待用户明确触发最终验证"]
     STATUS -- "已有 result 但代码变化" --> REVERIFY["重跑受影响验证并更新最终结果"]
 ```
